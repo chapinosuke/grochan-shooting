@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#120b2e" />
+    <title>GRO-CHAN ✦ SKY BLASTER</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="game-shell">
+      <canvas id="game" aria-label="ぐろちゃんシューティングゲーム"></canvas>
+
+      <section id="startScreen" class="screen is-visible">
+        <div class="eyebrow">NEON KAWAII SHOOTER</div>
+        <h1><span>GRO-CHAN</span><br />SKY BLASTER</h1>
+        <p class="lead">ネオンシティを飛び回って、ハート泥棒をやっつけろ！</p>
+        <div class="difficulty" aria-label="難易度選択">
+          <span>DIFFICULTY</span>
+          <div>
+            <button data-difficulty="easy">EASY</button>
+            <button data-difficulty="normal" class="is-active">NORMAL</button>
+            <button data-difficulty="hard">HARD</button>
+          </div>
+        </div>
+        <div class="controls">
+          <div><kbd>WASD</kbd><kbd>矢印</kbd><span>移動</span></div>
+          <div><kbd>SPACE</kbd><span>ショット</span></div>
+          <div class="touch-note">スマホはドラッグで移動・押しっぱなしでショット</div>
+        </div>
+        <button id="startButton" class="main-button">START GAME <i>→</i></button>
+        <div class="highscore">HIGH SCORE <strong id="menuHighScore">000000</strong></div>
+      </section>
+
+      <section id="gameOverScreen" class="screen result-screen">
+        <div class="eyebrow">MISSION RESULT</div>
+        <h2>GAME OVER</h2>
+        <div class="result-score"><span>SCORE</span><strong id="finalScore">000000</strong></div>
+        <div id="newRecord" class="new-record">NEW RECORD!</div>
+        <button id="retryButton" class="main-button">RETRY <i>↻</i></button>
+      </section>
+
+      <div id="pauseLabel" class="pause-label">PAUSED</div>
+      <button id="soundButton" class="sound-button" aria-label="サウンド切り替え">♪ ON</button>
+      <div class="scanlines"></div>
+    </main>
+    <script src="game.js"></script>
+  </body>
+</html>
