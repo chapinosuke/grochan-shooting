@@ -152,6 +152,13 @@ kbd {
 }
 .sound-button.is-muted { color: #81799e; border-color: #514a70; }
 
+.controller-status {
+  position: absolute; z-index: 7; left: 50%; bottom: 20px; transform: translate(-50%, 25px);
+  padding: 10px 14px; border: 1px solid var(--cyan); background: rgba(9,5,28,.9); color: var(--cyan);
+  font: 9px "Press Start 2P", monospace; opacity: 0; transition: .25s; pointer-events: none;
+}
+.controller-status.is-visible { opacity: 1; transform: translate(-50%, 0); }
+
 .scanlines {
   pointer-events: none;
   position: absolute;

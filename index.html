@@ -26,6 +26,8 @@
         <div class="controls">
           <div><kbd>WASD</kbd><kbd>矢印</kbd><span>移動</span></div>
           <div><kbd>SPACE</kbd><span>ショット</span></div>
+          <div><kbd>PAD</kbd><span>スティック + A / RT</span></div>
+          <div><kbd>↓ / ↑</kbd><span>着地 / 離陸</span></div>
           <div class="touch-note">スマホはドラッグで移動・押しっぱなしでショット</div>
         </div>
         <button id="startButton" class="main-button">START GAME <i>→</i></button>
@@ -34,7 +36,7 @@
 
       <section id="gameOverScreen" class="screen result-screen">
         <div class="eyebrow">MISSION RESULT</div>
-        <h2>GAME OVER</h2>
+        <h2 id="resultTitle">GAME OVER</h2>
         <div class="result-score"><span>SCORE</span><strong id="finalScore">000000</strong></div>
         <div id="newRecord" class="new-record">NEW RECORD!</div>
         <button id="retryButton" class="main-button">RETRY <i>↻</i></button>
@@ -42,6 +44,7 @@
 
       <div id="pauseLabel" class="pause-label">PAUSED</div>
       <button id="soundButton" class="sound-button" aria-label="サウンド切り替え">♪ ON</button>
+      <div id="controllerStatus" class="controller-status">🎮 CONTROLLER READY</div>
       <div class="scanlines"></div>
     </main>
     <script src="game.js"></script>
