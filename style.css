@@ -62,17 +62,6 @@ canvas {
   background: linear-gradient(180deg, rgba(9,5,28,0) 55%, rgba(9,5,28,.7) 100%);
   cursor: pointer;
 }
-.title-enter {
-  border: 1px solid rgba(49,232,255,.55);
-  padding: 14px 22px;
-  background: rgba(9,5,28,.6);
-  color: white;
-  font: 10px "Press Start 2P", monospace;
-  letter-spacing: .12em;
-  cursor: pointer;
-  animation: blink 1.3s steps(2) infinite;
-}
-.title-enter:hover { border-color: var(--pink); animation: none; }
 #titleScreen .highscore { margin-top: 18px; }
 
 /* How-to-play screen: readable centered panel between title and launch. */

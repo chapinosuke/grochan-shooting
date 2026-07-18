@@ -4,7 +4,6 @@
   const canvas = document.querySelector('#game');
   const ctx = canvas.getContext('2d');
   const titleScreen = document.querySelector('#titleScreen');
-  const titleEnter = document.querySelector('#titleEnter');
   const startScreen = document.querySelector('#startScreen');
   const openingScreen = document.querySelector('#openingScreen');
   const gameOverScreen = document.querySelector('#gameOverScreen');
@@ -363,7 +362,7 @@
 
   // Menu flow: title (canvas logo + attract demo) -> how-to-play -> opening.
   function showHowto() {
-    if (menuStep !== 'title') return;   // titleEnter clicks also bubble to titleScreen
+    if (menuStep !== 'title') return;   // guard against repeat triggers (click + Enter)
     menuStep = 'howto';
     titleScreen.classList.remove('is-visible');
     startScreen.classList.add('is-visible');
@@ -1551,8 +1550,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       heartPath(cx + side * 252, ly + 46, 17 * pulse); ctx.fill();
       ctx.restore();
     }
-    // The "start" prompt lives in the HTML title button (#titleEnter); drawing it
-    // here too duplicated the text on the title screen, so the canvas omits it.
+    // Single start prompt for the title screen, blinking under the logo.
+    ctx.globalAlpha = .45 + .55 * Math.abs(Math.sin(t * 2.4));
+    ctx.fillStyle = '#fff'; ctx.font = '10px "Press Start 2P", monospace';
+    ctx.fillText('クリック / ENTER でスタート', cx, ly + 96);
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
     ctx.restore();
   }
@@ -4011,7 +4012,6 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   canvas.addEventListener('pointerup', () => pointer.active = false);
   canvas.addEventListener('pointercancel', () => pointer.active = false);
   titleScreen.addEventListener('click', showHowto);
-  titleEnter.addEventListener('click', showHowto);
   startButton.addEventListener('click', showOpening);
   nextStageButton.addEventListener('click', leaveShop);
   launchButton.addEventListener('click', resetGame);
