@@ -41,6 +41,7 @@
 - **コンティニュー**: `continuesLeft`(3回)・HP0で`doContinue()`=その場復活(HP全快/無敵4s/敵弾消去/shockwave/スコア維持)。HUD右パネル下にハート3、復活時中央に「CONTINUE! のこりN回」。`resetGame()`でリセット。
 - **背景立体化フレームワーク**: `bgCam`(プレイヤー高度追従)+`bgLayer(depth,fn)`で縦パララックス(遠景.5/中景.32/近景.15/前景-.4、地面レイヤーとfactoryのgear/hammerはスクリーン固定のため対象外)。`drawDepthHaze`(遠中間の大気ウォッシュ)、`drawGroundPlane`(消失点VW/2に収束する床グリッド、neon/palaceで使用)、`drawForeground`(drawGame後に描くy>660のテーマ別シルエット帯: ガードレール/波頭/パイプ手すり/ケーブルトレイ/バラ垣)。ステージ別: neon超遠景スカイライン3段/aqua第2島列/factory奥タンク列(`drawRefineryTanks(stage,scale,alpha,shiftX)`)/storm第3スパイア列/palace中間柱廊(`drawColonnade(scale,alpha,speed)`)。
 - 検証済み: 全5ステージスクショ、コンティニュー3回→GAME OVER遷移、全フェーズ進行(Shift+T/M/B walk)。実機FPS(F1)は未計測 — ユーザー確認待ち。
+- **難易度調整(ユーザーFB反映)**: ボス/中ボスHP約1.6倍+ボスHP25%未満で攻撃サイクル35%高速化(`rageMul`)。高intensityフェーズ(assault/formation)で`spawnFlanker()`=雑魚が左(背後)から回り込み右へ抜ける(`e.flank`、描画は左右反転、除去条件は`x < VW+170`)。SPEEDアイテム強化(+32%加速/+28%最高速 per Lv)。
 
 ## 技術メモ
 - 描画はワールド座標(VW=1280×VH=720)。`draw()`でビュー変換を1回適用。ボス/敵は`ctx`にライブ描画（`translate(e.x,e.y)`）。`rctx===ctx`（焼き込み未活性）。
