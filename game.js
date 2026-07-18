@@ -35,13 +35,13 @@
     stage0: new Audio('Neon Arcade Rush.mp3'),
     stage1: new Audio('Neon Arena.mp3'),
     stage2: new Audio('Neon Arena (1).mp3'),
-    stage3: new Audio('Neon Bullet Heaven.mp3'),
-    stage4: new Audio('Neon Demoness.mp3'),
+    stage3: new Audio('Neon Demoness.mp3'),
+    stage4: new Audio('Neon Bullet Heaven.mp3'),
+    bossBattle: new Audio('Neon Bullet Heaven.mp3'),
     finalBoss: new Audio('Red Planet Showdown.mp3')
   };
-  Object.values(bgmTracks).forEach(track => { track.loop = true; track.preload = 'auto'; track.volume = .42; });
-  bgmTracks.opening.volume = .34;
-  bgmTracks.finalBoss.volume = .48;
+  const bgmVolumes = { opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, bossBattle: .3, finalBoss: .32 };
+  Object.entries(bgmTracks).forEach(([key, track]) => { track.loop = true; track.preload = 'auto'; track.volume = bgmVolumes[key]; });
 
   let spriteFrames = [];
   let walkFrames = [];
@@ -72,6 +72,7 @@
   let musicStep = 0;
   let soundOn = true;
   let currentBgmKey = null;
+  let bgmFadeToken = 0;
   let openingTimeout = 0;
   let totalKills = 0;
   let stageKills = 0;
@@ -238,19 +239,38 @@
   function playBgm(key, restart = false) {
     const next = bgmTracks[key];
     if (!next) return;
-    if (currentBgmKey !== key) {
-      if (currentBgmKey && bgmTracks[currentBgmKey]) bgmTracks[currentBgmKey].pause();
-      currentBgmKey = key;
+    const previousKey = currentBgmKey;
+    const previous = previousKey && bgmTracks[previousKey];
+    const targetVolume = bgmVolumes[key] ?? .27;
+    if (previousKey === key) {
+      if (restart) next.currentTime = 0;
+      next.volume = targetVolume;
+      if (soundOn) next.play().catch(() => { /* starts on the next user gesture */ });
+      return;
     }
+    const token = ++bgmFadeToken;
+    currentBgmKey = key;
     if (restart) next.currentTime = 0;
-    if (soundOn) next.play().catch(() => { /* starts on the next user gesture */ });
+    next.volume = 0;
+    if (!soundOn) { if (previous) previous.pause(); return; }
+    next.play().catch(() => { /* starts on the next user gesture */ });
+    const started = performance.now(), duration = 900, previousVolume = previous ? previous.volume : 0;
+    const fade = now => {
+      if (token !== bgmFadeToken) return;
+      const t = clamp((now - started) / duration, 0, 1);
+      next.volume = targetVolume * t;
+      if (previous) previous.volume = previousVolume * (1 - t);
+      if (t < 1) requestAnimationFrame(fade);
+      else if (previous) { previous.pause(); previous.volume = bgmVolumes[previousKey] ?? .27; }
+    };
+    requestAnimationFrame(fade);
   }
 
-  function pauseBgm() { Object.values(bgmTracks).forEach(track => track.pause()); }
+  function pauseBgm() { bgmFadeToken++; Object.values(bgmTracks).forEach(track => track.pause()); }
 
   function desiredBgmKey() {
     if (state === 'opening' || state === 'menu') return 'opening';
-    if (stageIndex === stages.length - 1 && bossState === 'active') return 'finalBoss';
+    if (bossState === 'active') return stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle';
     return `stage${stageIndex}`;
   }
 
@@ -437,7 +457,7 @@
     musicStep = 0; musicClock = 0;
     enemyBullets = [];
     shake = 15;
-    if (stageIndex === stages.length - 1) playBgm('finalBoss', true);
+    playBgm(stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle', true);
     sfx('boss');
   }
 
@@ -2136,9 +2156,11 @@
         thunder: [75, 38, .5, .2], teleport: [900, 210, .16, .09], bubble: [290, 720, .13, .06], fireball: [230, 60, .26, .11],
         missile: [180, 760, .12, .07], special: [75, 1280, .85, .18], graze: [1200, 1650, .045, .025], shield: [760, 340, .08, .04]
       };
-      const [a, b, dur, vol] = map[type]; o.type = type === 'shoot' ? 'square' : 'sawtooth';
+      const [a, b, dur, vol] = map[type];
+      const mixedVolume = Math.min(.3, vol * 1.85);
+      o.type = type === 'shoot' ? 'square' : 'sawtooth';
       o.frequency.setValueAtTime(a, now); o.frequency.exponentialRampToValueAtTime(b, now + dur);
-      gain.gain.setValueAtTime(vol, now); gain.gain.exponentialRampToValueAtTime(.001, now + dur);
+      gain.gain.setValueAtTime(mixedVolume, now); gain.gain.exponentialRampToValueAtTime(.001, now + dur);
       o.start(now); o.stop(now + dur);
     } catch (_) { /* audio is optional */ }
   }
