@@ -167,6 +167,7 @@
   let clouds = [];
   let ambient = [];
   let bgProps = [];
+  let nearProps = [];
   let delayedBursts = [];
   let shockwaves = [];
 
@@ -213,6 +214,15 @@
   }
   function blit(c, dx, dy, dw, dh) {
     ctx.drawImage(c, dx, dy, dw ?? c._w, dh ?? c._h);
+  }
+  // Memoize the static full-screen gradient objects that were being rebuilt
+  // every frame. Gradient coordinates are resolved against the CTM at paint
+  // time, so a cached object under the same user-space coords is pixel-identical.
+  const gradCache = new Map();
+  function cachedGrad(key, make) {
+    let g = gradCache.get(key);
+    if (!g) { g = make(); gradCache.set(key, g); }
+    return g;
   }
 
   function screenToWorld(clientX, clientY) {
@@ -382,6 +392,8 @@
     // Stable scene dressing gives every run a busy, inhabited world without
     // affecting collision or gameplay readability.
     for (let i = 0; i < 8; i++) bgProps.push({ kind: 'nearDetail', lane: i, seed: Math.random() * 1000 });
+    // Cache the near-detail subset so the draw loop skips a per-frame filter().
+    nearProps = bgProps.filter(p => p.kind === 'nearDetail');
   }
 
   function makeAmbient(kind) {
@@ -1182,8 +1194,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   function drawBackdrop() {
     const stage = stages[stageIndex];
-    const g = ctx.createLinearGradient(0, 0, 0, VH);
-    g.addColorStop(0, stage.sky[0]); g.addColorStop(.52, stage.sky[1]); g.addColorStop(1, stage.sky[2]);
+    const g = cachedGrad('sky' + stageIndex, () => {
+      const grad = ctx.createLinearGradient(0, 0, 0, VH);
+      grad.addColorStop(0, stage.sky[0]); grad.addColorStop(.52, stage.sky[1]); grad.addColorStop(1, stage.sky[2]);
+      return grad;
+    });
     ctx.fillStyle = g; ctx.fillRect(-30, -30, VW + 60, VH + 60);
     const theme = stage.theme;
     if (theme === 'neon') drawNeonBackdrop(stage);
@@ -1200,23 +1215,32 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // and a warm glow leaks up from the neon ground for depth.
   function drawAtmosphere(stage) {
     ctx.save();
-    const haze = ctx.createLinearGradient(0, 300, 0, 660);
-    haze.addColorStop(0, 'rgba(0,0,0,0)');
-    haze.addColorStop(1, hexA(stage.sky[1], .3));
+    const haze = cachedGrad('haze' + stageIndex, () => {
+      const grad = ctx.createLinearGradient(0, 300, 0, 660);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, hexA(stage.sky[1], .3));
+      return grad;
+    });
     ctx.fillStyle = haze; ctx.fillRect(0, 300, VW, 360);
-    const glow = ctx.createLinearGradient(0, VH, 0, VH - 150);
-    glow.addColorStop(0, hexA(stage.accent2, .16));
-    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    const glow = cachedGrad('atmoGlow' + stageIndex, () => {
+      const grad = ctx.createLinearGradient(0, VH, 0, VH - 150);
+      grad.addColorStop(0, hexA(stage.accent2, .16));
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      return grad;
+    });
     ctx.fillStyle = glow; ctx.fillRect(0, VH - 150, VW, 150);
     ctx.restore();
   }
 
   // Cinematic vignette drawn over gameplay but under the HUD.
   function drawVignette() {
-    const g = ctx.createRadialGradient(VW / 2, VH * .46, VH * .34, VW / 2, VH * .5, VH * .96);
-    g.addColorStop(0, 'rgba(0,0,0,0)');
-    g.addColorStop(.7, 'rgba(4,2,12,.16)');
-    g.addColorStop(1, 'rgba(3,1,10,.62)');
+    const g = cachedGrad('vignette', () => {
+      const grad = ctx.createRadialGradient(VW / 2, VH * .46, VH * .34, VW / 2, VH * .5, VH * .96);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(.7, 'rgba(4,2,12,.16)');
+      grad.addColorStop(1, 'rgba(3,1,10,.62)');
+      return grad;
+    });
     ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
   }
 
@@ -1751,7 +1775,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // Fast near-field silhouettes sell parallax and make each location feel lived-in.
   // They stay translucent and below the main flight lane so enemies remain readable.
   function drawNearScenery(stage) {
-    const details = bgProps.filter(p => p.kind === 'nearDetail');
+    const details = nearProps;
     const speed = stage.theme === 'aqua' ? 92 : stage.theme === 'palace' ? 72 : 118;
     ctx.save();
     for (const p of details) {
