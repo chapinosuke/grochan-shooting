@@ -43,6 +43,11 @@
 - 検証済み: 全5ステージスクショ、コンティニュー3回→GAME OVER遷移、全フェーズ進行(Shift+T/M/B walk)。実機FPS(F1)は未計測 — ユーザー確認待ち。
 - **難易度調整(ユーザーFB反映)**: ボス/中ボスHP約1.6倍+ボスHP25%未満で攻撃サイクル35%高速化(`rageMul`)。高intensityフェーズ(assault/formation)で`spawnFlanker()`=雑魚が左(背後)から回り込み右へ抜ける(`e.flank`、描画は左右反転、除去条件は`x < VW+170`)。SPEEDアイテム強化(+32%加速/+28%最高速 per Lv)。
 
+## 2026-07-18 セッション2: パワーダウン/タイトル画面
+- **被弾パワーダウン**: `hurt()`で`player.power`が1段階ダウン(下限1、spread/speedは維持)。`powerDownBanner`(1.4s)でプレイヤー頭上に上昇する「POWER DOWN」表示+HUDのPOWERラベル赤点滅。スタート画面の操作説明に「HIT 被弾でPOWERが1段階ダウン」を追記。`GRO_DEBUG`に`power`を追加。
+- **タイトル画面**: canvas描画に移行。`update()`冒頭のmenuブランチで`elapsed`を進め(resetGameで0リセットされるので安全)、渋谷背景をアニメさせつつぐろちゃんがロゴ下を8の字飛行(`drawPlayer`をmenuでも描画)。`drawTitleScreen()`(draw()内、menu時のみ): 上部暗ウォッシュ+「GRO-CHAN」ピンクグラデ+グロー、「SKY BLASTER」シアン、両脇パルスハート、瞬き星8個、PRESS ENTER点滅。HTML `#startScreen`はh1/eyebrow撤去、下部アンカーの透過パネル(難易度/操作/START/ハイスコア)に縮小。
+- 検証: `.devtools/shot-title.js`(新規、menu状態スクショ)+`shot.js play 0`で回帰なし確認。
+
 ## 技術メモ
 - 描画はワールド座標(VW=1280×VH=720)。`draw()`でビュー変換を1回適用。ボス/敵は`ctx`にライブ描画（`translate(e.x,e.y)`）。`rctx===ctx`（焼き込み未活性）。
 - ヘルパー: `hexA(hex,a)`, `shade(hex,f)`, `heartPath(cx,cy,s)`(ctx使用), `starPath`, `drawBox3D/drawCylinder3D/drawKawaiiEyes`(rctx使用), `clamp`。`ctx.roundRect`は利用可。

@@ -54,6 +54,19 @@ canvas {
 
 .screen.is-visible { opacity: 1; visibility: visible; transform: scale(1); }
 
+/* Title screen: the logo + attract demo are drawn on the canvas, so the HTML
+   layer is a slim bottom panel that lets the animated backdrop show through. */
+#startScreen {
+  justify-content: flex-end;
+  padding-bottom: 3.5vh;
+  background: linear-gradient(180deg, rgba(9,5,28,0) 40%, rgba(9,5,28,.5) 66%, rgba(9,5,28,.88) 100%);
+}
+#startScreen .lead { margin: 0 0 16px; font-size: clamp(14px, 1.7vw, 19px); text-shadow: 0 2px 6px rgba(0,0,0,.8); }
+#startScreen .difficulty { margin: 0 0 14px; }
+#startScreen .controls { margin-bottom: 18px; padding: 10px 16px; gap: 14px; font-size: 13px; background: rgba(9,5,28,.45); }
+#startScreen kbd { min-width: 32px; padding: 5px 6px; font-size: 8px; }
+#startScreen .highscore { margin-top: 16px; }
+
 .opening-screen {
   overflow: hidden;
   background:

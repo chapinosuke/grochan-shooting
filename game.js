@@ -108,6 +108,7 @@
   let specialFlash = 0;
   let continuesLeft = 3;
   let continueBanner = 0;
+  let powerDownBanner = 0;
   let bgCam = 0;
   let formationTimer = 3;
   let fpsShow = false;   // F1 toggles a verification-only FPS readout
@@ -322,7 +323,7 @@
     musicClock = 0; musicStep = 0;
     totalKills = 0; stageResult = null; lightning = 0; delayedBursts = [];
     special = 35; specialFlash = 0; formationTimer = 2.8;
-    continuesLeft = 3; continueBanner = 0;
+    continuesLeft = 3; continueBanner = 0; powerDownBanner = 0;
     bullets = []; enemyBullets = []; enemies = []; particles = []; pickups = []; shockwaves = [];
     setupStage();
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
@@ -906,11 +907,22 @@
   }
 
   function update(dt) {
+    if (state === 'menu' && !paused) {
+      // Attract mode for the title screen: keep the neon backdrop animating
+      // (elapsed drives it and resetGame() zeroes it anyway) and fly Gro-chan
+      // in a lazy figure-eight under the logo.
+      elapsed += dt;
+      player.x = 585 + Math.sin(elapsed * .55) * 70;
+      player.y = 342 + Math.sin(elapsed * 1.1) * 30;
+      player.grounded = false; player.frame += dt * 8;
+      bgCam += (((player.y - 360) / 360) * 14 - bgCam) * Math.min(1, dt * 3);
+    }
     if (state !== 'playing' || paused) return;
     elapsed += dt;
     if (bossState === 'waiting') stageTime += dt;
     stageBanner = Math.max(0, stageBanner - dt);
     continueBanner = Math.max(0, continueBanner - dt);
+    powerDownBanner = Math.max(0, powerDownBanner - dt);
     const phaseInfo = currentPhase(stageTime);
     activePhase = phaseInfo.phase; activeTIn = phaseInfo.tIn;
     if (activePhase.id !== lastPhaseId) { lastPhaseId = activePhase.id; setpieceStep = 0; }
@@ -1284,6 +1296,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function hurt(damage) {
     health = Math.max(0, health - damage * difficulties[difficultyKey].damage); player.inv = 1.4; combo = 0; shake = 18; flash = .7; hitStop = Math.max(hitStop, .07);
     stageDamaged = true;
+    // Getting hit knocks the shot power down one level (Gradius-style risk/reward).
+    if (player.power > 1) { player.power--; powerDownBanner = 1.4; }
     burst(player.x + player.w / 2, player.y + player.h / 2, '#ff3e9d', 28, 330); sfx('hurt');
     if (health <= 0) {
       if (continuesLeft > 0) doContinue();
@@ -1360,8 +1374,66 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawBackdrop();
     drawGame();
     drawForeground(stages[stageIndex]);
+    if (state === 'menu') drawTitleScreen();
     ctx.restore();
     if (fpsShow) drawFpsMeter();
+  }
+
+  // Canvas-drawn title over the live Shibuya backdrop: neon logo, twinkling
+  // stars, pulsing hearts. The HTML overlay keeps only the interactive parts
+  // (difficulty select / start button) anchored to the bottom of the screen.
+  function drawTitleScreen() {
+    const t = elapsed;
+    ctx.save();
+    const wash = cachedGrad('titleWash', () => {
+      const g = ctx.createLinearGradient(0, 0, 0, VH * .62);
+      g.addColorStop(0, 'rgba(6,3,20,.78)');
+      g.addColorStop(.55, 'rgba(6,3,20,.4)');
+      g.addColorStop(1, 'rgba(6,3,20,0)');
+      return g;
+    });
+    ctx.fillStyle = wash; ctx.fillRect(0, 0, VW, VH * .62);
+    const cx = VW / 2, ly = 176 + Math.sin(t * 1.3) * 5;
+    ctx.textAlign = 'center';
+    const spark = [[150, 92], [318, 212], [986, 118], [1122, 238], [520, 66], [846, 252], [236, 60], [1046, 58]];
+    ctx.fillStyle = '#ffe15a';
+    spark.forEach(([sx, sy], i) => {
+      const tw = Math.max(0, Math.sin(t * 2.2 + i * 1.7));
+      if (tw < .25) return;
+      ctx.globalAlpha = tw * .85;
+      starPath(sx, sy, 3 + 7 * tw, 3, 4); ctx.fill();
+    });
+    ctx.globalAlpha = .9;
+    ctx.fillStyle = '#31e8ff'; ctx.font = '12px "Press Start 2P", monospace';
+    ctx.fillText('NEON KAWAII SHOOTER', cx, ly - 84);
+    ctx.globalAlpha = 1;
+    ctx.font = '62px "Press Start 2P", monospace';
+    ctx.fillStyle = '#411c73'; ctx.fillText('GRO-CHAN', cx + 6, ly + 7);
+    ctx.save();
+    ctx.shadowColor = '#ff3e9d'; ctx.shadowBlur = 30;
+    ctx.fillStyle = cachedGrad('titleLogo', () => {
+      const g = ctx.createLinearGradient(0, 112, 0, 188);
+      g.addColorStop(0, '#ffffff'); g.addColorStop(.45, '#ffd7ea'); g.addColorStop(1, '#ff3e9d');
+      return g;
+    });
+    ctx.fillText('GRO-CHAN', cx, ly);
+    ctx.restore();
+    ctx.font = '27px "Press Start 2P", monospace';
+    ctx.fillStyle = '#0b3f56'; ctx.fillText('SKY BLASTER', cx + 4, ly + 58);
+    ctx.save(); ctx.shadowColor = '#31e8ff'; ctx.shadowBlur = 20; ctx.fillStyle = '#9ff2ff';
+    ctx.fillText('SKY BLASTER', cx, ly + 54); ctx.restore();
+    for (const side of [-1, 1]) {
+      const pulse = 1 + Math.sin(t * 3 + side) * .12;
+      ctx.save(); ctx.globalAlpha = .9; ctx.shadowColor = '#ff3e9d'; ctx.shadowBlur = 16;
+      ctx.fillStyle = '#ff3e9d';
+      heartPath(cx + side * 252, ly + 46, 17 * pulse); ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalAlpha = .45 + .55 * Math.abs(Math.sin(t * 2.4));
+    ctx.fillStyle = '#fff'; ctx.font = '10px "Press Start 2P", monospace';
+    ctx.fillText('PRESS ENTER TO START', cx, ly + 96);
+    ctx.globalAlpha = 1; ctx.textAlign = 'left';
+    ctx.restore();
   }
 
   function drawFpsMeter() {
@@ -2358,7 +2430,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
     }
     for (const e of enemies) drawEnemy(e);
-    if (state === 'playing' || state === 'over') drawPlayer();
+    if (state === 'playing' || state === 'over' || state === 'menu') drawPlayer();
     // Additive blending makes overlapping sparks glow white-hot like real light.
     ctx.globalCompositeOperation = 'lighter';
     for (const p of particles) {
@@ -3392,7 +3464,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.fillStyle = health > 50 ? '#31e8ff' : health > 25 ? '#ffe15a' : '#ff3e9d'; ctx.fillRect(VW - 336, 57, hpWidth, 18);
     ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillRect(VW - 332, 60, Math.max(0, hpWidth - 8), 3);
     ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText(`${Math.ceil(health)} / ${maxHealth}`, VW - 48, 48); ctx.textAlign = 'left';
-    ctx.fillStyle = '#ffe15a'; ctx.font = '7px "Press Start 2P", monospace'; ctx.fillText(`POWER ${player.power}`, VW - 336, 88);
+    // POWER label flashes red for a moment after a hit knocks the level down.
+    ctx.fillStyle = powerDownBanner > 0 && Math.floor(elapsed * 10) % 2 === 0 ? '#ff5a36' : '#ffe15a';
+    ctx.font = '7px "Press Start 2P", monospace'; ctx.fillText(`POWER ${player.power}`, VW - 336, 88);
     ctx.fillStyle = '#31e8ff'; ctx.fillText(`WIDE ${player.spread}`, VW - 220, 88);
     ctx.fillStyle = '#72ff68'; ctx.fillText(`SPEED ${player.speed}`, VW - 126, 88);
     // Remaining continues: three hearts just under the HP panel, spent ones dimmed.
@@ -3436,6 +3510,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillText('CONTINUE!', VW / 2, 330);
       ctx.fillStyle = '#fff'; ctx.font = '21px "DotGothic16", monospace';
       ctx.fillText(`のこり ${continuesLeft} 回`, VW / 2, 366);
+      ctx.restore(); ctx.textAlign = 'left';
+    }
+    if (powerDownBanner > 0) {
+      // Rising "POWER DOWN" tag over Gro-chan so the demotion is impossible to miss.
+      const a = Math.min(1, powerDownBanner * 2.5);
+      ctx.save(); ctx.globalAlpha = a; ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff5a36'; ctx.font = '10px "Press Start 2P", monospace';
+      ctx.fillText('POWER DOWN', player.x + player.w / 2, player.y - 18 - (1.4 - powerDownBanner) * 40);
       ctx.restore(); ctx.textAlign = 'left';
     }
     if (stageBanner > 0) {
@@ -3654,7 +3736,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, stageTime, phaseId: activePhase.id, enemies: enemies.length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, stageTime, phaseId: activePhase.id, enemies: enemies.length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
 
   resize(); initBackdrop(); setupStage(); requestAnimationFrame(frame);
 })();
