@@ -201,18 +201,19 @@
   }
 
   spriteSheet.onload = () => {
+    // Layout matches the 1672x941 sheet: idle + walk (top), jump + flying shoot (bottom).
     spriteFrames = [
-      makeFrame(378, 535, 240, 305),
-      makeFrame(684, 535, 240, 305),
-      makeFrame(972, 535, 240, 305),
-      makeFrame(1264, 535, 240, 305)
+      makeFrame(378, 535, 248, 305),
+      makeFrame(684, 535, 248, 305),
+      makeFrame(972, 535, 248, 305),
+      makeFrame(1260, 535, 248, 305)
     ];
     idleFrame = makeFrame(92, 72, 225, 350);
     walkFrames = [
-      makeFrame(398, 72, 225, 350),
-      makeFrame(684, 72, 225, 350),
-      makeFrame(974, 72, 225, 350),
-      makeFrame(1260, 72, 225, 350)
+      makeFrame(398, 72, 232, 350),
+      makeFrame(684, 72, 232, 350),
+      makeFrame(970, 72, 232, 350),
+      makeFrame(1260, 72, 232, 350)
     ];
   };
 
@@ -391,18 +392,22 @@
   }
 
   function shoot() {
-    // Muzzle position measured from the flying sprite sheet frame.
-    const muzzleX = player.x + (player.grounded ? 103 : 116);
-    const muzzleY = player.y + (player.grounded ? 65 : 72 + Math.sin(player.frame * .65) * 3);
+    // Muzzle lines up with the walk-gun (ground) vs flying shoot cycle (air).
+    // Ground sprite is drawn at (x-8, y-28) sized 130x190 — gun tip ~ right-mid torso.
+    const muzzleX = player.x + (player.grounded ? 112 : 116);
+    const muzzleY = player.y + (player.grounded ? 52 : 72 + Math.sin(player.frame * .65) * 3);
     const lanes = player.spread === 1 ? [0] : player.spread === 2 ? [-105, 0, 105] : [-175, -85, 0, 85, 175];
-    for (const vy of lanes) bullets.push({ x: muzzleX, y: muzzleY, vx: 770, vy, life: 1.5, r: 6 + player.power * 2, damage: player.power });
-    burst(muzzleX, muzzleY, '#ffe15a', 4, 130);
+    // Slight upward bias on ground so shots clear the floor fog into the play band.
+    const aimBias = player.grounded ? -35 : 0;
+    for (const vy of lanes) bullets.push({ x: muzzleX, y: muzzleY, vx: 770, vy: vy + aimBias, life: 1.5, r: 6 + player.power * 2, damage: player.power });
+    burst(muzzleX, muzzleY, '#ffe15a', 5, 150);
     sfx('shoot');
   }
 
   function shootMissile() {
-    const x = player.x + 88, y = player.y + 76;
-    for (const side of [-1, 1]) bullets.push({ x, y: y + side * 17, vx: 390, vy: side * 115, life: 3.2, r: 9, damage: 1.4 + player.power * .65, missile: true, turn: 4.2 });
+    const x = player.x + (player.grounded ? 100 : 88);
+    const y = player.y + (player.grounded ? 54 : 76);
+    for (const side of [-1, 1]) bullets.push({ x, y: y + side * 17, vx: 390, vy: side * 115 - (player.grounded ? 40 : 0), life: 3.2, r: 9, damage: 1.4 + player.power * .65, missile: true, turn: 4.2 });
     burst(x, y, '#ff8a35', 7, 100); sfx('missile');
   }
 
@@ -778,20 +783,29 @@
     if (keys.has('ArrowDown') || keys.has('KeyS')) ay++;
     const speedBoost = 1 + (player.speed - 1) * .18;
     if (player.grounded) {
-      if (ay < 0 || (pointer.active && pointer.y < GROUND_Y - 80)) {
-        player.grounded = false; player.vy = -270; burst(player.x + 55, GROUND_Y + 130, '#31e8ff', 10, 130);
+      // Takeoff: Up/W/pad, or a deliberate touch near the top of the screen.
+      // Normal tap/hold is ground shooting — do not launch from mid-screen presses.
+      const wantTakeoff = ay < 0 || (pointer.active && pointer.y < 160);
+      if (wantTakeoff) {
+        player.grounded = false;
+        player.vy = -320;
+        burst(player.x + 55, GROUND_Y + 130, '#31e8ff', 10, 130);
+      } else {
+        player.vx += ax * 1100 * speedBoost * dt;
+        if (pointer.active) player.vx += Math.sign(pointer.x - player.x - 50) * 850 * speedBoost * dt;
+        player.vy = 0;
       }
-      player.vx += ax * 1100 * speedBoost * dt;
-      if (pointer.active) player.vx += Math.sign(pointer.x - player.x - 50) * 850 * speedBoost * dt;
-      player.vy = 0;
-    } else if (pointer.active) {
-      const targetX = Math.min(pointer.x - player.w * .45, VW * .58);
-      const targetY = pointer.y - player.h * .5;
-      player.vx += (targetX - player.x) * dt * 18;
-      player.vy += (targetY - player.y) * dt * 18;
-    } else {
-      player.vx += ax * 1250 * speedBoost * dt;
-      player.vy += ay * 1250 * speedBoost * dt;
+    }
+    if (!player.grounded) {
+      if (pointer.active) {
+        const targetX = Math.min(pointer.x - player.w * .45, VW * .58);
+        const targetY = pointer.y - player.h * .5;
+        player.vx += (targetX - player.x) * dt * 18;
+        player.vy += (targetY - player.y) * dt * 18;
+      } else {
+        player.vx += ax * 1250 * speedBoost * dt;
+        player.vy += ay * 1250 * speedBoost * dt;
+      }
     }
     const drag = Math.pow(.0009, dt);
     player.vx *= drag; player.vy *= drag;
@@ -803,15 +817,20 @@
       player.y = GROUND_Y;
     } else {
       player.y = clamp(player.y + player.vy * dt, 32, GROUND_Y);
-      if (player.y >= GROUND_Y && (ay > 0 || (pointer.active && pointer.y > 570))) {
+      // Land when pressing down / touching the floor band, and only while not rising.
+      const wantLand = player.vy >= 0 && (ay > 0 || (pointer.active && pointer.y > 560));
+      if (player.y >= GROUND_Y && wantLand) {
         player.grounded = true; player.y = GROUND_Y; player.vy = 0; burst(player.x + 55, GROUND_Y + 132, '#ffe15a', 9, 100);
       }
     }
-    player.frame += dt * (player.grounded ? (Math.abs(player.vx) > 25 ? 9 : 0) : 10);
+    const firing = keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire;
+    // Walk anim while moving or shooting on the ground (walk frames hold the gun).
+    const groundAnim = player.grounded && (Math.abs(player.vx) > 25 || firing);
+    player.frame += dt * (player.grounded ? (groundAnim ? 9 : 0) : 10);
     player.fire -= dt; player.missileFire -= dt;
-    const firing = keys.has('Space') || pointer.active || padInput.fire;
-    if (!player.grounded && !['transition', 'final'].includes(bossState) && firing && player.fire <= 0) { shoot(); player.fire = .145; }
-    if (!player.grounded && !['transition', 'final'].includes(bossState) && firing && player.power >= 2 && player.missileFire <= 0) { shootMissile(); player.missileFire = player.power >= 3 ? .82 : 1.18; }
+    // Ground and air both shoot — walk sprites already hold the pink blaster.
+    if (!['transition', 'final'].includes(bossState) && firing && player.fire <= 0) { shoot(); player.fire = player.grounded ? .16 : .145; }
+    if (!['transition', 'final'].includes(bossState) && firing && player.power >= 2 && player.missileFire <= 0) { shootMissile(); player.missileFire = player.power >= 3 ? .82 : 1.18; }
 
     spawnTimer -= dt;
     formationTimer -= dt;
@@ -1786,7 +1805,11 @@
     }
     ctx.fillStyle = 'rgba(49,232,255,.18)'; ctx.beginPath(); ctx.ellipse(player.x + 56, player.y + (player.grounded ? 155 : 96), 54, 11, 0, 0, Math.PI * 2); ctx.fill();
     if (player.grounded && idleFrame && walkFrames.length) {
-      const frame = Math.abs(player.vx) > 25 ? walkFrames[Math.floor(player.frame) % walkFrames.length] : idleFrame;
+      // Idle has no gun; show walk (gun-ready) while moving or shooting.
+      const shooting = keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire;
+      const frame = (Math.abs(player.vx) > 25 || shooting)
+        ? walkFrames[Math.floor(player.frame) % walkFrames.length]
+        : idleFrame;
       ctx.drawImage(frame, player.x - 8, player.y - 28, 130, 190);
     } else if (spriteFrames.length) {
       const frame = spriteFrames[Math.floor(player.frame) % spriteFrames.length];
@@ -2357,7 +2380,7 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, enemies: enemies.length, playerBullets: bullets.length, enemyBullets: enemyBullets.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, enemies: enemies.length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire }) });
 
   resize(); initBackdrop(); setupStage(); requestAnimationFrame(frame);
 })();
