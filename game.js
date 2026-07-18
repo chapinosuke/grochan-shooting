@@ -108,6 +108,7 @@
   let specialFlash = 0;
   let continuesLeft = 3;
   let continueBanner = 0;
+  let bgCam = 0;
   let formationTimer = 3;
   let fpsShow = false;   // F1 toggles a verification-only FPS readout
   let fpsAvg = 60;       // EMA of 1/rawDt
@@ -903,6 +904,7 @@
     shake = Math.max(0, shake - dt * 25); flash = Math.max(0, flash - dt * 3);
     specialFlash = Math.max(0, specialFlash - dt);
     player.inv = Math.max(0, player.inv - dt);
+    bgCam += (((player.y - 360) / 360) * 14 - bgCam) * Math.min(1, dt * 3);
     comboTimer -= dt;
     if (comboTimer <= 0) combo = 0;
 
@@ -1336,6 +1338,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.translate(sx, sy);
     drawBackdrop();
     drawGame();
+    drawForeground(stages[stageIndex]);
     ctx.restore();
     if (fpsShow) drawFpsMeter();
   }
@@ -1367,6 +1370,79 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawAmbient();
     drawNearScenery(stage);
     drawAtmosphere(stage);
+  }
+
+  // Vertical camera parallax: layers shift with the player's height. The gameplay
+  // plane is the focal plane (zero shift), far layers shift most, foreground
+  // shifts the opposite way. bgCam is eased in update().
+  function bgLayer(depth, fn) {
+    ctx.save();
+    ctx.translate(0, bgCam * depth);
+    fn();
+    ctx.restore();
+  }
+
+  // A second haze wash painted BETWEEN the far and mid layers, so distant
+  // structures visibly sink into the atmosphere before nearer ones draw on top.
+  function drawDepthHaze(stage, alpha) {
+    const haze = cachedGrad('hazeMid' + stageIndex, () => {
+      const grad = ctx.createLinearGradient(0, 240, 0, 620);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(.7, hexA(stage.sky[1], .34));
+      grad.addColorStop(1, hexA(stage.sky[2], .2));
+      return grad;
+    });
+    ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = haze; ctx.fillRect(0, 240, VW, 380); ctx.restore();
+  }
+
+  // Perspective ground plane: horizontals bunch toward the horizon and verticals
+  // converge on the same vanishing point drawCity uses (VW/2). Extracted from the
+  // storm stage's drawHoloGrid so every stage can have a receding floor.
+  function drawGroundPlane(stage, { horizonY = 566, bottom = 668, color = null, alpha = .14, speed = 70, gap = 96 } = {}) {
+    ctx.save(); ctx.strokeStyle = color || stage.accent; ctx.lineWidth = 1;
+    for (let i = 0; i <= 10; i++) {
+      const t = i / 10, y = horizonY + (bottom - horizonY) * t * t;
+      ctx.globalAlpha = alpha * (.3 + t * .9);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(VW, y); ctx.stroke();
+    }
+    const drift = (elapsed * speed) % gap;
+    ctx.globalAlpha = alpha * .8;
+    for (let x = -400; x < VW + 400; x += gap) {
+      ctx.beginPath(); ctx.moveTo(VW / 2 + (x - VW / 2) * .12, horizonY); ctx.lineTo(x - drift, bottom + 46); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Foreground occlusion band drawn over gameplay: fast, dark, translucent
+  // silhouettes confined below y≈660 so the flight lane stays readable.
+  function drawForeground(stage) {
+    const speed = (stage.theme === 'aqua' ? 92 : stage.theme === 'palace' ? 72 : 118) * 1.45;
+    ctx.save();
+    ctx.translate(0, bgCam * -.4);
+    ctx.globalAlpha = .42; ctx.fillStyle = '#050212';
+    const off = ((elapsed * speed) % 420 + 420) % 420;
+    for (let i = -1; i < 5; i++) {
+      const x = i * 420 - off;
+      if (stage.theme === 'neon') {
+        ctx.fillRect(x, 688, 340, 12);
+        ctx.fillRect(x + 20, 666, 10, 34); ctx.fillRect(x + 300, 666, 10, 34);
+      } else if (stage.theme === 'aqua') {
+        ctx.beginPath(); ctx.moveTo(x, VH + 4);
+        for (let k = 0; k <= 340; k += 34) ctx.lineTo(x + k, 692 + Math.sin((x + k) * .045 + elapsed * 3) * 9);
+        ctx.lineTo(x + 340, VH + 4); ctx.closePath(); ctx.fill();
+      } else if (stage.theme === 'factory') {
+        ctx.fillRect(x, 680, 360, 10);
+        ctx.fillRect(x + 40, 672, 14, 26); ctx.fillRect(x + 210, 672, 14, 26);
+      } else if (stage.theme === 'storm') {
+        ctx.beginPath(); ctx.moveTo(x, 676);
+        ctx.quadraticCurveTo(x + 170, 706, x + 340, 676); ctx.lineTo(x + 340, 684);
+        ctx.quadraticCurveTo(x + 170, 714, x, 684); ctx.closePath(); ctx.fill();
+        ctx.fillRect(x - 4, 664, 8, 36);
+      } else {
+        for (let k = 0; k < 340; k += 46) { ctx.beginPath(); ctx.arc(x + k, 704, 24, Math.PI, 0); ctx.fill(); }
+      }
+    }
+    ctx.restore();
   }
 
   // Atmospheric perspective: distant layers fade into a haze the colour of the sky,
@@ -1425,19 +1501,29 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
 
   function drawNeonBackdrop(stage) {
-    drawMoon(970, 145, 42, '#fff3aa', 'rgba(255,225,90,A)');
-    drawSkyRibbons();
-    drawStars(90, '#ffe15a', '#8defff');
-    for (const c of clouds) drawCloud(c, '#d7ddff', .11);
-    for (const p of bgProps) if (p.kind === 'searchlight') drawSearchlight(p, stage);
-    drawCity((elapsed * -7) % 80, 505, stage.far, 40, .32, 8);
-    draw109Tower(stage);
-    for (const p of bgProps) if (p.kind === 'car') drawFlyingCar(p, stage);
-    drawCity((elapsed * -20) % 120, 600, stage.city, 54, .78, 18);
-    drawNeonSigns();
-    drawShibuyaScreen(stage);
+    bgLayer(.5, () => {
+      drawMoon(970, 145, 42, '#fff3aa', 'rgba(255,225,90,A)');
+      drawSkyRibbons();
+      drawStars(90, '#ffe15a', '#8defff');
+      for (const c of clouds) drawCloud(c, '#d7ddff', .11);
+    });
+    bgLayer(.34, () => {
+      for (const p of bgProps) if (p.kind === 'searchlight') drawSearchlight(p, stage);
+      // Ultra-far third skyline: three city depths with haze between them.
+      drawCity((elapsed * -3) % 60, 468, stage.far, 26, .16, 5);
+      drawCity((elapsed * -7) % 80, 505, stage.far, 40, .32, 8);
+      draw109Tower(stage);
+    });
+    drawDepthHaze(stage, .55);
+    bgLayer(.15, () => {
+      for (const p of bgProps) if (p.kind === 'car') drawFlyingCar(p, stage);
+      drawCity((elapsed * -20) % 120, 600, stage.city, 54, .78, 18);
+      drawNeonSigns();
+      drawShibuyaScreen(stage);
+    });
     drawScrambleCrossing(stage);
     drawGroundLayer();
+    drawGroundPlane(stage, { horizonY: 606, bottom: 704, alpha: .1, speed: 90, gap: 110 });
   }
 
   function drawSkyRibbons() {
@@ -1660,14 +1746,28 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
 
   function drawAquaBackdrop(stage) {
-    drawMoon(210, 120, 36, '#eafcff', 'rgba(160,240,255,A)');
-    drawStars(50, '#eafcff', '#8defff');
-    for (const c of clouds) drawCloud(c, '#eaf6ff', .16);
-    ctx.save(); ctx.globalAlpha = .5; ctx.fillStyle = stage.far;
-    ctx.beginPath(); ctx.ellipse(430, 560, 150, 42, 0, Math.PI, 0); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(780, 566, 90, 26, 0, Math.PI, 0); ctx.fill();
-    ctx.restore();
-    for (const p of bgProps) if (p.kind === 'lighthouse') drawLighthouse(p);
+    bgLayer(.5, () => {
+      drawMoon(210, 120, 36, '#eafcff', 'rgba(160,240,255,A)');
+      drawStars(50, '#eafcff', '#8defff');
+      for (const c of clouds) drawCloud(c, '#eaf6ff', .16);
+    });
+    bgLayer(.32, () => {
+      // Second, dimmer island row drifting far behind the main pair.
+      const idrift = Math.sin(elapsed * .05) * 8;
+      ctx.save(); ctx.globalAlpha = .28; ctx.fillStyle = stage.far;
+      ctx.beginPath(); ctx.ellipse(250 + idrift, 549, 120, 26, 0, Math.PI, 0); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(620 + idrift, 545, 66, 17, 0, Math.PI, 0); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(1000 + idrift, 551, 145, 30, 0, Math.PI, 0); ctx.fill();
+      ctx.restore();
+    });
+    drawDepthHaze(stage, .4);
+    bgLayer(.15, () => {
+      ctx.save(); ctx.globalAlpha = .5; ctx.fillStyle = stage.far;
+      ctx.beginPath(); ctx.ellipse(430, 560, 150, 42, 0, Math.PI, 0); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(780, 566, 90, 26, 0, Math.PI, 0); ctx.fill();
+      ctx.restore();
+      for (const p of bgProps) if (p.kind === 'lighthouse') drawLighthouse(p);
+    });
     drawOcean(stage);
     for (const p of bgProps) if (p.kind === 'fish') drawFish(p, stage);
     drawHighway(stage);
@@ -1748,14 +1848,22 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
 
   function drawFactoryBackdrop(stage) {
-    drawMoon(640, 468, 88, '#ffb347', 'rgba(255,120,60,A)');
-    ctx.save(); ctx.globalAlpha = .45; ctx.fillStyle = stage.sky[1];
-    for (let i = 0; i < 4; i++) ctx.fillRect(530, 448 + i * 20, 220, 5 + i * 3);
-    ctx.restore();
-    for (const c of clouds) drawCloud(c, '#ffd9a0', .13);
-    drawRefineryTanks(stage);
-    drawCranes(stage);
-    drawChimneys();
+    bgLayer(.5, () => {
+      drawMoon(640, 468, 88, '#ffb347', 'rgba(255,120,60,A)');
+      ctx.save(); ctx.globalAlpha = .45; ctx.fillStyle = stage.sky[1];
+      for (let i = 0; i < 4; i++) ctx.fillRect(530, 448 + i * 20, 220, 5 + i * 3);
+      ctx.restore();
+      for (const c of clouds) drawCloud(c, '#ffd9a0', .13);
+    });
+    // Far duplicate tank row sunk into the haze behind the main refinery.
+    bgLayer(.32, () => drawRefineryTanks(stage, .55, .38, -150));
+    drawDepthHaze(stage, .5);
+    bgLayer(.15, () => {
+      drawRefineryTanks(stage);
+      drawCranes(stage);
+      drawChimneys();
+    });
+    // gear/hammer are intentionally screen-fixed props — keep them outside bgLayer.
     for (const p of bgProps) if (p.kind === 'gear') drawGear(p, stage);
     drawCity((elapsed * -20) % 120, 600, stage.city, 54, .8, 18);
     for (const p of bgProps) if (p.kind === 'hammer') drawHammerPress(p, stage);
@@ -1765,8 +1873,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   // Refinery storage tanks: riveted cylindrical silhouettes with glowing
   // window slits and a ground pipe stub, giving the skyline industrial depth.
-  function drawRefineryTanks(stage) {
-    ctx.save(); ctx.globalAlpha = .8;
+  // scale/alpha/shiftX allow a smaller, dimmer duplicate row deeper in the scene;
+  // the transform keeps the tanks anchored to their y=560 ground line.
+  function drawRefineryTanks(stage, scale = 1, alpha = .8, shiftX = 0) {
+    ctx.save(); ctx.globalAlpha = alpha;
+    ctx.translate(shiftX, 560 * (1 - scale)); ctx.scale(scale, scale);
     for (const [x, r, h] of REFINERY_TANKS) {
       const topY = 560 - h;
       const g = ctx.createLinearGradient(x - r, 0, x + r, 0);
@@ -1893,16 +2004,24 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
 
   function drawStormBackdrop(stage) {
-    drawStars(26, '#8fffb0', '#4de3a0');
     // Circuit seams pulse with each lightning flash for a synced "power surge".
     const surge = .32 + Math.min(1, lightning * 2.4) * .68;
-    drawWireRings(stage, surge);
-    for (const c of clouds) drawCloud(c, '#03120f', .55);
-    // Far parallax spire ridge, then mid code rain, panels, hero spires.
-    drawDataSpires((elapsed * -7) % 126, 545, 44, .34, surge * .5);
-    for (const p of bgProps) if (p.kind === 'code') drawCodeColumn(p, stage);
-    for (const p of bgProps) if (p.kind === 'panel') drawPanel(p, stage);
-    drawDataSpires((elapsed * -20) % 150, 618, 62, .95, surge);
+    bgLayer(.5, () => {
+      drawStars(26, '#8fffb0', '#4de3a0');
+      drawWireRings(stage, surge);
+      for (const c of clouds) drawCloud(c, '#03120f', .55);
+    });
+    bgLayer(.32, () => {
+      // Ultra-far third spire ridge behind the existing two.
+      drawDataSpires((elapsed * -3) % 90, 520, 30, .18, surge * .3);
+      drawDataSpires((elapsed * -7) % 126, 545, 44, .34, surge * .5);
+    });
+    drawDepthHaze(stage, .4);
+    bgLayer(.15, () => {
+      for (const p of bgProps) if (p.kind === 'code') drawCodeColumn(p, stage);
+      for (const p of bgProps) if (p.kind === 'panel') drawPanel(p, stage);
+      drawDataSpires((elapsed * -20) % 150, 618, 62, .95, surge);
+    });
     drawHoloGrid(stage);
     drawStormGround(stage);
     drawLightningBolt(stage);
@@ -2024,16 +2143,24 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
 
   function drawPalaceBackdrop(stage) {
-    ctx.save(); ctx.shadowColor = stage.accent2; ctx.shadowBlur = 42; ctx.fillStyle = '#ff6fb5';
-    heartPath(980, 150, 56); ctx.fill(); ctx.restore();
-    drawStars(70, '#ffe15a', '#ff9ccf');
-    for (const c of clouds) drawCloud(c, '#f8c7e6', .08);
-    ctx.save(); ctx.globalAlpha = .06; ctx.fillStyle = stage.accent;
-    for (let i = 0; i < 4; i++) { const bx = 120 + i * 300 + Math.sin(elapsed * .4 + i) * 30; ctx.beginPath(); ctx.moveTo(bx, -30); ctx.lineTo(bx + 120, -30); ctx.lineTo(bx + 300, 660); ctx.lineTo(bx + 180, 660); ctx.closePath(); ctx.fill(); }
-    ctx.restore();
-    drawPalaceTowers(stage);
-    drawColonnade();
+    bgLayer(.5, () => {
+      ctx.save(); ctx.shadowColor = stage.accent2; ctx.shadowBlur = 42; ctx.fillStyle = '#ff6fb5';
+      heartPath(980, 150, 56); ctx.fill(); ctx.restore();
+      drawStars(70, '#ffe15a', '#ff9ccf');
+      for (const c of clouds) drawCloud(c, '#f8c7e6', .08);
+      ctx.save(); ctx.globalAlpha = .06; ctx.fillStyle = stage.accent;
+      for (let i = 0; i < 4; i++) { const bx = 120 + i * 300 + Math.sin(elapsed * .4 + i) * 30; ctx.beginPath(); ctx.moveTo(bx, -30); ctx.lineTo(bx + 120, -30); ctx.lineTo(bx + 300, 660); ctx.lineTo(bx + 180, 660); ctx.closePath(); ctx.fill(); }
+      ctx.restore();
+    });
+    bgLayer(.32, () => {
+      drawPalaceTowers(stage);
+      // Middle colonnade row between the towers and the hero colonnade.
+      drawColonnade(.6, .4, 34);
+    });
+    drawDepthHaze(stage, .45);
+    bgLayer(.15, () => drawColonnade());
     drawPalaceFloor(stage);
+    drawGroundPlane(stage, { horizonY: 652, bottom: 716, color: '#ff9ccf', alpha: .12, speed: 150, gap: 128 });
   }
 
   function drawPalaceTowers(stage) {
@@ -2050,10 +2177,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
-  function drawColonnade() {
-    const off = (elapsed * -60) % 260;
-    ctx.save(); ctx.globalAlpha = .85;
-    for (let i = -1; i < 7; i++) {
+  // scale/alpha/speed allow a smaller, slower duplicate row deeper in the scene;
+  // the transform keeps the columns anchored to their y=652 base line.
+  function drawColonnade(scale = 1, alpha = .85, speed = 60) {
+    const off = (elapsed * -speed) % 260;
+    ctx.save(); ctx.globalAlpha = alpha;
+    ctx.translate(0, 652 * (1 - scale)); ctx.scale(scale, scale);
+    for (let i = -1; i < Math.ceil(VW / scale / 260) + 1; i++) {
       const x = i * 260 + off;
       ctx.fillStyle = '#2c0a24'; ctx.fillRect(x, 470, 40, 180);
       ctx.fillRect(x - 8, 462, 56, 14); ctx.fillRect(x - 8, 638, 56, 14);
@@ -3242,10 +3372,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.fillStyle = '#ffe15a'; ctx.font = '7px "Press Start 2P", monospace'; ctx.fillText(`POWER ${player.power}`, VW - 336, 88);
     ctx.fillStyle = '#31e8ff'; ctx.fillText(`WIDE ${player.spread}`, VW - 220, 88);
     ctx.fillStyle = '#72ff68'; ctx.fillText(`SPEED ${player.speed}`, VW - 126, 88);
-    // Remaining continues: three hearts on the HP label line, spent ones dimmed.
+    // Remaining continues: three hearts just under the HP panel, spent ones dimmed.
     for (let i = 0; i < 3; i++) {
       ctx.fillStyle = i < continuesLeft ? '#ff3e9d' : 'rgba(255,255,255,.18)';
-      heartPath(VW - 46 - (2 - i) * 22, 84, 8);
+      heartPath(VW - 46 - (2 - i) * 24, 110, 9);
       ctx.fill();
     }
     if (combo > 1 && comboTimer > 0) {
@@ -3451,9 +3581,20 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     }
     if (e.shiftKey && e.code === 'KeyM' && state === 'playing' && !paused && bossState === 'waiting' && !midBossDone) {
       stageTime = midbossStart();
+    } else if (e.shiftKey && e.code === 'KeyM' && state === 'playing' && !paused && bossState === 'midboss-active') {
+      // Second press instantly defeats the mid boss through the normal kill flow,
+      // so the post-mid phases (setpiece/eliteRush) can be tested without fighting.
+      const mid = enemies.find(en => en.type === 'midboss');
+      if (mid) { mid.hp = 0; destroyEnemy(mid, false); }
     }
     if (e.shiftKey && e.code === 'KeyB' && state === 'playing' && !paused && (bossState === 'waiting' || bossState === 'midboss-active')) {
       midBossDone = true; enemies = enemies.filter(en => en.type !== 'midboss'); bossState = 'waiting'; stageTime = 9999;
+    }
+    // Shift+T fast-forwards the stage timeline 30s (stops just short of the mid/boss
+    // trigger so each encounter still needs its own key) — for testing late phases.
+    if (e.shiftKey && e.code === 'KeyT' && state === 'playing' && !paused && bossState === 'waiting') {
+      const capAt = (midBossDone ? timelineTotal() : midbossStart()) - 1;
+      stageTime = Math.min(stageTime + 30, Math.max(stageTime, capAt));
     }
   });
   addEventListener('keyup', e => keys.delete(e.code));
