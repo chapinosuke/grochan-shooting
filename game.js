@@ -1551,9 +1551,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       heartPath(cx + side * 252, ly + 46, 17 * pulse); ctx.fill();
       ctx.restore();
     }
-    ctx.globalAlpha = .45 + .55 * Math.abs(Math.sin(t * 2.4));
-    ctx.fillStyle = '#fff'; ctx.font = '10px "Press Start 2P", monospace';
-    ctx.fillText('PRESS ENTER TO START', cx, ly + 96);
+    // The "start" prompt lives in the HTML title button (#titleEnter); drawing it
+    // here too duplicated the text on the title screen, so the canvas omits it.
     ctx.globalAlpha = 1; ctx.textAlign = 'left';
     ctx.restore();
   }
