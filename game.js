@@ -783,9 +783,9 @@
     if (keys.has('ArrowDown') || keys.has('KeyS')) ay++;
     const speedBoost = 1 + (player.speed - 1) * .18;
     if (player.grounded) {
-      // Takeoff: Up/W/pad, or a deliberate touch near the top of the screen.
-      // Normal tap/hold is ground shooting — do not launch from mid-screen presses.
-      const wantTakeoff = ay < 0 || (pointer.active && pointer.y < 160);
+      // Takeoff: Up/W/pad only, or a deliberate touch near the top of the screen.
+      // Mid-screen tap/hold must NOT launch — that is ground movement + auto-fire.
+      const wantTakeoff = ay < 0 || (pointer.active && pointer.y < 140);
       if (wantTakeoff) {
         player.grounded = false;
         player.vy = -320;
@@ -817,20 +817,24 @@
       player.y = GROUND_Y;
     } else {
       player.y = clamp(player.y + player.vy * dt, 32, GROUND_Y);
-      // Land when pressing down / touching the floor band, and only while not rising.
-      const wantLand = player.vy >= 0 && (ay > 0 || (pointer.active && pointer.y > 560));
-      if (player.y >= GROUND_Y && wantLand) {
+      // Auto-land when touching the floor while not rising (↓ optional).
+      const rising = player.vy < -40 || ay < 0;
+      if (player.y >= GROUND_Y && !rising) {
         player.grounded = true; player.y = GROUND_Y; player.vy = 0; burst(player.x + 55, GROUND_Y + 132, '#ffe15a', 9, 100);
       }
     }
-    const firing = keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire;
-    // Walk anim while moving or shooting on the ground (walk frames hold the gun).
-    const groundAnim = player.grounded && (Math.abs(player.vx) > 25 || firing);
-    player.frame += dt * (player.grounded ? (groundAnim ? 9 : 0) : 10);
+    // Ground mode auto-fires (walk frames hold a gun). Air still needs Space / hold / pad.
+    const firing = player.grounded || keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire;
+    player.frame += dt * (player.grounded ? (Math.abs(player.vx) > 20 ? 9 : 6) : 10);
     player.fire -= dt; player.missileFire -= dt;
-    // Ground and air both shoot — walk sprites already hold the pink blaster.
-    if (!['transition', 'final'].includes(bossState) && firing && player.fire <= 0) { shoot(); player.fire = player.grounded ? .16 : .145; }
-    if (!['transition', 'final'].includes(bossState) && firing && player.power >= 2 && player.missileFire <= 0) { shootMissile(); player.missileFire = player.power >= 3 ? .82 : 1.18; }
+    if (!['transition', 'final'].includes(bossState) && firing && player.fire <= 0) {
+      shoot();
+      player.fire = player.grounded ? .155 : .145;
+    }
+    if (!['transition', 'final'].includes(bossState) && firing && player.power >= 2 && player.missileFire <= 0) {
+      shootMissile();
+      player.missileFire = player.power >= 3 ? .82 : 1.18;
+    }
 
     spawnTimer -= dt;
     formationTimer -= dt;
@@ -1805,11 +1809,8 @@
     }
     ctx.fillStyle = 'rgba(49,232,255,.18)'; ctx.beginPath(); ctx.ellipse(player.x + 56, player.y + (player.grounded ? 155 : 96), 54, 11, 0, 0, Math.PI * 2); ctx.fill();
     if (player.grounded && idleFrame && walkFrames.length) {
-      // Idle has no gun; show walk (gun-ready) while moving or shooting.
-      const shooting = keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire;
-      const frame = (Math.abs(player.vx) > 25 || shooting)
-        ? walkFrames[Math.floor(player.frame) % walkFrames.length]
-        : idleFrame;
+      // Ground auto-fires, so always use walk frames (they hold the gun).
+      const frame = walkFrames[Math.floor(player.frame) % walkFrames.length];
       ctx.drawImage(frame, player.x - 8, player.y - 28, 130, 190);
     } else if (spriteFrames.length) {
       const frame = spriteFrames[Math.floor(player.frame) % spriteFrames.length];
@@ -2380,7 +2381,7 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, enemies: enemies.length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, enemies: enemies.length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, firing: player.grounded || keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire }) });
 
   resize(); initBackdrop(); setupStage(); requestAnimationFrame(frame);
 })();
