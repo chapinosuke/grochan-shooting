@@ -29,7 +29,7 @@
 
 ## 残タスク（ユーザー承認済み・優先順は「背景→敵→弾は着手済、残りを継続」）
 - [x] **factory背景の深化**（`drawFactoryBackdrop` ~1592行）: `drawRefineryTanks`（リベット＋発光窓の精錬タンク3基、屋根越しに突出配置）、`drawHammerPress`（周期スラム＋着弾フラッシュのハイドロプレス、gearと同じ「浮遊」扱いで固定スクリーン座標）、`drawMoltenRiver`（コンベア下の流動溶岩グロー）を追加。`REFINERY_TANKS`定数追加。
-- [ ] **ボス2〜5の磨き**（`drawBoss` の `stageIndex===1..4`, ~2543行〜）: シルエットは立っている(生物/高炉/菱形/ハート)が、**顔部に平板な黒fillRect**が残る→角丸グロスバイザー＋発光目にすると質感が揃う。
+- [x] **ボス2〜5の磨き**（`drawBoss` の `stageIndex===1..4`）: 共有ヘルパー`drawVisorPanel`(角丸グラデ+ハイライト)/`drawGlowDot`(加算グローの発光瞳)を新設し、DEEP BLUE DIVA/BLAZE EMPRESS/VOLT PHANTOM/QUEEN OF HEARTBREAKの平板な黒fillRect目を角丸グロスバイザー＋発光瞳に刷新（最終ボスはハート型瞳でstage1と統一感）。
 - [x] **着弾FX/破片/ヒットストップ**（Phase3後半）: `hitStop`変数を追加し`frame()`で`dt*=.15`のスロー処理（`collisions()`の被弾/`destroyEnemy()`/`hurt()`から`Math.max`でセット、大きさは雑魚<タンク<中ボス<ボスの順）。`burstDebris()`を新設し、角ばった`shape:'shard'`パーティクル（回転しながら落下する破片）を`burst()`の丸グロー粒子と併用。自弾ヒット時は小チップ2枚、撃破時は雑魚7〜ボス26枚。
 - [ ] **二次アニメ**（Phase2の残り）: wind-up（`e.windup`）/被弾ダメージ状態/瞬き。※`e.recoil`は既にtank砲身が参照、turret砲身は既にプレイヤー追尾。
 - [ ] **Phase5 ステージ個性**: タイトルカード強化、**中ボス5種差別化**（現状は全stageで同一シェルの色替え。固定名`'CRIMSON WARDEN'`をステージ別名に）、敵へのステージ色デカール。

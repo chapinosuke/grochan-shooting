@@ -2664,6 +2664,27 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
 
 
+  // Rounded, bevelled visor plate — replaces flat black fillRect face panels
+  // on bosses 2-5 with the same glossy-shell language as the stage1 boss.
+  function drawVisorPanel(x, y, w, h, r, base, top) {
+    ctx.fillStyle = shade(base, .7); ctx.beginPath(); ctx.roundRect(x - 3, y - 3, w + 6, h + 6, r + 3); ctx.fill();
+    const g = ctx.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, top); g.addColorStop(1, base);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill();
+    ctx.save(); ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.clip();
+    const gl = ctx.createLinearGradient(x, y, x, y + h * .6);
+    gl.addColorStop(0, 'rgba(255,255,255,.22)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gl; ctx.fillRect(x, y, w, h);
+    ctx.restore();
+  }
+  // Soft additive glow behind an eye pupil so it reads as lit, not painted-on.
+  function drawGlowDot(cx, cy, r, color) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(cx, cy, 1, cx, cy, r);
+    g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(.4, hexA(color, .9)); g.addColorStop(1, hexA(color, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
   function drawBoss(e) {
     const stage = stages[stageIndex];
     const pulse = 4 + Math.sin(e.t * 5) * 3;
@@ -2759,9 +2780,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const body = ctx.createRadialGradient(70, 70, 10, 100, 100, 90);
       body.addColorStop(0, '#65fff2'); body.addColorStop(.4, '#2f8cff'); body.addColorStop(1, '#071d42');
       ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(100, 95, 68, 55, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#071d42'; ctx.fillRect(45, 70, 95, 40);
-      ctx.fillStyle = '#65fff2'; ctx.fillRect(55, 80, 22, 18); ctx.fillRect(95, 80, 22, 18);
-      ctx.fillStyle = '#fff'; ctx.fillRect(60, 84, 7, 7); ctx.fillRect(100, 84, 7, 7);
+      drawVisorPanel(45, 68, 95, 42, 18, '#030a1e', '#0d3a5c');
+      for (const ex of [66, 124]) drawGlowDot(ex, 89, 15, '#65fff2');
+      ctx.fillStyle = '#65fff2'; ctx.beginPath(); ctx.roundRect(58, 82, 16, 14, 6); ctx.fill(); ctx.beginPath(); ctx.roundRect(116, 82, 16, 14, 6); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(63, 87, 3, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(121, 87, 3, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#65fff2';
       ctx.beginPath(); ctx.moveTo(60, 42); ctx.lineTo(80, 2); ctx.lineTo(95, 40); ctx.closePath(); ctx.fill();
       ctx.beginPath(); ctx.moveTo(95, 40); ctx.lineTo(115, -6); ctx.lineTo(130, 38); ctx.closePath(); ctx.fill();
@@ -2777,13 +2799,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawBox3D(176, 20, 34, 72, '#2b1230', 7);
       drawBox3D(35, 55, 160, 122, '#3a1626', 10);
       drawBox3D(45, 65, 140, 102, '#57202c', 7);
-      ctx.fillStyle = '#180509'; ctx.fillRect(60, 112, 110, 48);
+      ctx.fillStyle = '#180509'; ctx.beginPath(); ctx.roundRect(60, 112, 110, 48, 12); ctx.fill();
       for (let i = 0; i < 4; i++) {
         ctx.save(); ctx.globalAlpha = .55 + Math.sin(e.t * 6 + i) * .4;
         ctx.fillStyle = '#ff5a36'; ctx.fillRect(66 + i * 27, 118, 18, 36); ctx.restore();
       }
-      ctx.fillStyle = '#ffe15a'; ctx.fillRect(70, 78, 26, 16); ctx.fillRect(134, 78, 26, 16);
-      ctx.fillStyle = '#180509'; ctx.fillRect(76, 82, 8, 8); ctx.fillRect(140, 82, 8, 8);
+      drawVisorPanel(70, 76, 26, 18, 8, '#7a2708', '#ffb347'); drawVisorPanel(134, 76, 26, 18, 8, '#7a2708', '#ffb347');
+      for (const ex of [83, 147]) drawGlowDot(ex, 85, 11, '#ffe15a');
+      ctx.fillStyle = '#180509'; ctx.beginPath(); ctx.roundRect(78, 80, 10, 10, 4); ctx.fill(); ctx.beginPath(); ctx.roundRect(142, 80, 10, 10, 4); ctx.fill();
       ctx.fillStyle = '#ffe15a';
       ctx.beginPath(); ctx.moveTo(85, 55); ctx.lineTo(95, 30); ctx.lineTo(105, 55); ctx.lineTo(115, 26); ctx.lineTo(125, 55); ctx.lineTo(135, 32); ctx.lineTo(145, 55); ctx.closePath(); ctx.fill();
       ctx.shadowBlur = 0;
@@ -2800,8 +2823,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.beginPath(); ctx.moveTo(115, 5); ctx.lineTo(215, 95); ctx.lineTo(115, 185); ctx.lineTo(15, 95); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#0b2e18';
       ctx.beginPath(); ctx.moveTo(115, 25); ctx.lineTo(195, 95); ctx.lineTo(115, 165); ctx.lineTo(35, 95); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#72ff68'; ctx.fillRect(75, 80, 30, 12); ctx.fillRect(125, 80, 30, 12);
-      ctx.fillStyle = '#d6ffd0'; ctx.fillRect(83, 83, 9, 6); ctx.fillRect(133, 83, 9, 6);
+      drawVisorPanel(75, 78, 30, 14, 7, '#0b2e18', '#164636'); drawVisorPanel(125, 78, 30, 14, 7, '#0b2e18', '#164636');
+      for (const ex of [90, 140]) drawGlowDot(ex, 85, 12, '#72ff68');
+      ctx.fillStyle = '#d6ffd0'; ctx.beginPath(); ctx.roundRect(83, 82, 9, 6, 3); ctx.fill(); ctx.beginPath(); ctx.roundRect(133, 82, 9, 6, 3); ctx.fill();
       ctx.strokeStyle = '#72ff68'; ctx.lineWidth = 4; ctx.beginPath();
       for (let i = 0; i <= 6; i++) ctx.lineTo(80 + i * 12, 125 + (i % 2 ? 8 : 0));
       ctx.stroke();
@@ -2815,8 +2839,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const heart = ctx.createRadialGradient(90, 70, 10, 115, 100, 80);
       heart.addColorStop(0, '#ff6eb0'); heart.addColorStop(.5, '#d82065'); heart.addColorStop(1, '#72114e');
       ctx.fillStyle = heart; heartPath(115, 96, 78); ctx.fill();
-      ctx.fillStyle = '#25051d'; ctx.fillRect(70, 70, 34, 26); ctx.fillRect(126, 70, 34, 26);
-      ctx.fillStyle = '#ffe15a'; ctx.fillRect(78, 76, 12, 12); ctx.fillRect(134, 76, 12, 12);
+      drawVisorPanel(70, 68, 34, 28, 13, '#1a0313', '#4a0e34'); drawVisorPanel(126, 68, 34, 28, 13, '#1a0313', '#4a0e34');
+      for (const ex of [87, 143]) drawGlowDot(ex, 83, 14, '#ffe15a');
+      ctx.fillStyle = '#ffe15a'; heartPath(87, 84, 9); ctx.fill(); heartPath(143, 84, 9); ctx.fill();
       ctx.strokeStyle = '#25051d'; ctx.lineWidth = 6;
       ctx.beginPath(); ctx.moveTo(68, 60); ctx.lineTo(104, 72); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(162, 60); ctx.lineTo(126, 72); ctx.stroke();
