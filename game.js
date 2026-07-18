@@ -116,9 +116,9 @@
   let padActionWasDown = false;
   let padSpecialWasDown = false;
   const difficulties = {
-    easy: { spawn: .92, speed: .88, damage: .72, bossTime: 48, bossHp: 220, score: .8, midHp: 70 },
-    normal: { spawn: .72, speed: 1.05, damage: 1.05, bossTime: 42, bossHp: 340, score: 1, midHp: 110 },
-    hard: { spawn: .55, speed: 1.28, damage: 1.35, bossTime: 36, bossHp: 480, score: 1.45, midHp: 160 }
+    easy: { spawn: .92, speed: .88, damage: .72, timeScale: 1.06, bossHp: 220, score: .8, midHp: 70 },
+    normal: { spawn: .72, speed: 1.05, damage: 1.05, timeScale: 1, bossHp: 340, score: 1, midHp: 110 },
+    hard: { spawn: .55, speed: 1.28, damage: 1.35, timeScale: .92, bossHp: 480, score: 1.45, midHp: 160 }
   };
   const stages = [
     {
@@ -157,6 +157,51 @@
       bass: [65.41, 65.41, 77.78, 77.78, 98, 98, 58.27, 65.41]
     }
   ];
+
+  // Scripted stage timeline. stageTime only advances while bossState === 'waiting',
+  // so warnings/mid-boss/boss fights add on top → ~5 min of wall time per stage.
+  // Durations are scaled by difficulties[..].timeScale.
+  const PHASE_TEMPLATE = [
+    { id: 'opening', dur: 18, mode: 'trickle', intensity: .25 },
+    { id: 'buildup', dur: 32, mode: 'assault', intensity: .5 },
+    { id: 'formationA', dur: 26, mode: 'formation', intensity: .6 },
+    { id: 'breather1', dur: 10, mode: 'calm', intensity: .15 },
+    { id: 'midboss', dur: 0, mode: 'midboss' },
+    { id: 'recover', dur: 12, mode: 'calm', intensity: .2 },
+    { id: 'assault2', dur: 36, mode: 'assault', intensity: .7 },
+    { id: 'setpiece', dur: 28, mode: 'setpiece', intensity: .75 },
+    { id: 'breather2', dur: 10, mode: 'calm', intensity: .2 },
+    { id: 'eliteRush', dur: 30, mode: 'formation', intensity: .9, elite: true },
+    { id: 'finalPush', dur: 24, mode: 'assault', intensity: 1 }
+  ];
+  const SETPIECE_TIMES = [0, 6, 12, 18, 23];
+  function timeScale() { return difficulties[difficultyKey].timeScale; }
+  function timelineTotal() {
+    let t = 0;
+    for (const p of PHASE_TEMPLATE) t += p.dur;
+    return t * timeScale();
+  }
+  function midbossStart() {
+    let t = 0;
+    for (const p of PHASE_TEMPLATE) { if (p.mode === 'midboss') break; t += p.dur; }
+    return t * timeScale();
+  }
+  // Stateless lookup so the Shift+M/Shift+B debug jumps stay consistent.
+  function currentPhase(t) {
+    const s = timeScale();
+    let acc = 0;
+    for (const p of PHASE_TEMPLATE) {
+      const d = p.dur * s;
+      if (t < acc + d) return { phase: p, tIn: t - acc };
+      acc += d;
+    }
+    const last = PHASE_TEMPLATE[PHASE_TEMPLATE.length - 1];
+    return { phase: last, tIn: t - (acc - last.dur * s) };
+  }
+  let activePhase = PHASE_TEMPLATE[0];
+  let activeTIn = 0;
+  let lastPhaseId = '';
+  let setpieceStep = 0;
 
   const GROUND_Y = 500;
   const CHIMNEYS = [[120, 60, 210], [196, 44, 160], [880, 70, 230], [1010, 50, 180], [430, 40, 140]];
@@ -508,23 +553,27 @@
   function spawnEnemy(typeOverride = null, formation = null) {
     const type = typeOverride || pickSpawnType();
     const y = formation?.y ?? (80 + Math.random() * (VH - 210));
+    // Difficulty ramps with phase intensity + early stage progress, capped so a
+    // 5-minute timeline never runs enemy speed off the rails.
+    const rank = Math.min(1, stageTime / 120) * (.4 + .6 * (activePhase.intensity ?? .5));
     let e;
-    if (type === 'drone') e = { type, x: VW + 70, y, baseY: y, w: 64, h: 56, hp: 2, maxHp: 2, vx: 175 + stageTime * .8, t: Math.random() * 6, wave: Math.random() < .46, points: 120, fire: 1 + Math.random() * 2.2 };
-    else if (type === 'bat') e = { type, x: VW + 70, y, baseY: y, w: 70, h: 50, hp: 1, maxHp: 1, vx: 255 + stageTime, t: Math.random() * 6, wave: true, points: 180, fire: 99 };
-    else if (type === 'spinner') e = { type, x: VW + 80, y, baseY: y, w: 76, h: 76, hp: 4, maxHp: 4, vx: 150 + stageTime * .7, t: 0, wave: true, points: 350, fire: 1.3 };
-    else if (type === 'tank') e = { type, x: VW + 90, y, baseY: y, w: 98, h: 78, hp: 7, maxHp: 7, vx: 105 + stageTime * .5, t: 0, wave: false, points: 600, fire: .9 };
+    if (type === 'drone') e = { type, x: VW + 70, y, baseY: y, w: 64, h: 56, hp: 2, maxHp: 2, vx: 175 + rank * 40, t: Math.random() * 6, wave: Math.random() < .46, points: 120, fire: 1 + Math.random() * 2.2 };
+    else if (type === 'bat') e = { type, x: VW + 70, y, baseY: y, w: 70, h: 50, hp: 1, maxHp: 1, vx: 255 + rank * 50, t: Math.random() * 6, wave: true, points: 180, fire: 99 };
+    else if (type === 'spinner') e = { type, x: VW + 80, y, baseY: y, w: 76, h: 76, hp: 4, maxHp: 4, vx: 150 + rank * 35, t: 0, wave: true, points: 350, fire: 1.3 };
+    else if (type === 'tank') e = { type, x: VW + 90, y, baseY: y, w: 98, h: 78, hp: 7, maxHp: 7, vx: 105 + rank * 25, t: 0, wave: false, points: 600, fire: .9 };
     else if (type === 'turret') e = { type, x: VW + 80, y: 574, baseY: 574, w: 74, h: 72, hp: 5, maxHp: 5, vx: 125, t: 0, wave: false, points: 480, fire: .7 };
-    else if (type === 'jelly') e = { type, x: VW + 70, y: Math.min(y, 460), baseY: Math.min(y, 460), w: 62, h: 66, hp: 3, maxHp: 3, vx: 85 + stageTime * .4, t: Math.random() * 6, wave: true, points: 260, fire: 99 };
-    else if (type === 'ember') e = { type, x: VW + 60, y: 606, baseY: 606, w: 44, h: 44, hp: 1, maxHp: 1, vx: 290 + stageTime, t: Math.random() * 2, wave: false, points: 220, fire: 99, vy: -(330 + Math.random() * 180) };
+    else if (type === 'jelly') e = { type, x: VW + 70, y: Math.min(y, 460), baseY: Math.min(y, 460), w: 62, h: 66, hp: 3, maxHp: 3, vx: 85 + rank * 20, t: Math.random() * 6, wave: true, points: 260, fire: 99 };
+    else if (type === 'ember') e = { type, x: VW + 60, y: 606, baseY: 606, w: 44, h: 44, hp: 1, maxHp: 1, vx: 290 + rank * 50, t: Math.random() * 2, wave: false, points: 220, fire: 99, vy: -(330 + Math.random() * 180) };
     else if (type === 'glitch') e = { type, x: VW + 70, y, baseY: y, w: 58, h: 58, hp: 3, maxHp: 3, vx: 140, t: Math.random() * 6, wave: false, points: 320, fire: 1.7, tp: .6 + Math.random() * .6, blink: 0 };
-    else if (type === 'racer') e = { type, x: VW + 90, y: clamp(y, 170, 510), baseY: clamp(y, 170, 510), w: 84, h: 46, hp: 3, maxHp: 3, vx: 285 + stageTime, t: Math.random() * 6, wave: true, points: 420, fire: 1.25 };
-    else if (type === 'manta') e = { type, x: VW + 90, y: Math.min(y, 455), baseY: Math.min(y, 455), w: 88, h: 52, hp: 4, maxHp: 4, vx: 125 + stageTime * .55, t: Math.random() * 6, wave: true, points: 440, fire: 1.45 };
-    else if (type === 'walker') e = { type, x: VW + 90, y: 548, baseY: 548, w: 84, h: 92, hp: 8, maxHp: 8, vx: 92 + stageTime * .35, t: Math.random() * 2, wave: false, points: 760, fire: .85 };
-    else if (type === 'seeker') e = { type, x: VW + 80, y, baseY: y, w: 68, h: 68, hp: 5, maxHp: 5, vx: 155 + stageTime * .6, t: Math.random() * 6, wave: true, points: 520, fire: 1.15 };
-    else if (type === 'knight') e = { type, x: VW + 80, y: Math.min(y, 500), baseY: Math.min(y, 500), w: 72, h: 82, hp: 7, maxHp: 7, vx: 115 + stageTime * .4, t: Math.random() * 6, wave: true, points: 680, fire: 1.3 };
+    else if (type === 'racer') e = { type, x: VW + 90, y: clamp(y, 170, 510), baseY: clamp(y, 170, 510), w: 84, h: 46, hp: 3, maxHp: 3, vx: 285 + rank * 50, t: Math.random() * 6, wave: true, points: 420, fire: 1.25 };
+    else if (type === 'manta') e = { type, x: VW + 90, y: Math.min(y, 455), baseY: Math.min(y, 455), w: 88, h: 52, hp: 4, maxHp: 4, vx: 125 + rank * 28, t: Math.random() * 6, wave: true, points: 440, fire: 1.45 };
+    else if (type === 'walker') e = { type, x: VW + 90, y: 548, baseY: 548, w: 84, h: 92, hp: 8, maxHp: 8, vx: 92 + rank * 18, t: Math.random() * 2, wave: false, points: 760, fire: .85 };
+    else if (type === 'seeker') e = { type, x: VW + 80, y, baseY: y, w: 68, h: 68, hp: 5, maxHp: 5, vx: 155 + rank * 30, t: Math.random() * 6, wave: true, points: 520, fire: 1.15 };
+    else if (type === 'knight') e = { type, x: VW + 80, y: Math.min(y, 500), baseY: Math.min(y, 500), w: 72, h: 82, hp: 7, maxHp: 7, vx: 115 + rank * 20, t: Math.random() * 6, wave: true, points: 680, fire: 1.3 };
     else e = { type: 'cupid', x: VW + 70, y, baseY: y, w: 62, h: 58, hp: 3, maxHp: 3, vx: 120, t: Math.random() * 6, wave: true, points: 340, fire: 1.6 };
     const variantRoll = Math.random();
     e.variant = variantRoll < .11 ? 'elite' : variantRoll < .31 ? 'armored' : 'standard';
+    if (formation?.elite) e.variant = 'elite';
     if (e.variant === 'armored') { e.hp = Math.ceil(e.hp * 1.45); e.maxHp = e.hp; e.vx *= .88; e.points = Math.round(e.points * 1.45); }
     if (e.variant === 'elite') { e.hp = Math.ceil(e.hp * 1.25); e.maxHp = e.hp; e.vx *= 1.2; e.fire *= .72; e.points = Math.round(e.points * 1.8); }
     const hpBonus = Math.floor(stageIndex / 2);
@@ -539,7 +588,7 @@
     enemies.push(e);
   }
 
-  function spawnFormation() {
+  function spawnFormation(elite = false) {
     const type = pickSpawnType();
     const groundType = ['tank', 'turret', 'ember', 'walker'].includes(type);
     const count = groundType ? 2 : (Math.random() < .35 ? 4 : 3);
@@ -548,9 +597,37 @@
     for (let i = 0; i < count; i++) {
       const offset = i - (count - 1) / 2;
       const y = groundType ? 560 : clamp(centerY + (shape === 'vee' ? Math.abs(offset) * 58 : offset * 64), 75, 535);
-      spawnEnemy(type, { y, xOffset: i * 82 + (shape === 'vee' ? Math.abs(offset) * 35 : 0), shape, slot: i });
+      spawnEnemy(type, { y, xOffset: i * 82 + (shape === 'vee' ? Math.abs(offset) * 35 : 0), shape, slot: i, elite });
     }
     formationTimer = 3.2 + Math.random() * 2.4;
+  }
+
+  // Big scripted formations for the 'setpiece' phase — each stage uses its own
+  // signature enemies from the spawnTable, so no bespoke enemy code is needed.
+  function runSetpiece(step) {
+    const table = stages[stageIndex].spawnTable;
+    const GROUND_TYPES = ['tank', 'turret', 'ember', 'walker'];
+    const air = table.filter(([t]) => !GROUND_TYPES.includes(t));
+    const ground = table.filter(([t]) => GROUND_TYPES.includes(t));
+    const airType = air.length ? air[step % air.length][0] : 'drone';
+    const pattern = step % 3;
+    if (pattern === 0) {
+      // Double vee: one wing high, one wing low.
+      for (const cy of [150, 420]) for (let i = 0; i < 5; i++) {
+        const off = i - 2;
+        spawnEnemy(airType, { y: clamp(cy + Math.abs(off) * 52, 75, 535), xOffset: Math.abs(off) * 70, shape: 'vee', slot: i });
+      }
+    } else if (pattern === 1 && ground.length) {
+      // Ground column with air cover.
+      for (let i = 0; i < 3; i++) spawnEnemy(ground[i % ground.length][0], { y: 560, xOffset: i * 120, shape: 'column', slot: i });
+      for (let i = 0; i < 3; i++) spawnEnemy(airType, { y: 140 + i * 90, xOffset: i * 60, shape: 'column', slot: i });
+    } else {
+      // Pincer: two columns closing from top and bottom.
+      for (let i = 0; i < 4; i++) {
+        spawnEnemy(airType, { y: 90 + i * 46, xOffset: i * 85, shape: 'column', slot: i });
+        spawnEnemy(airType, { y: 530 - i * 46, xOffset: i * 85, shape: 'column', slot: i });
+      }
+    }
   }
 
   function spawnBoss() {
@@ -816,7 +893,13 @@
     if (bossState === 'waiting') stageTime += dt;
     stageBanner = Math.max(0, stageBanner - dt);
     continueBanner = Math.max(0, continueBanner - dt);
-    gameSpeed = Math.min(1.6, 1 + stageTime / 100) + stageIndex * .08;
+    const phaseInfo = currentPhase(stageTime);
+    activePhase = phaseInfo.phase; activeTIn = phaseInfo.tIn;
+    if (activePhase.id !== lastPhaseId) { lastPhaseId = activePhase.id; setpieceStep = 0; }
+    // Scroll speed follows the phase's intensity (boss fights run hot), eased to avoid jumps.
+    const intensity = bossState === 'waiting' ? (activePhase.intensity ?? .5) : .8;
+    const targetSpeed = 1 + intensity * .45 + stageIndex * .08;
+    gameSpeed += (targetSpeed - gameSpeed) * Math.min(1, dt * 1.2);
     shake = Math.max(0, shake - dt * 25); flash = Math.max(0, flash - dt * 3);
     specialFlash = Math.max(0, specialFlash - dt);
     player.inv = Math.max(0, player.inv - dt);
@@ -826,8 +909,8 @@
     const difficulty = difficulties[difficultyKey];
     // The supplied full-length tracks replace the old generated note loop.
 
-    const bossAt = difficulty.bossTime + stageIndex * 3;
-    const midAt = bossAt * .38;
+    const bossAt = timelineTotal();
+    const midAt = midbossStart();
 if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       bossState = 'midboss-warning'; bossWarning = 3.0; enemies = []; enemyBullets = []; bullets = []; sfx('warning');
       playBgm('midBoss', true);
@@ -930,27 +1013,58 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     spawnTimer -= dt;
     formationTimer -= dt;
     if (bossState === 'waiting' && stageBanner <= 1.2 && spawnTimer <= 0) {
-      const cap = 9 + stageIndex;
-      if (formationTimer <= 0 && enemies.length < cap) {
-        spawnFormation();
-        // Bonus second pack for volume
-        if (Math.random() < .55 && enemies.length < cap) spawnFormation();
-        spawnTimer = 1.05 + Math.random() * .35;
-      } else if (enemies.length < cap) {
-        spawnEnemy();
-        if (Math.random() < .45 && enemies.length < cap) spawnEnemy();
-        if (Math.random() < .22 && enemies.length < cap) spawnEnemy();
-        spawnTimer = ((.32 + Math.random() * .28) * difficulty.spawn) / gameSpeed;
-      } else {
-        spawnTimer = .35;
+      const inten = activePhase.intensity ?? .5;
+      const mode = activePhase.mode;
+      if (mode === 'calm') {
+        if (enemies.length < 3) spawnEnemy();
+        spawnTimer = 1.4 + Math.random() * .8;
+      } else if (mode === 'trickle') {
+        if (enemies.length < 5) spawnEnemy();
+        spawnTimer = (.7 + Math.random() * .4) * difficulty.spawn;
+      } else if (mode === 'setpiece') {
+        // Scripted launches happen below; keep only a light filler trickle here.
+        if (enemies.length < 4) spawnEnemy();
+        spawnTimer = 1.1 + Math.random() * .5;
+      } else if (mode === 'formation') {
+        const cap = Math.round(7 + 4 * inten) + stageIndex;
+        if (enemies.length < cap) {
+          spawnFormation(activePhase.elite);
+          if (Math.random() < .4 && enemies.length < cap) spawnFormation(activePhase.elite);
+        }
+        spawnTimer = 1.2 + Math.random() * .5;
+      } else { // assault
+        const cap = Math.round(6 + 4 * inten) + stageIndex;
+        if (formationTimer <= 0 && enemies.length < cap) {
+          spawnFormation();
+          // Bonus second pack for volume
+          if (Math.random() < .55 && enemies.length < cap) spawnFormation();
+          spawnTimer = 1.05 + Math.random() * .35;
+        } else if (enemies.length < cap) {
+          spawnEnemy();
+          if (Math.random() < .45 && enemies.length < cap) spawnEnemy();
+          if (Math.random() < .44 * inten && enemies.length < cap) spawnEnemy();
+          spawnTimer = ((.32 + Math.random() * .28) * difficulty.spawn) / (gameSpeed * (.6 + inten * .8));
+        } else {
+          spawnTimer = .35;
+        }
       }
+    }
+    // Set-piece events fire at exact offsets within the phase, outside the spawnTimer gate.
+    if (bossState === 'waiting' && stageBanner <= 1.2 && activePhase.mode === 'setpiece'
+      && setpieceStep < SETPIECE_TIMES.length && activeTIn >= SETPIECE_TIMES[setpieceStep] * timeScale()) {
+      runSetpiece(setpieceStep);
+      setpieceStep++;
     }
     pickupTimer -= dt;
     if (pickupTimer <= 0 && (bossState === 'waiting' || bossState === 'active' || bossState === 'midboss-active')) {
       const roll = Math.random();
-      const type = roll < .28 ? 'heal' : roll < .53 ? 'power' : roll < .76 ? 'spread' : 'speed';
+      // Once all upgrades are maxed, mostly drop heals so 5-minute stages don't
+      // shower the player with dead pickups.
+      const allMaxed = player.power >= 3 && player.spread >= 3 && player.speed >= 3;
+      const type = allMaxed ? (roll < .8 ? 'heal' : roll < .87 ? 'power' : roll < .94 ? 'spread' : 'speed')
+        : roll < .28 ? 'heal' : roll < .53 ? 'power' : roll < .76 ? 'spread' : 'speed';
       pickups.push({ type, kind: type === 'heal' ? (Math.random() < .5 ? 'drink' : 'burger') : null, x: VW + 30, y: 100 + Math.random() * (VH - 240), r: 19, t: 0 });
-      pickupTimer = 8 + Math.random() * 7;
+      pickupTimer = (8 + Math.random() * 7) * (activePhase.mode === 'calm' ? 1.6 : 1);
     }
 
     for (const s of stars) { s.x -= s.s * 15 * dt * gameSpeed; s.a += dt * 2; if (s.x < -5) { s.x = VW + 5; s.y = Math.random() * VH * .75; } }
@@ -1123,8 +1237,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       midBossDone = true; bossState = 'waiting'; enemyBullets = []; bullets = [];
       health = Math.min(maxHealth, health + 22); special = Math.min(100, special + 30);
       // Ensure the post-mid stretch has volume before the main boss.
-      const bossAtNow = difficulties[difficultyKey].bossTime + stageIndex * 3;
-      stageTime = Math.max(stageTime, bossAtNow * .38 + 1.2);
+      stageTime = Math.max(stageTime, midbossStart() + 1.2);
       pickups.push({ type: 'power', x: e.x + e.w / 2, y: e.y + e.h / 2, r: 19, t: 0 });
       const drop = Math.random() < .5 ? 'spread' : 'heal';
       pickups.push({ type: drop, kind: drop === 'heal' ? (Math.random() < .5 ? 'drink' : 'burger') : null, x: e.x + e.w / 2 + 40, y: e.y + e.h / 2 - 20, r: 19, t: 0 });
@@ -1139,7 +1252,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         delayedBursts.push({ x: e.x + Math.random() * e.w, y: e.y + Math.random() * e.h, t: .08 + i * .11, color: i % 3 ? '#ffe15a' : stage.accent2, boom: i % 2 === 0 });
       }
       const noDamageBonus = stageDamaged ? 0 : 5000;
-      const timeBonus = Math.max(0, Math.round((60 - (elapsed - stageStart)) * 50));
+      const timeBonus = Math.max(0, Math.round((timelineTotal() + 120 - (elapsed - stageStart)) * 50));
       stageResult = { kills: stageKills, time: elapsed - stageStart, noDamageBonus, timeBonus };
       score += (noDamageBonus + timeBonus) * difficulties[difficultyKey].score;
     }
@@ -3337,7 +3450,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       stageResult = { kills: stageKills, time: elapsed - stageStart, noDamageBonus: stageDamaged ? 0 : 5000, timeBonus: 0 };
     }
     if (e.shiftKey && e.code === 'KeyM' && state === 'playing' && !paused && bossState === 'waiting' && !midBossDone) {
-      stageTime = (difficulties[difficultyKey].bossTime + stageIndex * 3) * .38;
+      stageTime = midbossStart();
     }
     if (e.shiftKey && e.code === 'KeyB' && state === 'playing' && !paused && (bossState === 'waiting' || bossState === 'midboss-active')) {
       midBossDone = true; enemies = enemies.filter(en => en.type !== 'midboss'); bossState = 'waiting'; stageTime = 9999;
@@ -3377,7 +3490,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, stageTime, enemies: enemies.length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, stageTime, phaseId: activePhase.id, enemies: enemies.length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
 
   resize(); initBackdrop(); setupStage(); requestAnimationFrame(frame);
 })();
