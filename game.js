@@ -2038,9 +2038,21 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = '#f4f0ff'; ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(-8, -7); ctx.lineTo(-8, 7); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#ff3e9d'; ctx.fillRect(-7, -8, 6, 16); ctx.fillStyle = '#ffe15a'; ctx.fillRect(-12, -3, 7, 6); ctx.restore(); return;
     }
-    ctx.fillStyle = 'rgba(255,62,157,.25)'; ctx.fillRect(b.x - 30, b.y - size, 42, size * 2);
-    ctx.fillStyle = b.damage >= 3 ? '#ff8a35' : '#ffe15a'; ctx.fillRect(b.x - 13, b.y - size / 2, 24 + b.damage * 3, size);
-    ctx.fillStyle = '#fff'; ctx.fillRect(b.x, b.y - 2, 13, 4);
+    // Velocity-oriented three-layer comet trail (pink → yellow → white) + star head.
+    const a = Math.atan2(b.vy || 0, b.vx || 1);
+    const spd = Math.hypot(b.vx || 0, b.vy || 0) || 600;
+    const len = 22 + spd * .028 + b.damage * 4;
+    ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a);
+    ctx.fillStyle = 'rgba(255,62,157,.22)';
+    ctx.beginPath(); ctx.moveTo(-len, 0); ctx.lineTo(7, -size); ctx.lineTo(7, size); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,225,90,.5)';
+    ctx.beginPath(); ctx.moveTo(-len * .58, 0); ctx.lineTo(9, -size * .62); ctx.lineTo(9, size * .62); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    ctx.beginPath(); ctx.moveTo(-len * .3, 0); ctx.lineTo(10, -size * .34); ctx.lineTo(10, size * .34); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = b.damage >= 3 ? '#ff8a35' : '#ffe15a';
+    ctx.beginPath(); ctx.arc(8, 0, size * .72, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(9, 0, size * .34, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 
   function drawEnemyBullet(b) {
@@ -2061,14 +2073,30 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.arc(b.x - b.vx * .008, b.y - b.vy * .008, b.r * .5, 0, Math.PI * 2); ctx.fill(); ctx.restore(); return;
     }
     if (b.volt) {
-      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(elapsed * 9);
-      ctx.fillStyle = 'rgba(114,255,104,.3)'; ctx.fillRect(-b.r - 5, -b.r - 5, (b.r + 5) * 2, (b.r + 5) * 2);
-      ctx.fillStyle = '#d6ffd0'; ctx.fillRect(-b.r, -b.r, b.r * 2, b.r * 2);
-      ctx.fillStyle = '#72ff68'; ctx.fillRect(-b.r + 3, -b.r + 3, b.r * 2 - 6, b.r * 2 - 6); ctx.restore(); return;
+      b.seed ??= Math.floor(Math.random() * 1000);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = 'rgba(114,255,104,.4)'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 7, 0, Math.PI * 2); ctx.fill();
+      // Crackling electric spark: jittering spikes around a bright core.
+      ctx.strokeStyle = '#d6ffd0'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      const t0 = elapsed * 9 + b.seed;
+      ctx.beginPath();
+      for (let i = 0; i < 4; i++) {
+        const ang = t0 + i * Math.PI / 2, r = b.r + 2 + Math.abs(Math.sin(t0 * 1.7 + i)) * 5;
+        ctx.moveTo(b.x, b.y); ctx.lineTo(b.x + Math.cos(ang) * r, b.y + Math.sin(ang) * r);
+      }
+      ctx.stroke();
+      ctx.fillStyle = '#eaffea'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * .62, 0, Math.PI * 2); ctx.fill();
+      ctx.restore(); return;
     }
-    ctx.fillStyle = 'rgba(255,62,157,.25)'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 8, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#ff3e9d'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.fillRect(b.x - 3, b.y - 3, 5, 5);
+    // Default orb with a comet tail trailing opposite its travel.
+    const a = Math.atan2(b.vy || 0, b.vx || -1);
+    ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a);
+    ctx.fillStyle = 'rgba(255,62,157,.28)';
+    ctx.beginPath(); ctx.moveTo(-b.r * 3.4, 0); ctx.lineTo(b.r * .6, -b.r); ctx.lineTo(b.r * .6, b.r); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255,62,157,.25)'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff3e9d'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffd7ea'; ctx.beginPath(); ctx.arc(b.x - b.r * .3, b.y - b.r * .3, b.r * .42, 0, Math.PI * 2); ctx.fill();
   }
 
 
