@@ -4,9 +4,11 @@
   const canvas = document.querySelector('#game');
   const ctx = canvas.getContext('2d');
   const startScreen = document.querySelector('#startScreen');
+  const openingScreen = document.querySelector('#openingScreen');
   const gameOverScreen = document.querySelector('#gameOverScreen');
   const pauseLabel = document.querySelector('#pauseLabel');
   const startButton = document.querySelector('#startButton');
+  const launchButton = document.querySelector('#launchButton');
   const retryButton = document.querySelector('#retryButton');
   const finalScore = document.querySelector('#finalScore');
   const newRecord = document.querySelector('#newRecord');
@@ -28,6 +30,18 @@
   const pointer = { active: false, x: 0, y: 0 };
   const spriteSheet = new Image();
   spriteSheet.src = '背景なしChatGPT Image 2026年7月18日 06_30_26.png';
+  const bgmTracks = {
+    opening: new Audio('Neon Arcade Rush.mp3'),
+    stage0: new Audio('Neon Arcade Rush.mp3'),
+    stage1: new Audio('Neon Arena.mp3'),
+    stage2: new Audio('Neon Arena (1).mp3'),
+    stage3: new Audio('Neon Bullet Heaven.mp3'),
+    stage4: new Audio('Neon Demoness.mp3'),
+    finalBoss: new Audio('Red Planet Showdown.mp3')
+  };
+  Object.values(bgmTracks).forEach(track => { track.loop = true; track.preload = 'auto'; track.volume = .42; });
+  bgmTracks.opening.volume = .34;
+  bgmTracks.finalBoss.volume = .48;
 
   let spriteFrames = [];
   let walkFrames = [];
@@ -57,6 +71,8 @@
   let musicClock = 0;
   let musicStep = 0;
   let soundOn = true;
+  let currentBgmKey = null;
+  let openingTimeout = 0;
   let totalKills = 0;
   let stageKills = 0;
   let stageStart = 0;
@@ -179,6 +195,7 @@
   };
 
   function resetGame() {
+    clearTimeout(openingTimeout); openingTimeout = 0;
     score = 0; combo = 0; comboTimer = 0; health = maxHealth; elapsed = 0;
     spawnTimer = .7; pickupTimer = 6; shake = 0; flash = 0; gameSpeed = 1;
     bossState = 'waiting'; bossWarning = 0;
@@ -192,6 +209,7 @@
     player.fire = 0; player.missileFire = .8; player.inv = 1.2; player.frame = 0; player.grounded = false; player.power = 1; player.spread = 1; player.speed = 1;
     state = 'playing'; paused = false;
     startScreen.classList.remove('is-visible');
+    openingScreen.classList.remove('is-visible');
     gameOverScreen.classList.remove('is-visible');
     pauseLabel.classList.remove('is-visible');
     pauseButton.classList.add('is-visible');
@@ -201,6 +219,39 @@
     updateSpecialButton();
     lastTime = performance.now();
     ensureAudio();
+    playBgm('stage0', true);
+  }
+
+  function showOpening() {
+    clearTimeout(openingTimeout);
+    state = 'opening'; paused = false;
+    startScreen.classList.remove('is-visible'); gameOverScreen.classList.remove('is-visible');
+    openingScreen.classList.remove('is-visible');
+    // Restart the CSS timeline even when the intro is replayed after returning to the menu.
+    void openingScreen.offsetWidth;
+    openingScreen.classList.add('is-visible');
+    pauseButton.classList.remove('is-visible'); specialButton.classList.remove('is-visible');
+    playBgm('opening', true); ensureAudio(); sfx('power');
+    openingTimeout = setTimeout(resetGame, 9000);
+  }
+
+  function playBgm(key, restart = false) {
+    const next = bgmTracks[key];
+    if (!next) return;
+    if (currentBgmKey !== key) {
+      if (currentBgmKey && bgmTracks[currentBgmKey]) bgmTracks[currentBgmKey].pause();
+      currentBgmKey = key;
+    }
+    if (restart) next.currentTime = 0;
+    if (soundOn) next.play().catch(() => { /* starts on the next user gesture */ });
+  }
+
+  function pauseBgm() { Object.values(bgmTracks).forEach(track => track.pause()); }
+
+  function desiredBgmKey() {
+    if (state === 'opening' || state === 'menu') return 'opening';
+    if (stageIndex === stages.length - 1 && bossState === 'active') return 'finalBoss';
+    return `stage${stageIndex}`;
   }
 
   function initBackdrop() {
@@ -386,6 +437,7 @@
     musicStep = 0; musicClock = 0;
     enemyBullets = [];
     shake = 15;
+    if (stageIndex === stages.length - 1) playBgm('finalBoss', true);
     sfx('boss');
   }
 
@@ -599,8 +651,7 @@
     if (comboTimer <= 0) combo = 0;
 
     const difficulty = difficulties[difficultyKey];
-    musicClock -= dt;
-    if (musicClock <= 0) { playMusicNote(); musicClock = bossState === 'active' ? .115 : .185; }
+    // The supplied full-length tracks replace the old generated note loop.
 
     if (bossState === 'waiting' && stageTime >= difficulty.bossTime + stageIndex * 2) {
       bossState = 'warning'; bossWarning = 3.2; enemies = []; enemyBullets = [];
@@ -616,6 +667,7 @@
           stageIndex++; stageTime = 0; stageBanner = 3; bossState = 'waiting'; spawnTimer = 1.2; pickupTimer = 4;
           health = Math.min(maxHealth, health + 28); player.inv = 2;
           stageResult = null; setupStage(); musicStep = 0; musicClock = 0;
+          playBgm(`stage${stageIndex}`, true);
         }
       }
     }
@@ -2098,7 +2150,8 @@
     pauseButton.classList.toggle('is-paused', paused);
     pauseButton.textContent = paused ? '▶' : '❚❚';
     specialButton.disabled = paused || special < 100;
-    if (!paused) lastTime = performance.now();
+    if (paused) pauseBgm();
+    else { lastTime = performance.now(); playBgm(desiredBgmKey()); }
   }
   function togglePause() { setPaused(!paused); }
 
@@ -2129,7 +2182,9 @@
     keys.add(e.code);
     if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'playing') togglePause();
     if (e.code === 'KeyX' && !e.repeat) useSpecial();
-    if (e.code === 'Enter' && state !== 'playing') resetGame();
+    if (e.code === 'Enter' && state === 'menu') showOpening();
+    else if (e.code === 'Enter' && state === 'opening') resetGame();
+    else if (e.code === 'Enter' && state === 'over') resetGame();
     // Hidden debug keys: Shift+N skips to the next stage, Shift+B summons the boss.
     if (e.shiftKey && e.code === 'KeyN' && state === 'playing' && !paused) {
       enemies = []; enemyBullets = []; bullets = [];
@@ -2144,7 +2199,8 @@
   canvas.addEventListener('pointermove', e => { if (!pointer.active) return; const p=screenToWorld(e.clientX,e.clientY); pointer.x=p.x; pointer.y=p.y; });
   canvas.addEventListener('pointerup', () => pointer.active = false);
   canvas.addEventListener('pointercancel', () => pointer.active = false);
-  startButton.addEventListener('click', resetGame);
+  startButton.addEventListener('click', showOpening);
+  launchButton.addEventListener('click', resetGame);
   retryButton.addEventListener('click', resetGame);
   difficultyButtons.forEach(button => button.addEventListener('click', () => {
     difficultyKey = button.dataset.difficulty;
@@ -2155,7 +2211,11 @@
     soundOn = !soundOn;
     soundButton.textContent = soundOn ? '♪ ON' : '♪ OFF';
     soundButton.classList.toggle('is-muted', !soundOn);
-    if (soundOn) { ensureAudio(); sfx('power'); }
+    if (soundOn) {
+      ensureAudio();
+      playBgm(desiredBgmKey());
+      sfx('power');
+    } else pauseBgm();
   });
   pauseButton.addEventListener('click', togglePause);
   specialButton.addEventListener('click', useSpecial);
