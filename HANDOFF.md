@@ -28,7 +28,7 @@
 8. `ef4c4fb` Phase3: **自弾**に速度方向コメットトレイル＋星ヘッド、**volt弾**を電撃スパイク、**default敵弾**にコメット尾。`b.seed ??=` 遅延付与。
 
 ## 残タスク（ユーザー承認済み・優先順は「背景→敵→弾は着手済、残りを継続」）
-- [ ] **factory背景の深化**（`drawFactoryBackdrop` ~1592行）: 精錬所プロップ/溶融河川/打ち付けハンマー等。現状は及第点（夕日シルエット＋歯車）だが平板寄り。
+- [x] **factory背景の深化**（`drawFactoryBackdrop` ~1592行）: `drawRefineryTanks`（リベット＋発光窓の精錬タンク3基、屋根越しに突出配置）、`drawHammerPress`（周期スラム＋着弾フラッシュのハイドロプレス、gearと同じ「浮遊」扱いで固定スクリーン座標）、`drawMoltenRiver`（コンベア下の流動溶岩グロー）を追加。`REFINERY_TANKS`定数追加。
 - [ ] **ボス2〜5の磨き**（`drawBoss` の `stageIndex===1..4`, ~2543行〜）: シルエットは立っている(生物/高炉/菱形/ハート)が、**顔部に平板な黒fillRect**が残る→角丸グロスバイザー＋発光目にすると質感が揃う。
 - [ ] **着弾FX/破片/ヒットストップ**（Phase3後半）: `collisions()`の自弾ヒット・`hurt()`・`destroyEnemy()`・`frame()`(dt×0.15のヒットストップ)にフック追加が必要。
 - [ ] **二次アニメ**（Phase2の残り）: wind-up（`e.windup`）/被弾ダメージ状態/瞬き。※`e.recoil`は既にtank砲身が参照、turret砲身は既にプレイヤー追尾。

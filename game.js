@@ -157,6 +157,7 @@
 
   const GROUND_Y = 500;
   const CHIMNEYS = [[120, 60, 210], [196, 44, 160], [880, 70, 230], [1010, 50, 180], [430, 40, 140]];
+  const REFINERY_TANKS = [[240, 46, 250], [730, 38, 210], [1080, 52, 268]];
   const player = { x: 170, y: 360, w: 118, h: 102, vx: 0, vy: 0, fire: 0, missileFire: 0, inv: 0, frame: 0, grounded: false, power: 1, spread: 1, speed: 1, takeoff: 0 };
   let bullets = [];
   let enemyBullets = [];
@@ -379,7 +380,8 @@
       for (let i = 0; i < 10; i++) ambient.push(makeAmbient('spark'));
       bgProps = [
         { kind: 'gear', x: 190, y: 430, r: 58, speed: .5 }, { kind: 'gear', x: 610, y: 465, r: 40, speed: -.8 },
-        { kind: 'gear', x: 1080, y: 420, r: 66, speed: .35 }, { kind: 'gear', x: 860, y: 486, r: 30, speed: -1.1 }
+        { kind: 'gear', x: 1080, y: 420, r: 66, speed: .35 }, { kind: 'gear', x: 860, y: 486, r: 30, speed: -1.1 },
+        { kind: 'hammer', x: 470, phase: 0 }, { kind: 'hammer', x: 940, phase: .5 }
       ];
     } else if (theme === 'storm') {
       for (let i = 0; i < 70; i++) ambient.push(makeAmbient('rain'));
@@ -1595,11 +1597,98 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (let i = 0; i < 4; i++) ctx.fillRect(530, 448 + i * 20, 220, 5 + i * 3);
     ctx.restore();
     for (const c of clouds) drawCloud(c, '#ffd9a0', .13);
+    drawRefineryTanks(stage);
     drawCranes(stage);
     drawChimneys();
     for (const p of bgProps) if (p.kind === 'gear') drawGear(p, stage);
     drawCity((elapsed * -20) % 120, 600, stage.city, 54, .8, 18);
+    for (const p of bgProps) if (p.kind === 'hammer') drawHammerPress(p, stage);
     drawConveyor(stage);
+    drawMoltenRiver(stage);
+  }
+
+  // Refinery storage tanks: riveted cylindrical silhouettes with glowing
+  // window slits and a ground pipe stub, giving the skyline industrial depth.
+  function drawRefineryTanks(stage) {
+    ctx.save(); ctx.globalAlpha = .8;
+    for (const [x, r, h] of REFINERY_TANKS) {
+      const topY = 560 - h;
+      const g = ctx.createLinearGradient(x - r, 0, x + r, 0);
+      g.addColorStop(0, '#170a17'); g.addColorStop(.32, '#3d1e33'); g.addColorStop(.58, '#241129'); g.addColorStop(1, '#0f0710');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(x - r, topY + 16); ctx.quadraticCurveTo(x, topY - 10, x + r, topY + 16);
+      ctx.lineTo(x + r, 560); ctx.lineTo(x - r, 560); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#2c1428';
+      ctx.beginPath(); ctx.ellipse(x, topY + 16, r, 11, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = .28; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+      for (let yy = topY + 42; yy < 556; yy += 32) { ctx.beginPath(); ctx.moveTo(x - r, yy); ctx.lineTo(x + r, yy); ctx.stroke(); }
+      ctx.globalAlpha = .8;
+      for (let yy = topY + 30; yy < 552; yy += 32) {
+        ctx.fillStyle = hexA(stage.accent, .35 + Math.sin(elapsed * 2 + x * .1 + yy) * .2);
+        ctx.fillRect(x - r * .4, yy, r * .8, 5);
+      }
+      ctx.fillStyle = '#160810'; ctx.fillRect(x + r - 5, 560 - 26, 26, 26);
+    }
+    ctx.restore();
+  }
+
+  // Hydraulic stamping press floating clear of the skyline (matching the
+  // gears' airborne treatment): idles raised, slams down with an impact flash.
+  function drawHammerPress(p, stage) {
+    const cyc = 2.6, t = ((elapsed + p.phase * cyc) % cyc) / cyc;
+    let ramT;
+    if (t < .55) ramT = 0;
+    else if (t < .62) ramT = (t - .55) / .07;
+    else if (t < .78) ramT = 1;
+    else ramT = 1 - (t - .78) / .22;
+    const x = p.x, baseY = 468, topY = baseY - 108, spanW = 84, ramY = topY + 22 + ramT * 64;
+    ctx.save();
+    const postG = ctx.createLinearGradient(x - spanW / 2, 0, x - spanW / 2 + 10, 0);
+    postG.addColorStop(0, hexA(stage.accent2, .55)); postG.addColorStop(.4, '#3a2438'); postG.addColorStop(1, '#160a17');
+    ctx.fillStyle = postG;
+    ctx.fillRect(x - spanW / 2, topY, 10, baseY - topY);
+    ctx.fillRect(x + spanW / 2 - 10, topY, 10, baseY - topY);
+    ctx.fillStyle = '#241229'; ctx.fillRect(x - spanW / 2 - 6, topY, spanW + 12, 16);
+    ctx.fillStyle = hexA(stage.accent, .55); ctx.fillRect(x - spanW / 2 - 6, topY, spanW + 12, 3);
+    // blinking warning light on the beam
+    ctx.fillStyle = hexA(stage.accent, .5 + Math.sin(elapsed * 6) * .5);
+    ctx.beginPath(); ctx.arc(x, topY + 8, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#33202e';
+    ctx.fillRect(x - 4, topY + 16, 8, ramY - topY - 16);
+    const ramG = ctx.createLinearGradient(x - 24, ramY, x - 24, ramY + 20);
+    ramG.addColorStop(0, '#6a3448'); ramG.addColorStop(1, '#20101c');
+    ctx.fillStyle = ramG; ctx.fillRect(x - 24, ramY, 48, 20);
+    ctx.fillStyle = hexA(stage.accent2, .75); ctx.fillRect(x - 24, ramY, 48, 3);
+    ctx.fillStyle = '#2c1421'; ctx.fillRect(x - 27, baseY, 54, 13);
+    ctx.restore();
+    if (t >= .6 && t < .75) {
+      const it = 1 - (t - .6) / .15;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = it * .85;
+      const fg = ctx.createRadialGradient(x, baseY + 4, 2, x, baseY + 4, 42);
+      fg.addColorStop(0, stage.accent); fg.addColorStop(1, 'rgba(255,180,60,0)');
+      ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(x, baseY + 4, 42, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // Molten river glowing beneath the conveyor floor grating, with drifting flow glow.
+  function drawMoltenRiver(stage) {
+    const y0 = 686, y1 = VH;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const off = (elapsed * 42) % 100;
+    for (let x = -off; x < VW + 100; x += 100) {
+      const flick = .55 + Math.sin(elapsed * 3.1 + x * .04) * .3;
+      const lg = ctx.createRadialGradient(x + 40, y1 - 4, 2, x + 40, y1 - 4, 66);
+      lg.addColorStop(0, hexA('#ffb347', .5 * flick));
+      lg.addColorStop(.55, hexA('#ff5a36', .25 * flick));
+      lg.addColorStop(1, 'rgba(255,90,20,0)');
+      ctx.fillStyle = lg; ctx.fillRect(x - 40, y0 - 20, 160, 70);
+    }
+    ctx.restore();
+    ctx.save(); ctx.globalAlpha = .85; ctx.fillStyle = hexA('#ff7a2e', .8);
+    ctx.fillRect(0, y1 - 3, VW, 3);
+    ctx.restore();
   }
 
   function drawCranes(stage) {
