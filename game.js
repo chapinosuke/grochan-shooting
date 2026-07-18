@@ -81,7 +81,9 @@
   let paused = false;
   let lastTime = 0;
   let score = 0;
-  let highScore = Number(localStorage.getItem('grochan-highscore') || 0);
+  // New storage key: old 'grochan-highscore' records predate the 1/10 yen
+  // rescale and would be unbeatable, so the best-money record starts fresh.
+  let highScore = Number(localStorage.getItem('grochan-money-best') || 0);
   let combo = 0;
   let comboTimer = 0;
   let health = 100;
@@ -1164,7 +1166,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         const dx = b.x - (player.x + 56), dy = b.y - (player.y + 55);
         const grazeRange = b.r + 48;
         if (dx * dx + dy * dy < grazeRange * grazeRange) {
-          b.grazed = true; special = Math.min(100, special + 2.2); score += 35;
+          b.grazed = true; special = Math.min(100, special + 2.2); score += 4;
           burst(b.x, b.y, '#ffe15a', 3, 80); sfx('graze');
         }
       }
@@ -1254,7 +1256,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     }
     for (const p of pickups) {
       if (!p.taken && circleRect(p.x, p.y, p.r, player.x, player.y, player.w, player.h)) {
-        p.taken = true; score += 500; special = Math.min(100, special + 6);
+        p.taken = true; score += 50; special = Math.min(100, special + 6);
         if (p.type === 'power') player.power = Math.min(3, player.power + 1);
         else if (p.type === 'spread') player.spread = Math.min(3, player.spread + 1);
         else if (p.type === 'speed') player.speed = Math.min(3, player.speed + 1);
@@ -1269,7 +1271,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     totalKills++; stageKills++;
     special = Math.min(100, special + (e.type === 'boss' ? 30 : e.type === 'midboss' ? 20 : e.variant === 'elite' ? 8 : 4));
     const mult = Math.min(5, 1 + Math.floor(combo / 5));
-    score += e.points * mult * difficulties[difficultyKey].score;
+    // Money scale: points are legacy score values, paid out at 1/10 as yen.
+    score += Math.round(e.points * mult * difficulties[difficultyKey].score / 10);
     if (e.type === 'jelly') {
       for (let i = 0; i < 4; i++) {
         const a = Math.PI / 4 + i * Math.PI / 2;
@@ -1296,8 +1299,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     shake = isMajor ? (isBoss ? 28 : 20) : e.type === 'tank' ? 12 : 6; flash = isMajor ? (isBoss ? 1 : .6) : e.type === 'tank' ? .35 : .12; sfx(isMajor ? 'bigBoom' : 'boom');
     hitStop = Math.max(hitStop, isMajor ? (isBoss ? .12 : .09) : e.type === 'tank' ? .05 : .03);
     if (isMidBoss) {
+      // No free heal — recovery comes from items (the mid boss drops one below).
       midBossDone = true; bossState = 'waiting'; enemyBullets = []; bullets = [];
-      health = Math.min(maxHealth, health + 22); special = Math.min(100, special + 30);
+      special = Math.min(100, special + 30);
       // Ensure the post-mid stretch has volume before the main boss.
       stageTime = Math.max(stageTime, midbossStart() + 1.2);
       pickups.push({ type: 'power', x: e.x + e.w / 2, y: e.y + e.h / 2, r: 19, t: 0 });
@@ -1308,13 +1312,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     }
     if (isBoss) {
       bossState = stageIndex === stages.length - 1 ? 'final' : 'transition'; stageTransition = 4.6;
-      enemyBullets = []; bullets = []; health = Math.min(maxHealth, health + 40); musicStep = 0; musicClock = 0;
+      enemyBullets = []; bullets = []; musicStep = 0; musicClock = 0;
       const stage = stages[stageIndex];
       for (let i = 0; i < 14; i++) {
         delayedBursts.push({ x: e.x + Math.random() * e.w, y: e.y + Math.random() * e.h, t: .08 + i * .11, color: i % 3 ? '#ffe15a' : stage.accent2, boom: i % 2 === 0 });
       }
-      const noDamageBonus = stageDamaged ? 0 : 5000;
-      const timeBonus = Math.max(0, Math.round((timelineTotal() + 120 - (elapsed - stageStart)) * 50));
+      const noDamageBonus = stageDamaged ? 0 : 500;
+      const timeBonus = Math.max(0, Math.round((timelineTotal() + 120 - (elapsed - stageStart)) * 5));
       stageResult = { kills: stageKills, time: elapsed - stageStart, noDamageBonus, timeBonus };
       score += (noDamageBonus + timeBonus) * difficulties[difficultyKey].score;
     }
@@ -1350,12 +1354,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // Between-stage shop: gameplay freezes (state 'shop' skips update()), the
   // player spends earned yen, then leaveShop() performs the stage advance that
   // used to happen inline in the transition timer.
+  // The onigiri heals the same ballpark as an in-stage food drop (+32) — the
+  // shop sells items, it doesn't hand out full recoveries.
   const shopItems = [
-    { id: 'buyHeal', price: 3000, can: () => health < maxHealth, apply: () => { health = maxHealth; }, status: () => `HP ${Math.ceil(health)}/${maxHealth}` },
-    { id: 'buyPower', price: 8000, can: () => player.power < 3, apply: () => player.power++, status: () => `Lv ${player.power}/3` },
-    { id: 'buyWide', price: 8000, can: () => player.spread < 3, apply: () => player.spread++, status: () => `Lv ${player.spread}/3` },
-    { id: 'buySpeed', price: 5000, can: () => player.speed < 3, apply: () => player.speed++, status: () => `Lv ${player.speed}/3` },
-    { id: 'buyHeart', price: 12000, can: () => continuesLeft < 3, apply: () => continuesLeft++, status: () => `のこり ${continuesLeft}/3` }
+    { id: 'buyHeal', price: 400, can: () => health < maxHealth, apply: () => { health = Math.min(maxHealth, health + 40); }, status: () => `HP ${Math.ceil(health)}/${maxHealth}` },
+    { id: 'buyPower', price: 1500, can: () => player.power < 3, apply: () => player.power++, status: () => `Lv ${player.power}/3` },
+    { id: 'buyWide', price: 1500, can: () => player.spread < 3, apply: () => player.spread++, status: () => `Lv ${player.spread}/3` },
+    { id: 'buySpeed', price: 1000, can: () => player.speed < 3, apply: () => player.speed++, status: () => `Lv ${player.speed}/3` },
+    { id: 'buyHeart', price: 2500, can: () => continuesLeft < 3, apply: () => continuesLeft++, status: () => `のこり ${continuesLeft}/3` }
   ];
   shopItems.forEach(item => {
     item.btn = document.querySelector('#' + item.id);
@@ -1389,8 +1395,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function leaveShop() {
     if (state !== 'shop') return;
     shopScreen.classList.remove('is-visible');
+    // No automatic heal on stage clear — HP carries over; recovery is item-based
+    // (in-stage drops or the shop's onigiri).
     stageIndex++; stageTime = 0; stageBanner = 3; bossState = 'waiting'; midBossDone = false; spawnTimer = 1.2; pickupTimer = 4;
-    health = Math.min(maxHealth, health + 28); player.inv = 2;
+    player.inv = 2;
     stageResult = null; setupStage(); musicStep = 0; musicClock = 0;
     state = 'playing';
     pauseButton.classList.add('is-visible');
@@ -1404,13 +1412,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     pauseButton.classList.remove('is-visible', 'is-paused');
     specialButton.classList.remove('is-visible', 'is-ready');
     pauseLabel.classList.remove('is-visible');
-    if (cleared) score += 25000 * difficulties[difficultyKey].score;
+    if (cleared) score += 2500 * difficulties[difficultyKey].score;
     resultTitle.textContent = cleared ? 'ALL CLEAR!' : 'GAME OVER';
     statKills.textContent = String(totalKills);
     statStage.textContent = cleared ? 'ALL' : `${stageIndex + 1} / ${stages.length}`;
     statTime.textContent = `${elapsed.toFixed(1)}s`;
     const record = score > highScore;
-    if (record) { highScore = score; localStorage.setItem('grochan-highscore', String(highScore)); }
+    if (record) { highScore = score; localStorage.setItem('grochan-money-best', String(highScore)); }
     finalScore.textContent = yen(score);
     menuHighScore.textContent = yen(highScore);
     newRecord.classList.toggle('is-hidden', !record);
