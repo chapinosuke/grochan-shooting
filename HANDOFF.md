@@ -15,7 +15,7 @@
   - `node .devtools/crop.js <png> <cx> <cy> <cw> <ch>` → `.devtools/crop-out.png`（3倍ズーム。敵は小さいので必須）
   - ハマりどころ（対策済み）: headlessはページが隠れ扱いで**ゲームが自動ポーズする**→ `document.hidden` をspoof。敵が出るまで `GRO_DEBUG` をポーリング。自弾を出すにはSpaceを押しっぱなしにする。
 - **注意: headless(swiftshader)のFPSは当てにならない。** ≥58fps判定は必ず実機ブラウザで F1 を使ってユーザーが確認する。
-- デバッグキー: **F1**=FPS表示トグル / **Shift+N**=ステージスキップ / **Shift+M**=中ボス / **Shift+B**=ボス。`window.GRO_DEBUG` で状態取得。
+- デバッグキー: **F1**=FPS表示トグル / **Shift+N**=ステージスキップ / **Shift+M**=中ボス召喚(戦闘中に2度押しで即撃破) / **Shift+B**=ボス / **Shift+T**=タイムライン+30秒早送り(中ボス/ボス発動の直前で停止)。`window.GRO_DEBUG` で状態取得(`phaseId`/`stageTime`/`continuesLeft`含む)。
 
 ## 完了済み（本セッション8コミット、`4b5ece5` の上に積んである）
 1. `1629d14` Phase1: `rctx`/`bakeSprite`/`blit` 基盤導入＋葉ヘルパー(drawBox3D/Cylinder/KawaiiEyes/EnemyShadow)を`rctx`化。**bakeSpriteは未使用（基盤のみ）、`rctx===ctx`常時成立で見た目不変。**
@@ -35,6 +35,12 @@
 - [x] **中ボス5種差別化**: 各`stages[]`に`midBoss`名を追加（NEON/TIDAL/CINDER/GLITCH/VELVET WARDEN）、HUDの固定文字列`'CRIMSON WARDEN'`を`stage.midBoss`参照に置換。`drawMidBoss`のクレスト部をステージ別シルエット（ハート型アンテナ/ドーサルフィン/火炎スパイク/サーキット触角+点滅ノード/ハートクレスト）に分岐して差別化。
 - [x] **Phase5 残り**: `stageBanner`のタイトルカードを角丸グロー枠+四隅アクセントティック+スライドインに刷新。`drawEnemyVariant`に全雑魚共通のステージ色デカール（右下の小バッジ、accent2地+accentドット）を追加。
 - [ ] **Phase6 性能調整**（`bakeSprite`活性化）: **意図的に見送り**。敵の見た目は`e.t`ベースのロータースピン/明滅LED/recoil/windup/damage-crack/瞬き/ステージデカールなど大半が動的で、キャッシュキーに全部含めると焼き込みの意味がなくなる。現状ヘッドレスFPSは指標にならず実機での劣化報告も無いため、リスクに見合わないと判断。実機でF1計測してカクつきがあれば再検討。
+
+## 2026-07-18 セッション: 5分ステージ/コンティニュー/背景立体化
+- **ステージ約5分化**: `PHASE_TEMPLATE`(`stages`直後)で waiting 時間226秒(normal)をフェーズ駆動でスクリプト化(trickle→assault→formation→calm→中ボス→calm→assault→setpiece→calm→eliteRush→finalPush)。`difficulties`の`bossTime`は`timeScale`(easy1.06/normal1/hard.92)に置換。`currentPhase(stageTime)`はステートレス導出でデバッグジャンプと両立。敵速度は`stageTime`直結を廃し`rank`(120秒で飽和×フェーズintensity)に、`gameSpeed`もintensity駆動+イージング。セットピースは`runSetpiece`(ダブルVee/地上列+航空/上下ピンサー)、タイムボーナス基準は`timelineTotal()+120`。
+- **コンティニュー**: `continuesLeft`(3回)・HP0で`doContinue()`=その場復活(HP全快/無敵4s/敵弾消去/shockwave/スコア維持)。HUD右パネル下にハート3、復活時中央に「CONTINUE! のこりN回」。`resetGame()`でリセット。
+- **背景立体化フレームワーク**: `bgCam`(プレイヤー高度追従)+`bgLayer(depth,fn)`で縦パララックス(遠景.5/中景.32/近景.15/前景-.4、地面レイヤーとfactoryのgear/hammerはスクリーン固定のため対象外)。`drawDepthHaze`(遠中間の大気ウォッシュ)、`drawGroundPlane`(消失点VW/2に収束する床グリッド、neon/palaceで使用)、`drawForeground`(drawGame後に描くy>660のテーマ別シルエット帯: ガードレール/波頭/パイプ手すり/ケーブルトレイ/バラ垣)。ステージ別: neon超遠景スカイライン3段/aqua第2島列/factory奥タンク列(`drawRefineryTanks(stage,scale,alpha,shiftX)`)/storm第3スパイア列/palace中間柱廊(`drawColonnade(scale,alpha,speed)`)。
+- 検証済み: 全5ステージスクショ、コンティニュー3回→GAME OVER遷移、全フェーズ進行(Shift+T/M/B walk)。実機FPS(F1)は未計測 — ユーザー確認待ち。
 
 ## 技術メモ
 - 描画はワールド座標(VW=1280×VH=720)。`draw()`でビュー変換を1回適用。ボス/敵は`ctx`にライブ描画（`translate(e.x,e.y)`）。`rctx===ctx`（焼き込み未活性）。
