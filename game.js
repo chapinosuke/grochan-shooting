@@ -1649,13 +1649,83 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   function drawStormBackdrop(stage) {
     drawStars(26, '#8fffb0', '#4de3a0');
-    for (const c of clouds) drawCloud(c, '#04161a', .55);
+    // Circuit seams pulse with each lightning flash for a synced "power surge".
+    const surge = .32 + Math.min(1, lightning * 2.4) * .68;
+    drawWireRings(stage, surge);
+    for (const c of clouds) drawCloud(c, '#03120f', .55);
+    // Far parallax spire ridge, then mid code rain, panels, hero spires.
+    drawDataSpires((elapsed * -7) % 126, 545, 44, .34, surge * .5);
     for (const p of bgProps) if (p.kind === 'code') drawCodeColumn(p, stage);
-    drawCity((elapsed * -7) % 80, 505, stage.far, 40, .42, 8);
     for (const p of bgProps) if (p.kind === 'panel') drawPanel(p, stage);
-    drawCity((elapsed * -20) % 120, 600, stage.city, 54, .82, 18);
+    drawDataSpires((elapsed * -20) % 150, 618, 62, .95, surge);
+    drawHoloGrid(stage);
     drawStormGround(stage);
     drawLightningBolt(stage);
+  }
+
+  // Black obsidian data monoliths: tapered slabs with a glowing circuit seam and
+  // node lights that surge on lightning. A right-side extrude gives real volume.
+  function drawDataSpires(offset, ground, unit, alpha, seam) {
+    const stage = stages[stageIndex];
+    ctx.save(); ctx.globalAlpha = alpha;
+    for (let i = -1; i < 15; i++) {
+      const x = i * unit * 1.5 + offset;
+      if (x < -unit * 2 || x > VW + unit) continue;
+      const w = unit * (.5 + ((i * 53) % 7) / 12);
+      const h = 96 + ((i * 71 + 40) % 230);
+      const topY = ground - h, cap = 18, depth = unit * .3;
+      // right extrude face
+      ctx.fillStyle = '#020c0a';
+      ctx.beginPath(); ctx.moveTo(x + w, topY + cap); ctx.lineTo(x + w + depth, topY + cap + depth * .5); ctx.lineTo(x + w + depth, ground); ctx.lineTo(x + w, ground); ctx.closePath(); ctx.fill();
+      // tapered obsidian front
+      const bg = ctx.createLinearGradient(x, topY, x, ground);
+      bg.addColorStop(0, '#12463a'); bg.addColorStop(.5, '#0a2a22'); bg.addColorStop(1, '#03110d');
+      ctx.fillStyle = bg;
+      ctx.beginPath(); ctx.moveTo(x + w * .28, topY); ctx.lineTo(x + w * .72, topY); ctx.lineTo(x + w, topY + cap); ctx.lineTo(x + w, ground); ctx.lineTo(x, ground); ctx.lineTo(x, topY + cap); ctx.closePath(); ctx.fill();
+      // left rim light
+      ctx.globalAlpha = alpha * .5; ctx.fillStyle = hexA(stage.accent, .5); ctx.fillRect(x, topY + cap, 2, h - cap); ctx.globalAlpha = alpha;
+      // glowing circuit seam + node bars
+      ctx.save(); ctx.globalAlpha = alpha * seam; ctx.shadowColor = stage.accent; ctx.shadowBlur = 8; ctx.fillStyle = stage.accent;
+      ctx.fillRect(x + w * .5 - 1, topY + cap, 2, h - cap - 6);
+      for (let yy = topY + cap + 20; yy < ground - 12; yy += 42) ctx.fillRect(x + 5, yy, w - 10, 2);
+      ctx.restore();
+      // apex beacon
+      ctx.save(); ctx.globalAlpha = alpha * (.4 + seam * .6); ctx.fillStyle = stage.accent2; ctx.shadowColor = stage.accent2; ctx.shadowBlur = 10;
+      ctx.fillRect(x + w * .5 - 2, topY - 7, 4, 9); ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // Receding neon floor grid (perspective) for the data-realm feel.
+  function drawHoloGrid(stage) {
+    const horizon = 566, bottom = 662;
+    ctx.save(); ctx.strokeStyle = stage.accent; ctx.lineWidth = 1;
+    for (let i = 0; i <= 12; i++) {
+      const t = i / 12, y = horizon + (bottom - horizon) * (t * t);
+      ctx.globalAlpha = .05 + t * .16; ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(VW, y); ctx.stroke();
+    }
+    const drift = (elapsed * 70) % 96;
+    ctx.globalAlpha = .13;
+    for (let x = -400; x < VW + 400; x += 96) {
+      ctx.beginPath(); ctx.moveTo(VW / 2 + (x - VW / 2) * .12, horizon); ctx.lineTo(x - drift, bottom + 46); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Slow rotating wireframe rings — a quiet hero prop far in the sky.
+  function drawWireRings(stage, surge) {
+    const cx = 950, cy = 240;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let k = 0; k < 3; k++) {
+      const rot = elapsed * (.3 + k * .16) + k;
+      const rx = 66 + k * 30, ry = (66 + k * 30) * (.28 + Math.abs(Math.sin(rot)) * .55);
+      ctx.globalAlpha = (.08 + surge * .12) * (1 - k * .18);
+      ctx.strokeStyle = k % 2 ? stage.accent2 : stage.accent; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.globalAlpha = .1 + surge * .2; ctx.fillStyle = stage.accent;
+    ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 
   function drawCodeColumn(p, stage) {
