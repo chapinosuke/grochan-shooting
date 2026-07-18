@@ -106,6 +106,8 @@
   let special = 35;
   let specialFlash = 0;
   let formationTimer = 3;
+  let fpsShow = false;   // F1 toggles a verification-only FPS readout
+  let fpsAvg = 60;       // EMA of 1/rawDt
   const padInput = { x: 0, y: 0, fire: false, special: false };
   let padStartWasDown = false;
   let padActionWasDown = false;
@@ -1164,6 +1166,17 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.translate(sx, sy);
     drawBackdrop();
     drawGame();
+    ctx.restore();
+    if (fpsShow) drawFpsMeter();
+  }
+
+  function drawFpsMeter() {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.font = '14px monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(6, 6, 104, 22);
+    ctx.fillStyle = fpsAvg >= 58 ? '#72ff68' : fpsAvg >= 45 ? '#ffe15a' : '#ff5a36';
+    ctx.fillText('FPS ' + fpsAvg.toFixed(1), 12, 10);
     ctx.restore();
   }
 
@@ -2735,7 +2748,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function togglePause() { setPaused(!paused); }
 
   function frame(now) {
-    const dt = clamp((now - lastTime) / 1000 || 0, 0, .033);
+    const raw = (now - lastTime) / 1000;
+    const dt = clamp(raw || 0, 0, .033);
+    if (fpsShow && raw > 0 && raw < 1) fpsAvg += (1 / raw - fpsAvg) * .1;
     lastTime = now; pollGamepad(); update(dt); draw(); requestAnimationFrame(frame);
   }
 
@@ -2759,6 +2774,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   addEventListener('keydown', e => {
     if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
     keys.add(e.code);
+    if (e.code === 'F1') { e.preventDefault(); fpsShow = !fpsShow; }
     if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'playing') togglePause();
     if (e.code === 'KeyX' && !e.repeat) useSpecial();
     if (e.code === 'Enter' && state === 'menu') showOpening();
