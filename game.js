@@ -124,6 +124,7 @@
   let bgCam = 0;
   let bgCamX = 0;        // horizontal camera yaw, eased from player.x (parallax)
   let bokeh = [];        // front-of-camera defocused light orbs
+  let shoppers = [];     // pedestrians walking the shopping street (neon stage)
   let formationTimer = 3;
   let fpsShow = false;   // F1 toggles a verification-only FPS readout
   let fpsAvg = 60;       // EMA of 1/rawDt
@@ -463,11 +464,24 @@
   function setupStage() {
     stageKills = 0; stageStart = elapsed; stageDamaged = false;
     formationTimer = 2.5 + Math.random() * 2;
-    ambient = []; bgProps = []; lightning = 0;
+    ambient = []; bgProps = []; lightning = 0; shoppers = [];
     const theme = stages[stageIndex].theme;
     if (theme === 'neon') {
       bgProps = Array.from({ length: 3 }, (_, i) => ({ kind: 'car', x: Math.random() * VW, y: 150 + i * 90 + Math.random() * 40, v: 60 + Math.random() * 90, dir: Math.random() < .5 ? -1 : 1 }));
       bgProps.push({ kind: 'searchlight', x: 260, phase: 0, speed: .5 }, { kind: 'searchlight', x: 940, phase: 2.4, speed: .38 });
+      // Shoppers strolling the sidewalk in front of the storefronts. Farther ones
+      // sit higher and smaller for depth; each carries an optional shopping bag.
+      const coats = ['#ff5a8a', '#4a9cff', '#ffd24a', '#8a6cff', '#3ad6a0', '#ff8a3a'];
+      const bags = ['#ffe15a', '#ff3e9d', '#31e8ff', '#ffffff'];
+      shoppers = Array.from({ length: 11 }, () => {
+        const depth = Math.random();
+        return {
+          x: Math.random() * VW, baseY: 614 + depth * 28, scale: .78 + depth * .5,
+          dir: Math.random() < .5 ? -1 : 1, spd: 15 + Math.random() * 24, phase: Math.random() * 6.28,
+          coat: coats[Math.floor(Math.random() * coats.length)],
+          bag: Math.random() < .62, bagC: bags[Math.floor(Math.random() * bags.length)]
+        };
+      });
     } else if (theme === 'aqua') {
       for (let i = 0; i < 26; i++) ambient.push(makeAmbient('bubble'));
       bgProps.push({ kind: 'lighthouse', x: 1050, phase: 0 });
@@ -963,6 +977,7 @@
       player.grounded = false; player.frame += dt * 8;
       bgCam += (((player.y - 360) / 360) * 14 - bgCam) * Math.min(1, dt * 3);
       bgCamX += ((clamp(-(player.x - 560) / 560, -1, 1) * 16 - bgCamX)) * Math.min(1, dt * 3);
+      stepShoppers(dt);
     }
     if (state !== 'playing' || paused) return;
     elapsed += dt;
@@ -987,6 +1002,7 @@
       b.x -= b.spd * dt * gameSpeed;
       if (b.x < -b.r * 2) { b.x = VW + b.r + Math.random() * 260; b.y = 60 + Math.random() * 560; }
     }
+    stepShoppers(dt);
     comboTimer -= dt;
     if (comboTimer <= 0) combo = 0;
 
@@ -1760,6 +1776,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawScrambleCrossing(stage);
     drawGroundLayer();
     drawGroundPlane(stage, { horizonY: 606, bottom: 704, alpha: .1, speed: 90, gap: 110 });
+    drawShoppers();
   }
 
   function drawSkyRibbons() {
@@ -1790,6 +1807,49 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     { x: 1204, w: 196, text: 'SHIBUYA', c: '#ff3e9d', v: false, awn: '#243a8a', kind: 'fashion' }
   ];
   const SHOP_STRIP = 1460;
+
+  // Walk the shoppers along the street: the world scrolls left at the shop speed
+  // (~20px/s) and each person adds their own gait on top, so some overtake and
+  // some drift back. They wrap around either edge.
+  function stepShoppers(dt) {
+    for (const p of shoppers) {
+      p.x += (p.dir * p.spd - 20) * dt * gameSpeed;
+      p.phase += dt * (4.5 + p.spd * .12);
+      if (p.x < -50) p.x = VW + 50 + Math.random() * 90;
+      else if (p.x > VW + 60) p.x = -50 - Math.random() * 90;
+    }
+  }
+
+  // Chibi pedestrians with swinging legs and shopping bags — the "customers" that
+  // make the storefronts feel like an open, lived-in shopping street.
+  function drawShoppers() {
+    for (const p of shoppers) {
+      const s = p.scale, bob = Math.abs(Math.sin(p.phase)) * 2 * s, swing = Math.sin(p.phase) * 4;
+      ctx.save();
+      ctx.globalAlpha = .32; ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.ellipse(p.x, p.baseY + 2, 9 * s, 3 * s, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.translate(p.x, p.baseY - bob); ctx.scale(p.dir * s, s);
+      ctx.lineCap = 'round';
+      // legs
+      ctx.strokeStyle = '#160f1e'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(swing, 0); ctx.moveTo(0, -14); ctx.lineTo(-swing, 0); ctx.stroke();
+      // coat / torso
+      ctx.fillStyle = p.coat;
+      ctx.beginPath(); ctx.moveTo(-6, -13); ctx.lineTo(6, -13); ctx.lineTo(5, -30); ctx.lineTo(-5, -30); ctx.closePath(); ctx.fill();
+      // arm + shopping bag
+      if (p.bag) {
+        ctx.strokeStyle = '#160f1e'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(5, -25); ctx.lineTo(11, -15); ctx.stroke();
+        ctx.fillStyle = p.bagC; ctx.fillRect(8, -15, 7, 10);
+        ctx.strokeStyle = shade(p.bagC, .7); ctx.strokeRect(8, -15, 7, 10);
+      }
+      // head + hair
+      ctx.fillStyle = '#f0c9a0'; ctx.beginPath(); ctx.arc(0, -34, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#241626'; ctx.beginPath(); ctx.arc(0, -35, 5, Math.PI, 0); ctx.fill();
+      ctx.restore();
+    }
+  }
 
   function drawStorefronts(stage) {
     const scroll = (elapsed * 20) % SHOP_STRIP;
