@@ -2322,37 +2322,64 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   function drawMidBoss(e) {
     const stage = stages[stageIndex], pulse = 6 + Math.sin(e.t * 7) * 4;
-    // extruded hex chassis
-    ctx.save();
-    ctx.translate(5, 4); ctx.fillStyle = '#05030c';
-    ctx.beginPath(); ctx.moveTo(18, 66); ctx.lineTo(48, 14); ctx.lineTo(111, 14); ctx.lineTo(142, 66); ctx.lineTo(111, 118); ctx.lineTo(48, 118); ctx.closePath(); ctx.fill();
+    const acc = stage.accent2, TAU = Math.PI * 2;
+    // Rounded 3D side thruster pods (drawn behind the shell).
+    for (const [gx, gw] of [[-2 - pulse * .6, 30 + pulse], [130, 30 + pulse]]) {
+      ctx.save(); ctx.shadowColor = stage.accent; ctx.shadowBlur = 10;
+      const pod = ctx.createLinearGradient(0, 52, 0, 78);
+      pod.addColorStop(0, shade(stage.accent, 1.35)); pod.addColorStop(.5, stage.accent); pod.addColorStop(1, shade(stage.accent, .5));
+      ctx.fillStyle = pod; ctx.beginPath(); ctx.roundRect(gx, 54, gw, 22, 10); ctx.fill();
+      ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.beginPath(); ctx.roundRect(gx + 4, 57, gw - 8, 5, 3); ctx.fill();
+      ctx.restore();
+    }
+    // Extruded back → depth.
+    ctx.fillStyle = '#120720'; ctx.beginPath(); ctx.roundRect(26, 20, 112, 100, 30); ctx.fill();
+    // Main shell with top-lit gradient.
+    ctx.save(); ctx.shadowColor = acc; ctx.shadowBlur = 18;
+    const shell = ctx.createLinearGradient(0, 14, 0, 118);
+    shell.addColorStop(0, shade(acc, 1.4)); shell.addColorStop(.5, acc); shell.addColorStop(1, shade(acc, .42));
+    ctx.fillStyle = shell; ctx.beginPath(); ctx.roundRect(22, 14, 112, 100, 30); ctx.fill();
+    ctx.shadowBlur = 0; ctx.restore();
+    // Shading passes (gloss + occlusion) clipped to the shell.
+    ctx.save(); ctx.beginPath(); ctx.roundRect(22, 14, 112, 100, 30); ctx.clip();
+    let gp = ctx.createLinearGradient(0, 14, 0, 72);
+    gp.addColorStop(0, 'rgba(255,255,255,.42)'); gp.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gp; ctx.fillRect(22, 14, 112, 58);
+    gp = ctx.createLinearGradient(0, 82, 0, 114);
+    gp.addColorStop(0, 'rgba(10,3,20,0)'); gp.addColorStop(1, 'rgba(10,3,20,.55)');
+    ctx.fillStyle = gp; ctx.fillRect(22, 82, 112, 32);
     ctx.restore();
-    ctx.save(); ctx.shadowColor = stage.accent2; ctx.shadowBlur = 18;
-    const shell = ctx.createLinearGradient(30, 20, 120, 110);
-    shell.addColorStop(0, shade(stage.accent2, 1.2)); shell.addColorStop(.5, stage.accent2); shell.addColorStop(1, shade(stage.accent2, .45));
-    ctx.fillStyle = '#10091f';
-    ctx.beginPath(); ctx.moveTo(18, 66); ctx.lineTo(48, 14); ctx.lineTo(111, 14); ctx.lineTo(142, 66); ctx.lineTo(111, 118); ctx.lineTo(48, 118); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = shell;
-    ctx.beginPath(); ctx.moveTo(31, 65); ctx.lineTo(55, 28); ctx.lineTo(103, 28); ctx.lineTo(128, 65); ctx.lineTo(103, 104); ctx.lineTo(55, 104); ctx.closePath(); ctx.fill();
-    // stage motif trim
+    // Stage motif crest.
     ctx.fillStyle = stage.accent;
-    if (stageIndex === 1) { for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(50 + i * 28, 112, 10, 5, 0, 0, Math.PI * 2); ctx.fill(); } }
-    else if (stageIndex === 2) { ctx.fillRect(40, 18, 8, 12); ctx.fillRect(110, 18, 8, 12); }
-    else if (stageIndex === 3) { ctx.fillStyle = stage.accent; ctx.fillRect(56, 44, 46, 4); ctx.fillRect(56, 54, 46, 4); }
-    else if (stageIndex === 4) { heartPath(79, 36, 8); ctx.fill(); }
-    else { ctx.fillRect(48, 18, 62, 4); }
-    ctx.fillStyle = '#211039'; ctx.fillRect(48, 45, 63, 43);
-    ctx.fillStyle = stage.accent; ctx.fillRect(57, 54, 16, 12); ctx.fillRect(87, 54, 16, 12);
-    ctx.fillStyle = '#fff'; ctx.fillRect(61, 57, 6, 5); ctx.fillRect(91, 57, 6, 5);
-    const core = ctx.createRadialGradient(74, 78, 2, 79, 82, 14);
-    core.addColorStop(0, '#fff'); core.addColorStop(.4, '#ffe15a'); core.addColorStop(1, stage.accent2);
-    ctx.fillStyle = core; ctx.beginPath(); ctx.arc(79, 82, 10 + pulse * .25, 0, Math.PI * 2); ctx.fill();
-    drawBox3D(-pulse, 54, 40 + pulse, 12, stage.accent, 4);
-    drawBox3D(118, 54, 40 + pulse, 12, stage.accent, 4);
-    drawBox3D(22, 108, 44, 12, '#24102f', 4);
-    drawBox3D(93, 108, 44, 12, '#24102f', 4);
-    ctx.shadowBlur = 0;
+    if (stageIndex === 4) { heartPath(78, 26, 7); ctx.fill(); }
+    else { ctx.beginPath(); ctx.roundRect(64, 20, 28, 5, 2); ctx.fill(); }
+    // Glossy bevelled visor.
+    ctx.fillStyle = shade(acc, 1.45); ctx.beginPath(); ctx.roundRect(42, 46, 72, 40, 16); ctx.fill();
+    const visor = ctx.createLinearGradient(0, 48, 0, 84);
+    visor.addColorStop(0, '#2a1440'); visor.addColorStop(1, '#050210');
+    ctx.fillStyle = visor; ctx.beginPath(); ctx.roundRect(45, 48, 66, 34, 13); ctx.fill();
+    // Glowing eyes.
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (const ex of [64, 92]) {
+      const eg = ctx.createRadialGradient(ex, 64, 1, ex, 64, 11);
+      eg.addColorStop(0, '#ffffff'); eg.addColorStop(.4, hexA(stage.accent, .9)); eg.addColorStop(1, hexA(stage.accent, 0));
+      ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(ex, 64, 11, 0, TAU); ctx.fill();
+    }
     ctx.restore();
+    ctx.fillStyle = stage.accent; ctx.beginPath(); ctx.arc(64, 64, 4, 0, TAU); ctx.fill(); ctx.beginPath(); ctx.arc(92, 64, 4, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(62, 62, 1.6, 0, TAU); ctx.fill(); ctx.beginPath(); ctx.arc(90, 62, 1.6, 0, TAU); ctx.fill();
+    // Glowing belly core.
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const core = ctx.createRadialGradient(78, 98, 1, 78, 98, 13 + pulse * .3);
+    core.addColorStop(0, '#ffffff'); core.addColorStop(.4, '#ffe15a'); core.addColorStop(1, hexA(stage.accent2, 0));
+    ctx.fillStyle = core; ctx.beginPath(); ctx.arc(78, 98, 13 + pulse * .3, 0, TAU); ctx.fill();
+    ctx.restore();
+    // Rounded feet.
+    for (const fx of [30, 98]) {
+      const ft = ctx.createLinearGradient(0, 112, 0, 126);
+      ft.addColorStop(0, shade(stage.accent, 1.2)); ft.addColorStop(1, shade(stage.accent, .45));
+      ctx.fillStyle = ft; ctx.beginPath(); ctx.roundRect(fx, 112, 30, 12, 6); ctx.fill();
+    }
   }
 
 
@@ -2360,22 +2387,89 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function drawBoss(e) {
     const stage = stages[stageIndex];
     const pulse = 4 + Math.sin(e.t * 5) * 3;
-    // shared depth plate under every boss
-    ctx.save(); ctx.globalAlpha = .35; ctx.fillStyle = '#05030c';
-    ctx.translate(8, 7); ctx.fillRect(20, 20, e.w - 40, e.h - 30); ctx.restore();
+    // shared soft, rounded drop shadow (no hard rectangular corners behind the body)
+    ctx.save(); ctx.globalAlpha = .32; ctx.fillStyle = '#05030c';
+    ctx.translate(10, 10); ctx.beginPath(); ctx.roundRect(24, 24, e.w - 48, e.h - 34, 34); ctx.fill(); ctx.restore();
     if (stageIndex === 0) {
-      ctx.shadowColor = stage.accent2; ctx.shadowBlur = 16;
-      drawBox3D(28, 25, 174, 138, '#16082f', 10);
-      drawBox3D(0, 66, 230, 57, '#2a1048', 8);
-      drawBox3D(39, 14, 152, 136, stage.accent2, 8);
-      ctx.fillStyle = stage.accent; ctx.fillRect(51, 26, 128, 30);
-      ctx.fillStyle = '#100720'; ctx.fillRect(53, 65, 124, 66);
-      ctx.fillStyle = stage.accent2; ctx.fillRect(67, 78, 30, 25); ctx.fillRect(133, 78, 30, 25);
-      ctx.fillStyle = '#fff'; ctx.fillRect(74, 81, 9, 8); ctx.fillRect(140, 81, 9, 8);
-      ctx.fillStyle = '#ffe15a'; heartPath(115, 116, 19); ctx.fill();
-      ctx.fillStyle = stage.accent; ctx.fillRect(-pulse, 51, 35, 8); ctx.fillRect(197, 51, 35 + pulse, 8);
-      drawBox3D(15, 153, 55, 12, stage.accent, 4); drawBox3D(160, 153, 55, 12, stage.accent, 4);
-      ctx.shadowBlur = 0;
+      const TAU = Math.PI * 2;
+      // Shoulder pods (rounded 3D bumps) — drawn first so the head overlaps them.
+      for (const [gx, gw] of [[2 - pulse, 34 + pulse], [194, 34 + pulse]]) {
+        ctx.save(); ctx.shadowColor = stage.accent; ctx.shadowBlur = 12;
+        const pod = ctx.createLinearGradient(0, 96, 0, 132);
+        pod.addColorStop(0, shade(stage.accent, 1.35)); pod.addColorStop(.5, stage.accent); pod.addColorStop(1, shade(stage.accent, .5));
+        ctx.fillStyle = pod; ctx.beginPath(); ctx.roundRect(gx, 96, gw, 32, 13); ctx.fill();
+        ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.beginPath(); ctx.roundRect(gx + 5, 100, gw - 10, 6, 3); ctx.fill();
+        ctx.restore();
+      }
+      // Extruded back shell → volume/depth.
+      ctx.fillStyle = '#2a0a20'; ctx.beginPath(); ctx.roundRect(30, 30, 180, 148, 36); ctx.fill();
+      // Antennae with glowing heart bobbles.
+      ctx.strokeStyle = '#7a1848'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(72, 36); ctx.lineTo(58, 4); ctx.moveTo(158, 36); ctx.lineTo(172, 4); ctx.stroke();
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = hexA(stage.accent2, .85);
+      ctx.beginPath(); ctx.arc(57, 2, 8 + Math.sin(e.t * 4) * 1.5, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(173, 2, 8 + Math.sin(e.t * 4 + 1) * 1.5, 0, TAU); ctx.fill(); ctx.restore();
+      ctx.fillStyle = '#ffd7ea'; heartPath(57, 2, 6); ctx.fill(); heartPath(173, 2, 6); ctx.fill();
+
+      // Main head shell with top-lit vertical gradient.
+      ctx.save(); ctx.shadowColor = stage.accent2; ctx.shadowBlur = 22;
+      const shell = ctx.createLinearGradient(0, 18, 0, 176);
+      shell.addColorStop(0, '#ffb4d8'); shell.addColorStop(.32, '#ff5aa6'); shell.addColorStop(.64, '#ff3e9d'); shell.addColorStop(1, '#66123f');
+      ctx.fillStyle = shell; ctx.beginPath(); ctx.roundRect(24, 22, 180, 150, 34); ctx.fill();
+      ctx.shadowBlur = 0; ctx.restore();
+      // Shading passes clipped to the shell: top gloss, left rim, bottom-right occlusion.
+      ctx.save(); ctx.beginPath(); ctx.roundRect(24, 22, 180, 150, 34); ctx.clip();
+      let gp = ctx.createLinearGradient(0, 22, 0, 100);
+      gp.addColorStop(0, 'rgba(255,255,255,.45)'); gp.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = gp; ctx.fillRect(24, 22, 180, 78);
+      gp = ctx.createLinearGradient(24, 0, 66, 0);
+      gp.addColorStop(0, 'rgba(255,255,255,.3)'); gp.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = gp; ctx.fillRect(24, 22, 42, 150);
+      gp = ctx.createLinearGradient(0, 112, 0, 172);
+      gp.addColorStop(0, 'rgba(38,4,24,0)'); gp.addColorStop(1, 'rgba(38,4,24,.6)');
+      ctx.fillStyle = gp; ctx.fillRect(24, 112, 180, 60);
+      gp = ctx.createLinearGradient(150, 0, 204, 0);
+      gp.addColorStop(0, 'rgba(38,4,24,0)'); gp.addColorStop(1, 'rgba(38,4,24,.5)');
+      ctx.fillStyle = gp; ctx.fillRect(150, 22, 54, 150);
+      ctx.restore();
+
+      // Kawaii cheek blush.
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5; ctx.fillStyle = '#ff8ac2';
+      ctx.beginPath(); ctx.ellipse(60, 134, 15, 9, 0, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(170, 134, 15, 9, 0, 0, TAU); ctx.fill(); ctx.restore();
+
+      // Glossy visor "screen" face — bevelled, not a hard black hole.
+      ctx.fillStyle = '#ffd0e6'; ctx.beginPath(); ctx.roundRect(45, 56, 140, 64, 24); ctx.fill();
+      const visor = ctx.createLinearGradient(0, 58, 0, 118);
+      visor.addColorStop(0, '#2a1440'); visor.addColorStop(.5, '#140826'); visor.addColorStop(1, '#050210');
+      ctx.fillStyle = visor; ctx.beginPath(); ctx.roundRect(48, 59, 134, 58, 21); ctx.fill();
+      ctx.save(); ctx.beginPath(); ctx.roundRect(48, 59, 134, 58, 21); ctx.clip();
+      const vg = ctx.createLinearGradient(48, 59, 120, 117);
+      vg.addColorStop(0, 'rgba(255,255,255,.18)'); vg.addColorStop(.5, 'rgba(255,255,255,0)');
+      ctx.fillStyle = vg; ctx.fillRect(48, 59, 134, 58);
+      ctx.restore();
+
+      // Glowing heart eyes with shine.
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      for (const ex of [86, 144]) {
+        const eg = ctx.createRadialGradient(ex, 86, 1, ex, 86, 17);
+        eg.addColorStop(0, 'rgba(255,255,255,.95)'); eg.addColorStop(.4, hexA(stage.accent2, .9)); eg.addColorStop(1, 'rgba(255,62,157,0)');
+        ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(ex, 86, 17, 0, TAU); ctx.fill();
+      }
+      ctx.restore();
+      ctx.fillStyle = stage.accent2; heartPath(86, 88, 10); ctx.fill(); heartPath(144, 88, 10); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(82, 82, 3.4, 0, TAU); ctx.fill(); ctx.beginPath(); ctx.arc(140, 82, 3.4, 0, TAU); ctx.fill();
+
+      // Golden heart mouth.
+      ctx.save(); ctx.shadowColor = '#ffe15a'; ctx.shadowBlur = 10; ctx.fillStyle = '#ffe15a'; heartPath(115, 150, 15); ctx.fill(); ctx.restore();
+      ctx.fillStyle = '#fff6c0'; heartPath(112, 146, 5); ctx.fill();
+
+      // Rounded feet.
+      for (const fx of [28, 144]) {
+        const ft = ctx.createLinearGradient(0, 164, 0, 182);
+        ft.addColorStop(0, shade(stage.accent, 1.25)); ft.addColorStop(1, shade(stage.accent, .45));
+        ctx.fillStyle = ft; ctx.beginPath(); ctx.roundRect(fx, 164, 58, 16, 8); ctx.fill();
+      }
     } else if (stageIndex === 1) {
       ctx.shadowColor = '#65fff2'; ctx.shadowBlur = 16;
       ctx.fillStyle = '#061828';
