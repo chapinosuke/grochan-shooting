@@ -139,7 +139,7 @@
   };
   const stages = [
     {
-      name: 'SHIBUYA CROSSING', boss: 'HEART BREAKER', midBoss: 'NEON WARDEN', theme: 'neon', subtitle: '渋谷スクランブルの夜をかけぬけろ',
+      name: 'TOKYO MIDNIGHT', boss: 'HEART BREAKER', midBoss: 'NEON WARDEN', theme: 'neon', subtitle: '渋谷スクランブル、眠らない東京の夜',
       sky: ['#120b3e', '#3b1878', '#f044a0'], far: '#28145e', city: '#100b34', accent: '#31e8ff', accent2: '#ff3e9d',
       spawnTable: [['drone', 5], ['bat', 4], ['spinner', 3], ['tank', 2], ['racer', 4], ['seeker', 1]],
       melody: [440, 523.25, 659.25, 523.25, 392, 493.88, 587.33, 493.88, 349.23, 440, 523.25, 659.25, 392, 493.88, 659.25, 783.99],
@@ -175,23 +175,24 @@
     }
   ];
 
-  // Scripted stage timeline. stageTime only advances while bossState === 'waiting',
-  // so warnings/mid-boss/boss fights add on top → ~5 min of wall time per stage.
-  // Durations are scaled by difficulties[..].timeScale.
+  // Scripted stage timeline. Normal difficulty budgets 136s for the route;
+  // warnings + mid-boss + main boss bring a typical clear to about 3m30s.
+  // Durations are scaled by difficulties[..].timeScale so harder boss HP is
+  // offset by a slightly tighter route and easy mode gets more breathing room.
   const PHASE_TEMPLATE = [
-    { id: 'opening', dur: 18, mode: 'trickle', intensity: .25 },
-    { id: 'buildup', dur: 32, mode: 'assault', intensity: .5 },
-    { id: 'formationA', dur: 26, mode: 'formation', intensity: .6 },
-    { id: 'breather1', dur: 10, mode: 'calm', intensity: .15 },
+    { id: 'opening', dur: 12, mode: 'trickle', intensity: .25 },
+    { id: 'buildup', dur: 18, mode: 'assault', intensity: .5 },
+    { id: 'formationA', dur: 15, mode: 'formation', intensity: .6 },
+    { id: 'breather1', dur: 5, mode: 'calm', intensity: .15 },
     { id: 'midboss', dur: 0, mode: 'midboss' },
-    { id: 'recover', dur: 12, mode: 'calm', intensity: .2 },
-    { id: 'assault2', dur: 36, mode: 'assault', intensity: .7 },
-    { id: 'setpiece', dur: 28, mode: 'setpiece', intensity: .75 },
-    { id: 'breather2', dur: 10, mode: 'calm', intensity: .2 },
-    { id: 'eliteRush', dur: 30, mode: 'formation', intensity: .9, elite: true },
-    { id: 'finalPush', dur: 24, mode: 'assault', intensity: 1 }
+    { id: 'recover', dur: 7, mode: 'calm', intensity: .2 },
+    { id: 'assault2', dur: 21, mode: 'assault', intensity: .7 },
+    { id: 'setpiece', dur: 16, mode: 'setpiece', intensity: .75 },
+    { id: 'breather2', dur: 5, mode: 'calm', intensity: .2 },
+    { id: 'eliteRush', dur: 20, mode: 'formation', intensity: .9, elite: true },
+    { id: 'finalPush', dur: 17, mode: 'assault', intensity: 1 }
   ];
-  const SETPIECE_TIMES = [0, 6, 12, 18, 23];
+  const SETPIECE_TIMES = [0, 3.5, 7, 10.5, 14];
   function timeScale() { return difficulties[difficultyKey].timeScale; }
   function timelineTotal() {
     let t = 0;
@@ -1495,6 +1496,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawBackdrop();
     drawGame();
     drawForeground(stages[stageIndex]);
+    // Foreground architecture may occlude sprites, but never the interface.
+    if (state === 'playing' || state === 'over') drawHUD();
     if (state === 'menu' && menuStep === 'title') drawTitleScreen();
     ctx.restore();
     if (fpsShow) drawFpsMeter();
@@ -1590,6 +1593,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     else if (theme === 'factory') drawFactoryBackdrop(stage);
     else if (theme === 'storm') drawStormBackdrop(stage);
     else drawPalaceBackdrop(stage);
+    // A dedicated volume pass sits above the flat scenic layers but below
+    // particles/gameplay. Every stage gets large objects with visible top/side
+    // faces, a shared vanishing point and strong scale separation.
+    drawStageVolume(stage);
     drawAmbient();
     drawNearScenery(stage);
     drawAtmosphere(stage);
@@ -1637,6 +1644,190 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
+  // Extruded box primitive used by the stage-volume pass. The back face shifts
+  // toward the screen-centre vanishing point, so left and right objects expose
+  // opposite side faces instead of looking like uniformly skewed cardboard.
+  function drawVolumeBox(x, y, w, h, depth, front, side, top, alpha = 1, edge = null) {
+    const cx = x + w / 2;
+    const sx = Math.sign(VW / 2 - cx) * depth;
+    const sy = -depth * .48;
+    ctx.save(); ctx.globalAlpha = alpha;
+    // top plane
+    ctx.fillStyle = top;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w + sx, y + sy); ctx.lineTo(x + sx, y + sy); ctx.closePath(); ctx.fill();
+    // side plane facing the viewer
+    ctx.fillStyle = side;
+    if (sx > 0) {
+      ctx.beginPath(); ctx.moveTo(x + w, y); ctx.lineTo(x + w + sx, y + sy);
+      ctx.lineTo(x + w + sx, y + h + sy); ctx.lineTo(x + w, y + h); ctx.closePath(); ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + sx, y + sy);
+      ctx.lineTo(x + sx, y + h + sy); ctx.lineTo(x, y + h); ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = front; ctx.fillRect(x, y, w, h);
+    if (edge) {
+      ctx.globalAlpha = alpha * .75; ctx.strokeStyle = edge; ctx.lineWidth = 2;
+      ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    }
+    ctx.restore();
+  }
+
+  // Shared perspective floor. Bands use a quadratic distribution, while rays
+  // converge on a movable vanishing point. The floor can therefore read as wet
+  // asphalt, bridge deck, steel grating, data glass or polished marble.
+  function drawVolumeFloor(stage, {
+    horizon = 570, bottom = 735, vanishingX = VW / 2,
+    color = null, alpha = .2, bands = 12, speed = 80
+  } = {}) {
+    ctx.save(); ctx.strokeStyle = color || stage.accent; ctx.lineWidth = 1.4;
+    const phase = (elapsed * speed) % 1;
+    for (let i = 0; i < bands; i++) {
+      const t = (i + phase) / bands;
+      const y = horizon + (bottom - horizon) * t * t;
+      ctx.globalAlpha = alpha * (.2 + t * .95);
+      ctx.beginPath(); ctx.moveTo(-40, y); ctx.lineTo(VW + 40, y); ctx.stroke();
+    }
+    ctx.globalAlpha = alpha * .75;
+    for (let x = -480; x <= VW + 480; x += 120) {
+      ctx.beginPath(); ctx.moveTo(vanishingX, horizon); ctx.lineTo(x, bottom); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawStageVolume(stage) {
+    if (stage.theme === 'neon') drawNeonVolume(stage);
+    else if (stage.theme === 'aqua') drawAquaVolume(stage);
+    else if (stage.theme === 'factory') drawFactoryVolume(stage);
+    else if (stage.theme === 'storm') drawStormVolume(stage);
+    else drawPalaceVolume(stage);
+  }
+
+  function drawNeonVolume(stage) {
+    bgLayer(.08, () => {
+      // Two close high-rises turn the skyline into a city canyon. Their visible
+      // inner faces react oppositely to camera yaw, which makes lateral movement
+      // feel like looking between real buildings.
+      const sway = bgCamX * -.35;
+      drawVolumeBox(-54 + sway, 238, 142, 398, 38, '#0a0820', '#05040f', '#30205c', .62, hexA(stage.accent, .38));
+      drawVolumeBox(VW - 86 + sway, 190, 154, 446, 42, '#100825', '#060310', '#402060', .66, hexA(stage.accent2, .42));
+      ctx.save(); ctx.globalAlpha = .62;
+      for (const [x, y, c, text] of [[18, 330, stage.accent, '東京'], [VW - 72, 286, stage.accent2, '深夜']]) {
+        ctx.fillStyle = '#08051a'; ctx.fillRect(x, y, 58, 126);
+        ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.shadowColor = c; ctx.shadowBlur = 14; ctx.strokeRect(x, y, 58, 126);
+        ctx.fillStyle = c; ctx.font = '20px "DotGothic16", monospace'; ctx.textAlign = 'center';
+        [...text].forEach((ch, i) => ctx.fillText(ch, x + 29, y + 40 + i * 36));
+      }
+      ctx.restore();
+    });
+    drawVolumeFloor(stage, { horizon: 604, bottom: 740, color: '#b9d8ff', alpha: .16, speed: .48 });
+  }
+
+  function drawAquaVolume(stage) {
+    bgLayer(.1, () => {
+      const deckY = 548;
+      // Suspension bridge deck with a visible top slab and underside.
+      ctx.save(); ctx.globalAlpha = .68;
+      ctx.fillStyle = '#173e63';
+      ctx.beginPath(); ctx.moveTo(-80, deckY); ctx.lineTo(VW + 80, deckY - 4);
+      ctx.lineTo(VW + 80, deckY + 18); ctx.lineTo(-80, deckY + 25); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#061a32';
+      ctx.beginPath(); ctx.moveTo(-80, deckY + 18); ctx.lineTo(VW + 80, deckY + 12);
+      ctx.lineTo(VW + 80, deckY + 38); ctx.lineTo(-80, deckY + 46); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = hexA(stage.accent, .72); ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(-80, deckY); ctx.lineTo(VW + 80, deckY - 4); ctx.stroke();
+      // Extruded bridge towers.
+      for (const tx of [318, 956]) {
+        drawVolumeBox(tx - 18, 360, 36, 190, 16, '#0a2a50', '#041327', '#31709b', .88, hexA(stage.accent, .6));
+        drawVolumeBox(tx - 52, 384, 104, 18, 13, '#123d65', '#06192f', '#4f91b4', .84, stage.accent);
+        ctx.strokeStyle = hexA(stage.accent, .45); ctx.lineWidth = 2;
+        for (let i = 0; i < 7; i++) {
+          const ex = tx + (i - 3) * 94;
+          ctx.beginPath(); ctx.moveTo(tx, 366); ctx.quadraticCurveTo((tx + ex) / 2, 430 + Math.abs(i - 3) * 9, ex, deckY); ctx.stroke();
+        }
+      }
+      // Deck lane streaks shrink toward the centre.
+      ctx.fillStyle = 'rgba(255,255,255,.45)';
+      const laneOff = (elapsed * 150) % 92;
+      for (let x = -laneOff; x < VW + 100; x += 92) ctx.fillRect(x, deckY + 6, 42, 3);
+      ctx.restore();
+    });
+    drawVolumeFloor(stage, { horizon: 557, bottom: 735, color: stage.accent, alpha: .11, speed: .4 });
+  }
+
+  function drawFactoryVolume(stage) {
+    bgLayer(.08, () => {
+      const scroll = (elapsed * 42) % 430;
+      // Repeating steel gantries become smaller toward the horizon. Visible beam
+      // tops and side planes keep the frame from reading as flat rectangles.
+      for (let i = -1; i < 5; i++) {
+        const x = i * 430 - scroll;
+        drawVolumeBox(x, 276, 28, 374, 18, '#1a0b17', '#09050b', '#6a2d34', .58, hexA(stage.accent2, .38));
+        drawVolumeBox(x + 286, 276, 28, 374, 18, '#1a0b17', '#09050b', '#6a2d34', .58, hexA(stage.accent2, .38));
+        drawVolumeBox(x, 276, 314, 24, 18, '#2a101e', '#0c070d', '#8a3f39', .62, hexA(stage.accent, .4));
+        ctx.save(); ctx.globalAlpha = .24; ctx.strokeStyle = stage.accent; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(x + 28, 300); ctx.lineTo(x + 286, 370);
+        ctx.moveTo(x + 286, 300); ctx.lineTo(x + 28, 370); ctx.stroke(); ctx.restore();
+      }
+      // Large cylindrical pipe crosses the lower scene with a shaded underside.
+      const py = 604;
+      const pipe = ctx.createLinearGradient(0, py - 18, 0, py + 25);
+      pipe.addColorStop(0, '#9a4a46'); pipe.addColorStop(.38, '#3d1b28'); pipe.addColorStop(1, '#120812');
+      ctx.globalAlpha = .52; ctx.fillStyle = pipe; ctx.fillRect(-30, py - 18, VW + 60, 43);
+      ctx.fillStyle = hexA(stage.accent, .48); ctx.fillRect(-30, py - 17, VW + 60, 3);
+      for (let x = -40 - (elapsed * 66) % 160; x < VW + 80; x += 160) {
+        ctx.fillStyle = '#160b14'; ctx.fillRect(x, py - 25, 13, 57);
+        ctx.fillStyle = '#7c3539'; ctx.fillRect(x + 3, py - 21, 3, 48);
+      }
+    });
+    drawVolumeFloor(stage, { horizon: 650, bottom: 742, color: '#ffb347', alpha: .17, speed: .7 });
+  }
+
+  function drawStormVolume(stage) {
+    const surge = .3 + Math.min(1, lightning * 2.5) * .7;
+    bgLayer(.06, () => {
+      // Floating data cubes rotate by swapping the apparent extrusion vector;
+      // their faces brighten together when lightning surges.
+      const cubes = [[164, 248, 54, .7], [1065, 205, 78, 1.5], [820, 400, 42, 2.4], [430, 150, 34, 3.1]];
+      for (const [x, y, size, phase] of cubes) {
+        const bob = Math.sin(elapsed * .8 + phase) * 12;
+        const d = 15 + Math.abs(Math.sin(elapsed * .34 + phase)) * 20;
+        drawVolumeBox(x, y + bob, size, size, d, '#07362d', '#021814', '#166c58', .32 + surge * .3, hexA(stage.accent, surge));
+        ctx.save(); ctx.globalAlpha = .2 + surge * .35; ctx.strokeStyle = stage.accent2;
+        ctx.beginPath(); ctx.moveTo(x + size * .25, y + bob + size * .5); ctx.lineTo(x + size * .75, y + bob + size * .5);
+        ctx.moveTo(x + size * .5, y + bob + size * .25); ctx.lineTo(x + size * .5, y + bob + size * .75); ctx.stroke(); ctx.restore();
+      }
+      // Data-tunnel ribs frame a receding corridor around the play field.
+      ctx.save(); ctx.strokeStyle = hexA(stage.accent, .16 + surge * .2); ctx.lineWidth = 4;
+      for (let i = 0; i < 7; i++) {
+        const t = i / 7, inset = 18 + t * 110, top = 88 + t * 54, bottom = 648 - t * 24;
+        ctx.globalAlpha = .2 + (1 - t) * .25;
+        ctx.beginPath(); ctx.moveTo(inset, bottom); ctx.lineTo(inset, top); ctx.lineTo(VW - inset, top); ctx.lineTo(VW - inset, bottom); ctx.stroke();
+      }
+      ctx.restore();
+    });
+    drawVolumeFloor(stage, { horizon: 566, bottom: 736, color: stage.accent, alpha: .22 + surge * .04, speed: .62 });
+  }
+
+  function drawPalaceVolume(stage) {
+    bgLayer(.08, () => {
+      // Nested arches shrink toward the central throne-room vanishing point.
+      // Each arch is built from extruded pillars and a top beam, creating a
+      // corridor rather than a single flat row of columns.
+      for (let i = 5; i >= 0; i--) {
+        const t = i / 6, inset = 72 + t * 350, topY = 228 + t * 190;
+        const baseY = 650, pw = 46 - t * 24, depth = 24 - t * 13;
+        const alpha = .26 + (1 - t) * .42;
+        drawVolumeBox(inset, topY, pw, baseY - topY, depth, '#2c0a24', '#10030e', '#7b2051', alpha, hexA('#ffe15a', .32));
+        drawVolumeBox(VW - inset - pw, topY, pw, baseY - topY, depth, '#2c0a24', '#10030e', '#7b2051', alpha, hexA('#ffe15a', .32));
+        drawVolumeBox(inset, topY, VW - inset * 2, 22, depth, '#3a0d2d', '#130411', '#9a2b61', alpha, hexA(stage.accent2, .42));
+        ctx.save(); ctx.globalAlpha = alpha * .55; ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(VW / 2, topY + 22, (VW - inset * 2) * .22, Math.PI, 0); ctx.stroke(); ctx.restore();
+      }
+    });
+    drawVolumeFloor(stage, { horizon: 506, bottom: 744, color: '#ffd27a', alpha: .17, speed: .34 });
+  }
+
   // Foreground occlusion band drawn over gameplay: fast, dark, translucent
   // silhouettes confined below y≈660 so the flight lane stays readable.
   function drawForeground(stage) {
@@ -1668,7 +1859,42 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }
     }
     ctx.restore();
+    drawStageForegroundFrame(stage);
     drawBokeh(stage);
+  }
+
+  // Very close architecture is drawn after gameplay and therefore genuinely
+  // occludes sprites at the extreme edges. This is the strongest depth cue in
+  // the scene, but it is deliberately limited to the outer ~8% of the frame.
+  function drawStageForegroundFrame(stage) {
+    const ox = bgCamX * -.75;
+    ctx.save(); ctx.translate(ox, bgCam * -.55);
+    if (stage.theme === 'neon') {
+      drawVolumeBox(-58, 92, 78, 578, 34, '#050313', '#020108', '#29154a', .72, hexA(stage.accent, .3));
+      drawVolumeBox(VW - 18, 58, 82, 612, 36, '#070316', '#020108', '#371748', .74, hexA(stage.accent2, .34));
+    } else if (stage.theme === 'aqua') {
+      ctx.globalAlpha = .7; ctx.strokeStyle = '#06152a'; ctx.lineWidth = 18;
+      ctx.beginPath(); ctx.moveTo(-5, 690); ctx.quadraticCurveTo(110, 210, 240, -30); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(VW + 5, 690); ctx.quadraticCurveTo(VW - 110, 210, VW - 240, -30); ctx.stroke();
+      ctx.strokeStyle = hexA(stage.accent, .28); ctx.lineWidth = 3;
+      for (let y = 150; y < 650; y += 70) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(70, y - 90); ctx.moveTo(VW, y); ctx.lineTo(VW - 70, y - 90); ctx.stroke(); }
+    } else if (stage.theme === 'factory') {
+      const pipe = ctx.createLinearGradient(0, 0, 95, 0); pipe.addColorStop(0, '#080408'); pipe.addColorStop(.55, '#5c2831'); pipe.addColorStop(1, '#140811');
+      ctx.globalAlpha = .78; ctx.fillStyle = pipe; ctx.fillRect(-30, 100, 78, 570); ctx.fillRect(VW - 48, 64, 78, 606);
+      ctx.strokeStyle = '#160b12'; ctx.lineWidth = 13;
+      for (let y = 180; y < 650; y += 150) { ctx.strokeRect(-12, y, 74, 42); ctx.strokeRect(VW - 62, y + 55, 74, 42); }
+      ctx.fillStyle = hexA(stage.accent, .5); ctx.fillRect(42, 104, 4, 560); ctx.fillRect(VW - 48, 68, 4, 596);
+    } else if (stage.theme === 'storm') {
+      drawVolumeBox(-64, 116, 86, 558, 46, '#020d0b', '#010504', '#155b49', .7, hexA(stage.accent, .48));
+      drawVolumeBox(VW - 22, 90, 88, 584, 48, '#020d0b', '#010504', '#155b49', .7, hexA(stage.accent2, .46));
+    } else {
+      drawVolumeBox(-54, 84, 82, 590, 38, '#170315', '#070106', '#6f1746', .76, hexA('#ffe15a', .38));
+      drawVolumeBox(VW - 28, 84, 82, 590, 38, '#170315', '#070106', '#6f1746', .76, hexA('#ffe15a', .38));
+      ctx.globalAlpha = .35; ctx.fillStyle = '#7b174e';
+      ctx.beginPath(); ctx.moveTo(12, 84); ctx.quadraticCurveTo(115, 180, 28, 330); ctx.lineTo(-20, 330); ctx.lineTo(-20, 84); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(VW - 12, 84); ctx.quadraticCurveTo(VW - 115, 180, VW - 28, 330); ctx.lineTo(VW + 20, 330); ctx.lineTo(VW + 20, 84); ctx.fill();
+    }
+    ctx.restore();
   }
 
   // Defocused foreground light orbs: big, soft, low-alpha radial gradients that
@@ -1765,19 +1991,167 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // Ultra-far third skyline: three city depths with haze between them.
       drawCity((elapsed * -3) % 60, 468, stage.far, 26, .16, 5);
       drawCity((elapsed * -7) % 80, 505, stage.far, 40, .32, 8);
+      drawTokyoTower(stage);
       draw109Tower(stage);
     });
     drawDepthHaze(stage, .55);
     bgLayer(.15, () => {
       for (const p of bgProps) if (p.kind === 'car') drawFlyingCar(p, stage);
       drawCity((elapsed * -20) % 120, 600, stage.city, 54, .78, 18);
+      drawTokyoExpressway(stage);
       drawStorefronts(stage);
       drawShibuyaScreen(stage);
     });
     drawScrambleCrossing(stage);
     drawGroundLayer();
     drawGroundPlane(stage, { horizonY: 606, bottom: 704, alpha: .1, speed: 90, gap: 110 });
+    drawTokyoRoadLights(stage);
     drawShoppers();
+  }
+
+  // A distant, unmistakably Tokyo red-and-white lattice tower. The tapered
+  // truss, observation decks and aviation beacons are kept translucent so it
+  // anchors the location without competing with bullets in the play lane.
+  function drawTokyoTower(stage) {
+    const loop = 2280;
+    const base = 300 - (elapsed * 4) % loop;
+    for (let r = 0; r < 2; r++) {
+      const cx = base + r * loop;
+      if (cx < -170 || cx > VW + 170) continue;
+      const baseY = 512, topY = 162, h = baseY - topY;
+      const halfAt = y => 6 + ((y - topY) / h) * 70;
+      ctx.save(); ctx.globalAlpha = .66;
+
+      // soft amber halo behind the tower
+      const halo = ctx.createRadialGradient(cx, 322, 5, cx, 322, 180);
+      halo.addColorStop(0, hexA('#ff7048', .14));
+      halo.addColorStop(1, 'rgba(255,80,50,0)');
+      ctx.fillStyle = halo; ctx.fillRect(cx - 180, 142, 360, 370);
+
+      // four tapered legs and alternating white/red truss sections
+      ctx.lineCap = 'round'; ctx.lineWidth = 4;
+      for (let seg = 0; seg < 10; seg++) {
+        const y0 = topY + seg * h / 10, y1 = topY + (seg + 1) * h / 10;
+        const w0 = halfAt(y0), w1 = halfAt(y1);
+        const col = seg % 3 === 1 ? '#f3edf7' : '#ff4f48';
+        ctx.strokeStyle = col;
+        ctx.beginPath();
+        ctx.moveTo(cx - w0, y0); ctx.lineTo(cx - w1, y1);
+        ctx.moveTo(cx + w0, y0); ctx.lineTo(cx + w1, y1);
+        ctx.moveTo(cx - w0, y0); ctx.lineTo(cx + w1, y1);
+        ctx.moveTo(cx + w0, y0); ctx.lineTo(cx - w1, y1);
+        ctx.stroke();
+        ctx.globalAlpha = .42;
+        ctx.beginPath(); ctx.moveTo(cx - w1, y1); ctx.lineTo(cx + w1, y1); ctx.stroke();
+        ctx.globalAlpha = .66;
+      }
+
+      // observation decks, antenna and blinking beacons
+      for (const [y, w] of [[286, 82], [318, 104]]) {
+        const deck = ctx.createLinearGradient(cx - w / 2, 0, cx + w / 2, 0);
+        deck.addColorStop(0, '#5a1830'); deck.addColorStop(.5, '#ff9a54'); deck.addColorStop(1, '#4a1329');
+        ctx.fillStyle = deck; ctx.fillRect(cx - w / 2, y, w, 10);
+        ctx.fillStyle = '#fff0c8'; ctx.fillRect(cx - w * .38, y + 3, w * .76, 2);
+      }
+      ctx.fillStyle = '#eee9f4'; ctx.fillRect(cx - 2, topY - 57, 4, 58);
+      ctx.fillStyle = Math.sin(elapsed * 4) > 0 ? '#fff' : '#ff3e9d';
+      ctx.shadowColor = '#ff3e9d'; ctx.shadowBlur = 14;
+      ctx.beginPath(); ctx.arc(cx, topY - 58, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // Shuto Expressway-inspired elevated road. The top, fascia and dark underside
+  // use different values, while columns shrink toward the horizon. Two traffic
+  // streams move at different speeds to reinforce depth and direction.
+  function drawTokyoExpressway(stage) {
+    const horizonY = 505;
+    const roadY = x => horizonY + Math.sin(x * .0032 + elapsed * .035) * 13;
+    ctx.save(); ctx.globalAlpha = .82;
+
+    // repeating supports recede into the skyline
+    const supportOff = (elapsed * 14) % 250;
+    for (let x = -180 - supportOff; x < VW + 220; x += 250) {
+      const y = roadY(x), lean = (x - VW / 2) * .025;
+      ctx.fillStyle = '#0a0a22';
+      ctx.beginPath();
+      ctx.moveTo(x - 12, y + 30); ctx.lineTo(x + 14, y + 30);
+      ctx.lineTo(x + 25 + lean, 606); ctx.lineTo(x - 22 + lean, 606);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = hexA(stage.accent, .13); ctx.fillRect(x - 8, y + 34, 4, 566 - y);
+    }
+
+    // road top, vertical fascia, then a deep underside shadow
+    ctx.beginPath();
+    for (let x = -60; x <= VW + 60; x += 40) x === -60 ? ctx.moveTo(x, roadY(x)) : ctx.lineTo(x, roadY(x));
+    for (let x = VW + 60; x >= -60; x -= 40) ctx.lineTo(x, roadY(x) + 13);
+    ctx.closePath(); ctx.fillStyle = '#302b4f'; ctx.fill();
+
+    ctx.beginPath();
+    for (let x = -60; x <= VW + 60; x += 40) x === -60 ? ctx.moveTo(x, roadY(x) + 13) : ctx.lineTo(x, roadY(x) + 13);
+    for (let x = VW + 60; x >= -60; x -= 40) ctx.lineTo(x, roadY(x) + 31);
+    ctx.closePath();
+    const fascia = ctx.createLinearGradient(0, horizonY + 10, 0, horizonY + 42);
+    fascia.addColorStop(0, '#18152f'); fascia.addColorStop(1, '#070718');
+    ctx.fillStyle = fascia; ctx.fill();
+
+    ctx.strokeStyle = hexA(stage.accent, .46); ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = -60; x <= VW + 60; x += 40) x === -60 ? ctx.moveTo(x, roadY(x) + 1) : ctx.lineTo(x, roadY(x) + 1);
+    ctx.stroke();
+
+    // barrier posts provide a readable scale reference
+    const postOff = (elapsed * 22) % 44;
+    ctx.strokeStyle = '#7774a0'; ctx.lineWidth = 2;
+    for (let x = -44 - postOff; x < VW + 44; x += 44) {
+      const y = roadY(x);
+      ctx.beginPath(); ctx.moveTo(x, y - 8); ctx.lineTo(x, y + 2); ctx.lineTo(x + 34, roadY(x + 34) + 2); ctx.stroke();
+    }
+
+    drawTokyoTraffic(stage, roadY, 92, 95, 1);
+    drawTokyoTraffic(stage, roadY, 132, 118, -1);
+    ctx.restore();
+  }
+
+  function drawTokyoTraffic(stage, roadY, speed, spacing, dir) {
+    const travel = VW + spacing * 3;
+    const offset = (elapsed * speed) % travel;
+    for (let i = -2; i < Math.ceil(VW / spacing) + 3; i++) {
+      const x = dir > 0
+        ? (i * spacing + offset) % travel - spacing
+        : VW + spacing - (i * spacing + offset) % travel;
+      if (x < -60 || x > VW + 60 || (i + stageIndex) % 3 === 0) continue;
+      const y = roadY(x) - 6;
+      ctx.save(); ctx.translate(x, y); ctx.scale(dir, 1);
+      ctx.fillStyle = i % 4 === 0 ? '#d8d7e8' : i % 4 === 1 ? '#291a4b' : '#18243c';
+      ctx.fillRect(-15, -5, 31, 7); ctx.fillRect(-8, -10, 17, 6);
+      ctx.fillStyle = '#75dfff'; ctx.fillRect(-5, -9, 8, 4);
+      const lamp = dir > 0 ? '#fff3a8' : stage.accent2;
+      ctx.fillStyle = lamp; ctx.shadowColor = lamp; ctx.shadowBlur = 8;
+      ctx.fillRect(13, -2, 4, 3);
+      ctx.globalAlpha = .16; ctx.fillRect(17, -2, 30, 3);
+      ctx.restore();
+    }
+  }
+
+  // Moving lamp and tail-light reflections on the wet foreground asphalt. Long,
+  // tapered streaks sit below y=660 so gameplay silhouettes remain uncluttered.
+  function drawTokyoRoadLights(stage) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const travel = VW + 260, off = (elapsed * 240) % travel;
+    for (let i = 0; i < 8; i++) {
+      const x = (i * 210 + off) % travel - 130;
+      const c = i % 3 ? stage.accent2 : '#ffe6a0';
+      const glow = ctx.createLinearGradient(0, 660, 0, VH);
+      glow.addColorStop(0, hexA(c, .24)); glow.addColorStop(1, hexA(c, 0));
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.moveTo(x - 5, 660); ctx.lineTo(x + 6, 660);
+      ctx.lineTo(x + 24, VH); ctx.lineTo(x - 20, VH); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = .7; ctx.fillStyle = c;
+      ctx.fillRect(x - 4, 663, 4, 2); ctx.fillRect(x + 3, 663, 4, 2);
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
   }
 
   function drawSkyRibbons() {
@@ -2751,7 +3125,6 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       sg.addColorStop(0, `rgba(255,255,255,${specialFlash * .52})`); sg.addColorStop(.35, `rgba(255,225,90,${specialFlash * .25})`); sg.addColorStop(1, 'rgba(255,62,157,0)');
       ctx.fillStyle = sg; ctx.fillRect(0, 0, VW, VH);
     }
-    if (state === 'playing' || state === 'over') drawHUD();
     if (flash > 0) { ctx.globalAlpha = flash * .45; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, VW, VH); ctx.globalAlpha = 1; }
   }
 
