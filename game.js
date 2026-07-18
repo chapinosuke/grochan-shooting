@@ -29,17 +29,17 @@
   const keys = new Set();
   const pointer = { active: false, x: 0, y: 0 };
   const spriteSheet = new Image();
-  spriteSheet.src = '背景なしChatGPT Image 2026年7月18日 06_30_26.png';
+  spriteSheet.src = 'assets/images/player-spritesheet.png';
   const bgmTracks = {
-    opening: new Audio('Neon Arcade Rush.mp3'),
-    stage0: new Audio('Neon Arcade Rush.mp3'),
-    stage1: new Audio('Neon Arena.mp3'),
-    stage2: new Audio('Neon Arena (1).mp3'),
-    stage3: new Audio('Neon Demoness.mp3'),
-    stage4: new Audio('Neon Bullet Heaven.mp3'),
-    midBoss: new Audio('The Crimson Labyrinth.mp3'),
-    bossBattle: new Audio('Neon Bullet Heaven.mp3'),
-    finalBoss: new Audio('Red Planet Showdown.mp3')
+    opening: new Audio('assets/bgm/Neon Arcade Rush.mp3'),
+    stage0: new Audio('assets/bgm/Neon Arcade Rush.mp3'),
+    stage1: new Audio('assets/bgm/Neon Arena.mp3'),
+    stage2: new Audio('assets/bgm/Neon Arena (1).mp3'),
+    stage3: new Audio('assets/bgm/Neon Demoness.mp3'),
+    stage4: new Audio('assets/bgm/Neon Bullet Heaven.mp3'),
+    midBoss: new Audio('assets/bgm/The Crimson Labyrinth.mp3'),
+    bossBattle: new Audio('assets/bgm/Neon Bullet Heaven.mp3'),
+    finalBoss: new Audio('assets/bgm/Red Planet Showdown.mp3')
   };
   const bgmVolumes = { opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32 };
   Object.entries(bgmTracks).forEach(([key, track]) => { track.loop = true; track.preload = 'auto'; track.volume = bgmVolumes[key]; });
