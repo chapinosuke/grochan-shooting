@@ -120,35 +120,35 @@
   };
   const stages = [
     {
-      name: 'SHIBUYA CROSSING', boss: 'HEART BREAKER', theme: 'neon', subtitle: '渋谷スクランブルの夜をかけぬけろ',
+      name: 'SHIBUYA CROSSING', boss: 'HEART BREAKER', midBoss: 'NEON WARDEN', theme: 'neon', subtitle: '渋谷スクランブルの夜をかけぬけろ',
       sky: ['#120b3e', '#3b1878', '#f044a0'], far: '#28145e', city: '#100b34', accent: '#31e8ff', accent2: '#ff3e9d',
       spawnTable: [['drone', 5], ['bat', 4], ['spinner', 3], ['tank', 2], ['racer', 4], ['seeker', 1]],
       melody: [440, 523.25, 659.25, 523.25, 392, 493.88, 587.33, 493.88, 349.23, 440, 523.25, 659.25, 392, 493.88, 659.25, 783.99],
       bass: [110, 110, 98, 98, 87.31, 87.31, 98, 123.47]
     },
     {
-      name: 'AQUA HIGHWAY', boss: 'DEEP BLUE DIVA', theme: 'aqua', subtitle: '潮風のハイウェイを駆け抜けろ',
+      name: 'AQUA HIGHWAY', boss: 'DEEP BLUE DIVA', midBoss: 'TIDAL WARDEN', theme: 'aqua', subtitle: '潮風のハイウェイを駆け抜けろ',
       sky: ['#041b3d', '#075987', '#20c5c9'], far: '#123c68', city: '#071d42', accent: '#65fff2', accent2: '#2f8cff',
       spawnTable: [['bat', 3], ['jelly', 5], ['drone', 2], ['spinner', 3], ['manta', 4], ['racer', 2]],
       melody: [392, 440, 523.25, 587.33, 659.25, 587.33, 523.25, 440, 349.23, 392, 440, 523.25, 587.33, 523.25, 440, 392],
       bass: [98, 98, 87.31, 87.31, 110, 110, 87.31, 73.42]
     },
     {
-      name: 'SUNSET FACTORY', boss: 'BLAZE EMPRESS', theme: 'factory', subtitle: '燃える夕日と鋼鉄の罠',
+      name: 'SUNSET FACTORY', boss: 'BLAZE EMPRESS', midBoss: 'CINDER WARDEN', theme: 'factory', subtitle: '燃える夕日と鋼鉄の罠',
       sky: ['#351036', '#a42f4f', '#ff9f43'], far: '#592141', city: '#28132e', accent: '#ffe15a', accent2: '#ff5a36',
       spawnTable: [['tank', 5], ['turret', 4], ['ember', 5], ['drone', 2], ['walker', 4], ['spinner', 2]],
       melody: [329.63, 329.63, 392, 329.63, 311.13, 329.63, 392, 440, 329.63, 329.63, 392, 493.88, 440, 392, 329.63, 293.66],
       bass: [82.41, 82.41, 82.41, 82.41, 77.78, 77.78, 98, 98]
     },
     {
-      name: 'CYBER STORM', boss: 'VOLT PHANTOM', theme: 'storm', subtitle: '雷鳴とどろく電脳空域',
+      name: 'CYBER STORM', boss: 'VOLT PHANTOM', midBoss: 'GLITCH WARDEN', theme: 'storm', subtitle: '雷鳴とどろく電脳空域',
       sky: ['#071d24', '#13554b', '#48b849'], far: '#164636', city: '#071f25', accent: '#72ff68', accent2: '#31e8ff',
       spawnTable: [['glitch', 5], ['spinner', 4], ['bat', 2], ['turret', 3], ['seeker', 4], ['racer', 2]],
       melody: [293.66, 349.23, 440, 349.23, 293.66, 369.99, 440, 587.33, 293.66, 349.23, 466.16, 440, 349.23, 293.66, 246.94, 293.66],
       bass: [73.42, 73.42, 87.31, 87.31, 73.42, 73.42, 92.5, 110]
     },
     {
-      name: 'HEART PALACE', boss: 'QUEEN OF HEARTBREAK', theme: 'palace', subtitle: '決戦、ハートの女王の宮殿',
+      name: 'HEART PALACE', boss: 'QUEEN OF HEARTBREAK', midBoss: 'VELVET WARDEN', theme: 'palace', subtitle: '決戦、ハートの女王の宮殿',
       sky: ['#25051d', '#72114e', '#d82065'], far: '#4d123d', city: '#21061d', accent: '#ffe15a', accent2: '#ff3e9d',
       spawnTable: [['cupid', 5], ['drone', 2], ['bat', 3], ['spinner', 3], ['tank', 3], ['knight', 4], ['seeker', 2]],
       melody: [261.63, 311.13, 392, 523.25, 466.16, 392, 311.13, 261.63, 233.08, 293.66, 349.23, 466.16, 392, 349.23, 293.66, 261.63],
@@ -2629,10 +2629,36 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     gp.addColorStop(0, 'rgba(10,3,20,0)'); gp.addColorStop(1, 'rgba(10,3,20,.55)');
     ctx.fillStyle = gp; ctx.fillRect(22, 82, 112, 32);
     ctx.restore();
-    // Stage motif crest.
+    // Stage motif crest — gives each stage's warden a distinct silhouette accent.
     ctx.fillStyle = stage.accent;
-    if (stageIndex === 4) { heartPath(78, 26, 7); ctx.fill(); }
-    else { ctx.beginPath(); ctx.roundRect(64, 20, 28, 5, 2); ctx.fill(); }
+    if (stageIndex === 0) {
+      // Neon Warden: twin antennae with glowing heart bobbles, echoing the stage1 boss.
+      ctx.strokeStyle = shade(stage.accent, .6); ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(56, 20); ctx.lineTo(46, 2); ctx.moveTo(100, 20); ctx.lineTo(110, 2); ctx.stroke();
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = hexA(stage.accent2, .85);
+      ctx.beginPath(); ctx.arc(46, 0, 5, 0, TAU); ctx.fill(); ctx.beginPath(); ctx.arc(110, 0, 5, 0, TAU); ctx.fill(); ctx.restore();
+      ctx.fillStyle = '#ffd7ea'; heartPath(46, 0, 4); ctx.fill(); heartPath(110, 0, 4); ctx.fill();
+    } else if (stageIndex === 1) {
+      // Tidal Warden: a swept dorsal fin.
+      ctx.fillStyle = stage.accent;
+      ctx.beginPath(); ctx.moveTo(58, 20); ctx.quadraticCurveTo(78, -16, 98, 20); ctx.quadraticCurveTo(78, 6, 58, 20); ctx.closePath(); ctx.fill();
+    } else if (stageIndex === 2) {
+      // Cinder Warden: flickering flame spikes.
+      const fl = Math.sin(e.t * 12) * 4;
+      ctx.fillStyle = '#ffe15a';
+      ctx.beginPath(); ctx.moveTo(52, 20); ctx.lineTo(60, -6 - fl); ctx.lineTo(68, 20); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(72, 20); ctx.lineTo(80, -14 + fl); ctx.lineTo(88, 20); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(92, 20); ctx.lineTo(100, -6 - fl); ctx.lineTo(108, 20); ctx.closePath(); ctx.fill();
+    } else if (stageIndex === 3) {
+      // Glitch Warden: an angular circuit antenna with a blinking node.
+      ctx.strokeStyle = stage.accent; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(78, 20); ctx.lineTo(78, 4); ctx.lineTo(94, -8); ctx.stroke();
+      ctx.save(); ctx.globalAlpha = .5 + Math.sin(e.t * 9) * .5; ctx.fillStyle = stage.accent;
+      ctx.fillRect(90, -12, 8, 8); ctx.restore();
+    } else {
+      // Velvet Warden: a soft heart crest, matching the final boss.
+      heartPath(78, 26, 7); ctx.fill();
+    }
     // Glossy bevelled visor.
     ctx.fillStyle = shade(acc, 1.45); ctx.beginPath(); ctx.roundRect(42, 46, 72, 40, 16); ctx.fill();
     const visor = ctx.createLinearGradient(0, 48, 0, 84);
@@ -3053,7 +3079,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       } else {
         ctx.fillStyle = stage.accent2; ctx.fillRect(338, VH - 44, 604 * ratio, 12);
       }
-      ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText(boss.type === 'midboss' ? 'MID BOSS  CRIMSON WARDEN' : `BOSS  ${stage.boss}`, VW / 2, VH - 58);
+      ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText(boss.type === 'midboss' ? `MID BOSS  ${stage.midBoss}` : `BOSS  ${stage.boss}`, VW / 2, VH - 58);
       if (boss.phase2) { ctx.fillStyle = stage.accent2; ctx.font = '8px "Press Start 2P", monospace'; ctx.fillText('- FINAL PHASE -', VW / 2, VH - 18); }
       ctx.textAlign = 'left';
     }

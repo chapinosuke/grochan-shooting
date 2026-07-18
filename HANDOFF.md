@@ -32,7 +32,8 @@
 - [x] **ボス2〜5の磨き**（`drawBoss` の `stageIndex===1..4`）: 共有ヘルパー`drawVisorPanel`(角丸グラデ+ハイライト)/`drawGlowDot`(加算グローの発光瞳)を新設し、DEEP BLUE DIVA/BLAZE EMPRESS/VOLT PHANTOM/QUEEN OF HEARTBREAKの平板な黒fillRect目を角丸グロスバイザー＋発光瞳に刷新（最終ボスはハート型瞳でstage1と統一感）。
 - [x] **着弾FX/破片/ヒットストップ**（Phase3後半）: `hitStop`変数を追加し`frame()`で`dt*=.15`のスロー処理（`collisions()`の被弾/`destroyEnemy()`/`hurt()`から`Math.max`でセット、大きさは雑魚<タンク<中ボス<ボスの順）。`burstDebris()`を新設し、角ばった`shape:'shard'`パーティクル（回転しながら落下する破片）を`burst()`の丸グロー粒子と併用。自弾ヒット時は小チップ2枚、撃破時は雑魚7〜ボス26枚。
 - [ ] **二次アニメ**（Phase2の残り）: wind-up（`e.windup`）/被弾ダメージ状態/瞬き。※`e.recoil`は既にtank砲身が参照、turret砲身は既にプレイヤー追尾。
-- [ ] **Phase5 ステージ個性**: タイトルカード強化、**中ボス5種差別化**（現状は全stageで同一シェルの色替え。固定名`'CRIMSON WARDEN'`をステージ別名に）、敵へのステージ色デカール。
+- [x] **中ボス5種差別化**: 各`stages[]`に`midBoss`名を追加（NEON/TIDAL/CINDER/GLITCH/VELVET WARDEN）、HUDの固定文字列`'CRIMSON WARDEN'`を`stage.midBoss`参照に置換。`drawMidBoss`のクレスト部をステージ別シルエット（ハート型アンテナ/ドーサルフィン/火炎スパイク/サーキット触角+点滅ノード/ハートクレスト）に分岐して差別化。
+- [ ] **Phase5 残り**: タイトルカード強化、敵へのステージ色デカール。
 - [ ] **Phase6 性能調整**（必要なら `bakeSprite` を実際に活性化して敵/背景を焼き込み。**スクショで見比べながら**やれば同一性リスクを回避できる）。
 
 ## 技術メモ
