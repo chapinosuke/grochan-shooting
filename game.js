@@ -110,43 +110,43 @@
   let padActionWasDown = false;
   let padSpecialWasDown = false;
   const difficulties = {
-    easy: { spawn: 1.22, speed: .82, damage: .68, bossTime: 31, bossHp: 72, score: .8 },
-    normal: { spawn: 1, speed: 1, damage: 1, bossTime: 26, bossHp: 100, score: 1 },
-    hard: { spawn: .76, speed: 1.2, damage: 1.28, bossTime: 21, bossHp: 135, score: 1.4 }
+    easy: { spawn: .92, speed: .88, damage: .72, bossTime: 48, bossHp: 220, score: .8, midHp: 70 },
+    normal: { spawn: .72, speed: 1.05, damage: 1.05, bossTime: 42, bossHp: 340, score: 1, midHp: 110 },
+    hard: { spawn: .55, speed: 1.28, damage: 1.35, bossTime: 36, bossHp: 480, score: 1.45, midHp: 160 }
   };
   const stages = [
     {
       name: 'SHIBUYA CROSSING', boss: 'HEART BREAKER', theme: 'neon', subtitle: '渋谷スクランブルの夜をかけぬけろ',
       sky: ['#120b3e', '#3b1878', '#f044a0'], far: '#28145e', city: '#100b34', accent: '#31e8ff', accent2: '#ff3e9d',
-      spawnTable: [['drone', 5], ['bat', 3], ['spinner', 2], ['tank', 1], ['racer', 3]],
+      spawnTable: [['drone', 5], ['bat', 4], ['spinner', 3], ['tank', 2], ['racer', 4], ['seeker', 1]],
       melody: [440, 523.25, 659.25, 523.25, 392, 493.88, 587.33, 493.88, 349.23, 440, 523.25, 659.25, 392, 493.88, 659.25, 783.99],
       bass: [110, 110, 98, 98, 87.31, 87.31, 98, 123.47]
     },
     {
       name: 'AQUA HIGHWAY', boss: 'DEEP BLUE DIVA', theme: 'aqua', subtitle: '潮風のハイウェイを駆け抜けろ',
       sky: ['#041b3d', '#075987', '#20c5c9'], far: '#123c68', city: '#071d42', accent: '#65fff2', accent2: '#2f8cff',
-      spawnTable: [['bat', 3], ['jelly', 4], ['drone', 2], ['spinner', 2], ['manta', 3]],
+      spawnTable: [['bat', 3], ['jelly', 5], ['drone', 2], ['spinner', 3], ['manta', 4], ['racer', 2]],
       melody: [392, 440, 523.25, 587.33, 659.25, 587.33, 523.25, 440, 349.23, 392, 440, 523.25, 587.33, 523.25, 440, 392],
       bass: [98, 98, 87.31, 87.31, 110, 110, 87.31, 73.42]
     },
     {
       name: 'SUNSET FACTORY', boss: 'BLAZE EMPRESS', theme: 'factory', subtitle: '燃える夕日と鋼鉄の罠',
       sky: ['#351036', '#a42f4f', '#ff9f43'], far: '#592141', city: '#28132e', accent: '#ffe15a', accent2: '#ff5a36',
-      spawnTable: [['tank', 4], ['turret', 3], ['ember', 4], ['drone', 2], ['walker', 3]],
+      spawnTable: [['tank', 5], ['turret', 4], ['ember', 5], ['drone', 2], ['walker', 4], ['spinner', 2]],
       melody: [329.63, 329.63, 392, 329.63, 311.13, 329.63, 392, 440, 329.63, 329.63, 392, 493.88, 440, 392, 329.63, 293.66],
       bass: [82.41, 82.41, 82.41, 82.41, 77.78, 77.78, 98, 98]
     },
     {
       name: 'CYBER STORM', boss: 'VOLT PHANTOM', theme: 'storm', subtitle: '雷鳴とどろく電脳空域',
       sky: ['#071d24', '#13554b', '#48b849'], far: '#164636', city: '#071f25', accent: '#72ff68', accent2: '#31e8ff',
-      spawnTable: [['glitch', 4], ['spinner', 3], ['bat', 2], ['turret', 2], ['seeker', 3]],
+      spawnTable: [['glitch', 5], ['spinner', 4], ['bat', 2], ['turret', 3], ['seeker', 4], ['racer', 2]],
       melody: [293.66, 349.23, 440, 349.23, 293.66, 369.99, 440, 587.33, 293.66, 349.23, 466.16, 440, 349.23, 293.66, 246.94, 293.66],
       bass: [73.42, 73.42, 87.31, 87.31, 73.42, 73.42, 92.5, 110]
     },
     {
       name: 'HEART PALACE', boss: 'QUEEN OF HEARTBREAK', theme: 'palace', subtitle: '決戦、ハートの女王の宮殿',
       sky: ['#25051d', '#72114e', '#d82065'], far: '#4d123d', city: '#21061d', accent: '#ffe15a', accent2: '#ff3e9d',
-      spawnTable: [['cupid', 4], ['drone', 2], ['bat', 2], ['spinner', 2], ['tank', 2], ['knight', 3]],
+      spawnTable: [['cupid', 5], ['drone', 2], ['bat', 3], ['spinner', 3], ['tank', 3], ['knight', 4], ['seeker', 2]],
       melody: [261.63, 311.13, 392, 523.25, 466.16, 392, 311.13, 261.63, 233.08, 293.66, 349.23, 466.16, 392, 349.23, 293.66, 261.63],
       bass: [65.41, 65.41, 77.78, 77.78, 98, 98, 58.27, 65.41]
     }
@@ -392,15 +392,14 @@
   }
 
   function shoot() {
-    // Muzzle lines up with the walk-gun (ground) vs flying shoot cycle (air).
-    // Ground sprite is drawn at (x-8, y-28) sized 130x190 — gun tip ~ right-mid torso.
-    const muzzleX = player.x + (player.grounded ? 112 : 116);
-    const muzzleY = player.y + (player.grounded ? 52 : 72 + Math.sin(player.frame * .65) * 3);
+    // Muzzle: walk-gun (ground) vs flying shoot cycle (air).
+    const muzzleX = player.x + (player.grounded ? 118 : 116);
+    const muzzleY = player.y + (player.grounded ? 48 : 72 + Math.sin(player.frame * .65) * 3);
     const lanes = player.spread === 1 ? [0] : player.spread === 2 ? [-105, 0, 105] : [-175, -85, 0, 85, 175];
-    // Slight upward bias on ground so shots clear the floor fog into the play band.
-    const aimBias = player.grounded ? -35 : 0;
-    for (const vy of lanes) bullets.push({ x: muzzleX, y: muzzleY, vx: 770, vy: vy + aimBias, life: 1.5, r: 6 + player.power * 2, damage: player.power });
-    burst(muzzleX, muzzleY, '#ffe15a', 5, 150);
+    // Ground shots aim firmly into the mid play band so walking fire clears the floor.
+    const aimBias = player.grounded ? -70 : 0;
+    for (const vy of lanes) bullets.push({ x: muzzleX, y: muzzleY, vx: 820, vy: vy + aimBias, life: 1.6, r: 6 + player.power * 2, damage: player.power });
+    burst(muzzleX, muzzleY, '#ffe15a', 6, 160);
     sfx('shoot');
   }
 
@@ -421,7 +420,7 @@
     enemyBullets = [];
     for (const e of [...enemies]) {
       if (e.hp <= 0) continue;
-      const damage = e.type === 'boss' ? 16 + player.power * 4 : e.type === 'midboss' ? 13 + player.power * 4 : 10 + player.power * 4;
+      const damage = e.type === 'boss' ? 22 + player.power * 5 : e.type === 'midboss' ? 18 + player.power * 4 : 10 + player.power * 4;
       e.hp -= damage; e.hit = .3;
       if (e.hp <= 0) destroyEnemy(e);
     }
@@ -488,53 +487,60 @@
       const y = groundType ? 560 : clamp(centerY + (shape === 'vee' ? Math.abs(offset) * 58 : offset * 64), 75, 535);
       spawnEnemy(type, { y, xOffset: i * 82 + (shape === 'vee' ? Math.abs(offset) * 35 : 0), shape, slot: i });
     }
-    formationTimer = 5.5 + Math.random() * 4;
+    formationTimer = 3.2 + Math.random() * 2.4;
   }
 
   function spawnBoss() {
-    const bossHp = Math.round(difficulties[difficultyKey].bossHp * (1 + stageIndex * .42));
-    enemies.push({ type: 'boss', x: VW + 260, y: 220, baseY: 220, w: 230, h: 190, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 12000, fire: 1.2 });
+    const bossHp = Math.round(difficulties[difficultyKey].bossHp * (1 + stageIndex * .55));
+    enemies.push({ type: 'boss', x: VW + 260, y: 220, baseY: 220, w: 230, h: 190, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8 });
     bossState = 'active';
     musicStep = 0; musicClock = 0;
     enemyBullets = [];
-    shake = 15;
+    shake = 18; flash = .55;
     playBgm(stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle', true);
-    sfx('boss');
+    sfx('boss'); sfx('warning');
   }
 
   function spawnMidBoss() {
-    const baseHp = { easy: 24, normal: 34, hard: 46 }[difficultyKey];
-    const hp = Math.round(baseHp * (1 + stageIndex * .24));
-    enemies.push({ type: 'midboss', x: VW + 190, y: 210, baseY: 210, w: 158, h: 132, hp, maxHp: hp, vx: 0, t: 0, wave: false, points: 4200 + stageIndex * 900, fire: .8, sp: 2.8, variant: 'standard' });
+    const baseHp = difficulties[difficultyKey].midHp;
+    const hp = Math.round(baseHp * (1 + stageIndex * .38));
+    enemies.push({ type: 'midboss', x: VW + 190, y: 210, baseY: 210, w: 158, h: 132, hp, maxHp: hp, vx: 0, t: 0, wave: false, points: 6200 + stageIndex * 1200, fire: .55, sp: 2.1, variant: 'standard' });
     bossState = 'midboss-active';
-    enemyBullets = []; shake = 12;
-    playBgm('midBoss'); sfx('boss');
+    enemyBullets = []; shake = 14; flash = .45;
+    playBgm('midBoss', true); sfx('boss'); sfx('warning');
   }
 
   function updateMidBoss(e, dt) {
-    if (e.x > VW - 235) e.x -= 280 * dt;
-    e.y = e.baseY + Math.sin(e.t * (1.1 + stageIndex * .08)) * (105 + stageIndex * 7);
+    if (e.x > VW - 250) e.x -= 300 * dt;
+    e.y = e.baseY + Math.sin(e.t * (1.25 + stageIndex * .1)) * (120 + stageIndex * 10);
     e.fire -= dt; e.sp -= dt;
-    const engaged = e.x <= VW - 225;
+    const engaged = e.x <= VW - 240;
+    const rage = e.hp < e.maxHp * .45;
     if (engaged && e.fire <= 0) {
       const ox = e.x + 12, oy = e.y + e.h / 2;
       const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
-      const count = e.hp < e.maxHp / 2 ? 5 : 3;
+      const count = rage ? 7 : 5;
       for (let i = 0; i < count; i++) {
-        const a = aim + (i - (count - 1) / 2) * .2;
-        enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * (245 + stageIndex * 18), vy: Math.sin(a) * (245 + stageIndex * 18), r: 9, life: 6, damage: 13 + stageIndex, boss: true, volt: stageIndex === 3, fire: stageIndex === 2, heart: stageIndex === 4, bubble: stageIndex === 1 });
+        const a = aim + (i - (count - 1) / 2) * .17;
+        enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * (270 + stageIndex * 22), vy: Math.sin(a) * (270 + stageIndex * 22), r: 10, life: 6.5, damage: 16 + stageIndex, boss: true, volt: stageIndex === 3, fire: stageIndex === 2, heart: stageIndex === 4, bubble: stageIndex === 1 });
       }
-      burst(ox, oy, stages[stageIndex].accent2, 8, 170); e.fire = e.hp < e.maxHp / 2 ? .62 : .85;
+      burst(ox, oy, stages[stageIndex].accent2, 10, 190); e.fire = rage ? .42 : .58;
     }
     if (engaged && e.sp <= 0) {
       const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
-      const count = e.hp < e.maxHp / 2 ? 12 : 8;
+      const count = rage ? 16 : 12;
       for (let i = 0; i < count; i++) {
-        const a = i / count * Math.PI * 2 + e.t * .35;
-        enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 175, vy: Math.sin(a) * 175, r: 8, life: 5.5, damage: 12 + stageIndex, boss: true });
+        const a = i / count * Math.PI * 2 + e.t * .4;
+        enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 195, vy: Math.sin(a) * 195, r: 9, life: 6, damage: 15 + stageIndex, boss: true });
       }
-      shockwaves.push({ x: cx, y: cy, r: 16, speed: 290, life: .55, max: .55, color: stages[stageIndex].accent2 });
-      sfx('boss'); e.sp = e.hp < e.maxHp / 2 ? 3.2 : 4.3;
+      // Side cannons
+      for (const side of [-1, 1]) {
+        for (let i = 0; i < 3; i++) {
+          enemyBullets.push({ x: cx + side * 55, y: cy, vx: -210, vy: (i - 1) * 90, r: 8, life: 5.5, damage: 14 + stageIndex, boss: true });
+        }
+      }
+      shockwaves.push({ x: cx, y: cy, r: 16, speed: 340, life: .6, max: .6, color: stages[stageIndex].accent2 });
+      sfx('boss'); e.sp = rage ? 2.4 : 3.3;
     }
   }
 
@@ -590,19 +596,19 @@
         if (e.x >= VW - 290) { e.x = VW - 290; e.mode = 'hover'; }
       } else {
         e.y = 225 + Math.sin(e.t * 1.25) * 125;
-        if (engaged && e.fire <= 0) { bossFan(e, e.phase2 ? 7 : 5); e.fire = e.phase2 ? .7 : .85; }
-        if (e.phase2 && engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .8; e.telType = 'dash'; e.telY = clamp(player.y - 30, 40, 480); e.sp = 6; }
+        if (engaged && e.fire <= 0) { bossFan(e, e.phase2 ? 9 : 6); e.fire = e.phase2 ? .48 : .62; }
+        if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .7; e.telType = 'dash'; e.telY = clamp(player.y - 30, 40, 480); e.sp = e.phase2 ? 3.8 : 5.2; }
       }
     } else if (idx === 1) {
       e.y = 205 + Math.sin(e.t * .8) * 165;
-      if (engaged && e.fire <= 0) { bossBubbles(e); e.fire = e.phase2 ? .72 : 1; }
-      if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = 1; e.telType = 'wave'; e.sp = e.phase2 ? 4.4 : 6.4; }
+      if (engaged && e.fire <= 0) { bossBubbles(e); e.fire = e.phase2 ? .48 : .7; }
+      if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .85; e.telType = 'wave'; e.sp = e.phase2 ? 3.2 : 4.6; }
     } else if (idx === 2) {
       e.y = 250 + Math.sin(e.t * .9) * 100;
       if (engaged && e.fire <= 0) {
-        if (e.phase2) { bossFlameSweep(e); e.fire = .16; } else { bossFireball(e); e.fire = 1.2; }
+        if (e.phase2) { bossFlameSweep(e); e.fire = .12; } else { bossFireball(e); e.fire = .85; }
       }
-      if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .95; e.telType = 'pillar'; e.telX = clamp(player.x + 45, 60, VW - 200), e.sp = e.phase2 ? 3.6 : 5.2; }
+      if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .8; e.telType = 'pillar'; e.telX = clamp(player.x + 45, 60, VW - 200); e.sp = e.phase2 ? 2.8 : 4.0; }
     } else if (idx === 3) {
       e.blink = Math.max(0, (e.blink || 0) - dt);
       e.tpT = e.tpT === undefined ? 2 : e.tpT - dt;
@@ -613,15 +619,15 @@
         burst(e.x + e.w / 2, e.y + e.h / 2, '#72ff68', 16, 260); sfx('teleport');
         if (e.phase2) bossVoltRing(e);
       }
-      if (engaged && e.fire <= 0) { bossVoltShot(e); e.fire = 1; }
-      if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .9; e.telType = 'strike'; e.telX = clamp(player.x + 45, 60, VW - 100); e.sp = e.phase2 ? 3.2 : 4.8; }
+      if (engaged && e.fire <= 0) { bossVoltShot(e); e.fire = e.phase2 ? .55 : .75; }
+      if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .75; e.telType = 'strike'; e.telX = clamp(player.x + 45, 60, VW - 100); e.sp = e.phase2 ? 2.5 : 3.8; }
     } else {
       e.y = 215 + Math.sin(e.t * 1.05) * 140;
       e.spiral = (e.spiral || 0) + dt * (e.phase2 ? 3.4 : 2.4);
-      if (engaged && e.fire <= 0) { bossHeartSpiral(e); e.fire = e.phase2 ? .24 : .32; }
+      if (engaged && e.fire <= 0) { bossHeartSpiral(e); e.fire = e.phase2 ? .16 : .24; }
       if (engaged && e.sp <= 0 && !(e.tel > 0)) {
         e.telType = ['fan', 'wave', 'ring'][Math.floor(Math.random() * (e.phase2 ? 3 : 2))];
-        e.tel = .8; e.sp = e.phase2 ? 3.4 : 4.8;
+        e.tel = .7; e.sp = e.phase2 ? 2.6 : 3.8;
       }
     }
   }
@@ -641,7 +647,7 @@
     const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
     for (let i = 0; i < n; i++) {
       const a = aim + (i - (n - 1) / 2) * .19;
-      enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 285, vy: Math.sin(a) * 285, r: 10, life: 6, damage: 14, boss: true });
+      enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 285, vy: Math.sin(a) * 285, r: 10, life: 6, damage: 18, boss: true });
     }
     burst(ox, oy, '#ff3e9d', 9, 190);
   }
@@ -750,15 +756,20 @@
     const difficulty = difficulties[difficultyKey];
     // The supplied full-length tracks replace the old generated note loop.
 
-    const bossAt = difficulty.bossTime + stageIndex * 2;
-    if (bossState === 'waiting' && !midBossDone && stageTime >= bossAt * .46) {
-      bossState = 'midboss-warning'; bossWarning = 2.1; enemies = []; enemyBullets = []; sfx('warning');
+    const bossAt = difficulty.bossTime + stageIndex * 3;
+    const midAt = bossAt * .38;
+if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
+      bossState = 'midboss-warning'; bossWarning = 3.0; enemies = []; enemyBullets = []; bullets = []; sfx('warning');
       playBgm('midBoss', true);
     } else if (bossState === 'midboss-warning') {
       bossWarning -= dt;
       if (bossWarning <= 0) spawnMidBoss();
-    } else if (bossState === 'waiting' && stageTime >= bossAt) {
-      bossState = 'warning'; bossWarning = 3.2; enemies = []; enemyBullets = []; sfx('warning');
+    } else if (bossState === 'waiting' && midBossDone && stageTime >= bossAt) {
+      bossState = 'warning'; bossWarning = 3.6; enemies = []; enemyBullets = []; bullets = []; sfx('warning');
+    } else if (bossState === 'waiting' && !midBossDone && stageTime >= bossAt) {
+      // Safety: if mid was skipped somehow, force mid first
+      bossState = 'midboss-warning'; bossWarning = 2.5; enemies = []; enemyBullets = []; sfx('warning');
+      playBgm('midBoss', true);
     } else if (bossState === 'warning') {
       bossWarning -= dt;
       if (bossWarning <= 0) spawnBoss();
@@ -823,24 +834,36 @@
         player.grounded = true; player.y = GROUND_Y; player.vy = 0; burst(player.x + 55, GROUND_Y + 132, '#ffe15a', 9, 100);
       }
     }
-    // Ground mode auto-fires (walk frames hold a gun). Air still needs Space / hold / pad.
-    const firing = player.grounded || keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire;
-    player.frame += dt * (player.grounded ? (Math.abs(player.vx) > 20 ? 9 : 6) : 10);
+    // Always auto-fire in play (ground walk and air). Space/Z/pad still work as explicit hold.
+    const firing = true;
+    player.frame += dt * (player.grounded ? (Math.abs(player.vx) > 20 ? 10 : 7) : 10);
     player.fire -= dt; player.missileFire -= dt;
-    if (!['transition', 'final'].includes(bossState) && firing && player.fire <= 0) {
+    if (!['transition', 'final', 'warning', 'midboss-warning'].includes(bossState) && firing && player.fire <= 0) {
       shoot();
-      player.fire = player.grounded ? .155 : .145;
+      player.fire = player.grounded ? .14 : .13;
     }
-    if (!['transition', 'final'].includes(bossState) && firing && player.power >= 2 && player.missileFire <= 0) {
+    if (!['transition', 'final', 'warning', 'midboss-warning'].includes(bossState) && firing && player.power >= 2 && player.missileFire <= 0) {
       shootMissile();
-      player.missileFire = player.power >= 3 ? .82 : 1.18;
+      player.missileFire = player.power >= 3 ? .75 : 1.05;
     }
 
     spawnTimer -= dt;
     formationTimer -= dt;
-    if (bossState === 'waiting' && stageBanner <= 1.4 && spawnTimer <= 0) {
-      if (formationTimer <= 0 && enemies.length < 5) { spawnFormation(); spawnTimer = 1.5; }
-      else { spawnEnemy(); spawnTimer = ((.55 + Math.random() * .45) * difficulty.spawn) / gameSpeed; }
+    if (bossState === 'waiting' && stageBanner <= 1.2 && spawnTimer <= 0) {
+      const cap = 9 + stageIndex;
+      if (formationTimer <= 0 && enemies.length < cap) {
+        spawnFormation();
+        // Bonus second pack for volume
+        if (Math.random() < .55 && enemies.length < cap) spawnFormation();
+        spawnTimer = 1.05 + Math.random() * .35;
+      } else if (enemies.length < cap) {
+        spawnEnemy();
+        if (Math.random() < .45 && enemies.length < cap) spawnEnemy();
+        if (Math.random() < .22 && enemies.length < cap) spawnEnemy();
+        spawnTimer = ((.32 + Math.random() * .28) * difficulty.spawn) / gameSpeed;
+      } else {
+        spawnTimer = .35;
+      }
     }
     pickupTimer -= dt;
     if (pickupTimer <= 0 && (bossState === 'waiting' || bossState === 'active' || bossState === 'midboss-active')) {
@@ -1013,9 +1036,14 @@
     shake = isMajor ? (isBoss ? 28 : 20) : e.type === 'tank' ? 12 : 6; flash = isMajor ? (isBoss ? 1 : .6) : e.type === 'tank' ? .35 : .12; sfx(isMajor ? 'bigBoom' : 'boom');
     if (isMidBoss) {
       midBossDone = true; bossState = 'waiting'; enemyBullets = []; bullets = [];
-      health = Math.min(maxHealth, health + 18); special = Math.min(100, special + 25);
+      health = Math.min(maxHealth, health + 22); special = Math.min(100, special + 30);
+      // Ensure the post-mid stretch has volume before the main boss.
+      const bossAtNow = difficulties[difficultyKey].bossTime + stageIndex * 3;
+      stageTime = Math.max(stageTime, bossAtNow * .38 + 1.2);
       pickups.push({ type: 'power', x: e.x + e.w / 2, y: e.y + e.h / 2, r: 19, t: 0 });
-      playBgm(`stage${stageIndex}`);
+      pickups.push({ type: Math.random() < .5 ? 'spread' : 'heal', x: e.x + e.w / 2 + 40, y: e.y + e.h / 2 - 20, r: 19, t: 0 });
+      playBgm(`stage${stageIndex}`, true);
+      stageBanner = 2.2;
     }
     if (isBoss) {
       bossState = stageIndex === stages.length - 1 ? 'final' : 'transition'; stageTransition = 4.6;
@@ -2560,9 +2588,11 @@
       stageResult = { kills: stageKills, time: elapsed - stageStart, noDamageBonus: stageDamaged ? 0 : 5000, timeBonus: 0 };
     }
     if (e.shiftKey && e.code === 'KeyM' && state === 'playing' && !paused && bossState === 'waiting' && !midBossDone) {
-      stageTime = (difficulties[difficultyKey].bossTime + stageIndex * 2) * .46;
+      stageTime = (difficulties[difficultyKey].bossTime + stageIndex * 3) * .38;
     }
-    if (e.shiftKey && e.code === 'KeyB' && state === 'playing' && !paused && bossState === 'waiting') { midBossDone = true; stageTime = 9999; }
+    if (e.shiftKey && e.code === 'KeyB' && state === 'playing' && !paused && (bossState === 'waiting' || bossState === 'midboss-active')) {
+      midBossDone = true; enemies = enemies.filter(en => en.type !== 'midboss'); bossState = 'waiting'; stageTime = 9999;
+    }
   });
   addEventListener('keyup', e => keys.delete(e.code));
   canvas.addEventListener('pointerdown', e => { if (state !== 'playing') return; pointer.active = true; const p = screenToWorld(e.clientX, e.clientY); pointer.x=p.x; pointer.y=p.y; canvas.setPointerCapture(e.pointerId); });
