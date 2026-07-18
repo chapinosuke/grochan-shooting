@@ -180,6 +180,13 @@ kbd {
 .pause-toggle { right: 70px; opacity: 0; visibility: hidden; transition: opacity .2s, visibility .2s, transform .1s, border-color .15s; }
 .pause-toggle.is-visible { opacity: 1; visibility: visible; }
 .pause-toggle.is-paused { color: var(--yellow); border-color: var(--yellow); }
+.special-button {
+  left: 14px; min-width: 112px; color: var(--yellow); border-color: var(--yellow);
+  opacity: 0; visibility: hidden; box-shadow: 0 0 18px rgba(255,225,90,.12);
+}
+.special-button.is-visible { opacity: 1; visibility: visible; }
+.special-button.is-ready { color: #120b2e; background: var(--yellow); box-shadow: 4px 4px 0 var(--pink), 0 0 24px rgba(255,225,90,.4); animation: blink .8s steps(2) infinite; }
+.special-button:disabled { color: #71698f; border-color: #4b4567; cursor: default; }
 
 .controller-status {
   position: absolute; z-index: 7; left: 50%; bottom: 20px; transform: translate(-50%, 25px);
