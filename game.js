@@ -106,6 +106,8 @@
   let lightningX = 0;
   let special = 35;
   let specialFlash = 0;
+  let continuesLeft = 3;
+  let continueBanner = 0;
   let formationTimer = 3;
   let fpsShow = false;   // F1 toggles a verification-only FPS readout
   let fpsAvg = 60;       // EMA of 1/rawDt
@@ -274,6 +276,7 @@
     musicClock = 0; musicStep = 0;
     totalKills = 0; stageResult = null; lightning = 0; delayedBursts = [];
     special = 35; specialFlash = 0; formationTimer = 2.8;
+    continuesLeft = 3; continueBanner = 0;
     bullets = []; enemyBullets = []; enemies = []; particles = []; pickups = []; shockwaves = [];
     setupStage();
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
@@ -812,6 +815,7 @@
     elapsed += dt;
     if (bossState === 'waiting') stageTime += dt;
     stageBanner = Math.max(0, stageBanner - dt);
+    continueBanner = Math.max(0, continueBanner - dt);
     gameSpeed = Math.min(1.6, 1 + stageTime / 100) + stageIndex * .08;
     shake = Math.max(0, shake - dt * 25); flash = Math.max(0, flash - dt * 3);
     specialFlash = Math.max(0, specialFlash - dt);
@@ -1145,7 +1149,25 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     health = Math.max(0, health - damage * difficulties[difficultyKey].damage); player.inv = 1.4; combo = 0; shake = 18; flash = .7; hitStop = Math.max(hitStop, .07);
     stageDamaged = true;
     burst(player.x + player.w / 2, player.y + player.h / 2, '#ff3e9d', 28, 330); sfx('hurt');
-    if (health <= 0) finishGame(false);
+    if (health <= 0) {
+      if (continuesLeft > 0) doContinue();
+      else finishGame(false);
+    }
+  }
+
+  // Arcade-style in-place revive: full HP, brief invulnerability, bullet sweep.
+  // Score / power-ups / position are all kept.
+  function doContinue() {
+    continuesLeft--;
+    health = maxHealth;
+    continueBanner = 3;
+    player.inv = 4;
+    enemyBullets = [];
+    const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
+    shockwaves.push({ x: cx, y: cy, r: 20, speed: 900, life: 1, max: 1, color: '#ffe15a' });
+    burst(cx, cy, '#ffe15a', 40, 420);
+    flash = .5; shake = 10;
+    sfx('special');
   }
 
   function finishGame(cleared) {
@@ -3107,6 +3129,12 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.fillStyle = '#ffe15a'; ctx.font = '7px "Press Start 2P", monospace'; ctx.fillText(`POWER ${player.power}`, VW - 336, 88);
     ctx.fillStyle = '#31e8ff'; ctx.fillText(`WIDE ${player.spread}`, VW - 220, 88);
     ctx.fillStyle = '#72ff68'; ctx.fillText(`SPEED ${player.speed}`, VW - 126, 88);
+    // Remaining continues: three hearts on the HP label line, spent ones dimmed.
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = i < continuesLeft ? '#ff3e9d' : 'rgba(255,255,255,.18)';
+      heartPath(VW - 46 - (2 - i) * 22, 84, 8);
+      ctx.fill();
+    }
     if (combo > 1 && comboTimer > 0) {
       ctx.textAlign = 'center'; ctx.fillStyle = '#ffe15a'; ctx.font = '18px "Press Start 2P", monospace'; ctx.fillText(`${combo} COMBO!`, VW / 2, 61);
       ctx.fillStyle = '#fff'; ctx.font = '10px "Press Start 2P", monospace'; ctx.fillText(`SCORE ×${Math.min(5, 1 + Math.floor(combo / 5))}`, VW/2, 84);
@@ -3134,6 +3162,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.globalAlpha = .55 + Math.sin(bossWarning * 12) * .35; ctx.fillStyle = stage.accent2; ctx.fillRect(0, 292, VW, 102);
       ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '28px "Press Start 2P", monospace'; ctx.fillText('WARNING', VW / 2, 344);
       ctx.font = '11px "Press Start 2P", monospace'; ctx.fillText(bossState === 'midboss-warning' ? 'MID BOSS APPROACHING' : 'BOSS APPROACHING', VW / 2, 374); ctx.textAlign = 'left';
+    }
+    if (continueBanner > 0) {
+      const a = Math.min(1, continueBanner, (3 - continueBanner) * 3);
+      ctx.save(); ctx.globalAlpha = a * (.75 + Math.sin(elapsed * 10) * .25);
+      ctx.textAlign = 'center'; ctx.fillStyle = '#ffe15a'; ctx.font = '26px "Press Start 2P", monospace';
+      ctx.fillText('CONTINUE!', VW / 2, 330);
+      ctx.fillStyle = '#fff'; ctx.font = '21px "DotGothic16", monospace';
+      ctx.fillText(`のこり ${continuesLeft} 回`, VW / 2, 366);
+      ctx.restore(); ctx.textAlign = 'left';
     }
     if (stageBanner > 0) {
       const alpha = Math.min(1, stageBanner, (3 - stageBanner) * 2);
@@ -3340,7 +3377,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, enemies: enemies.length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, stageTime, enemies: enemies.length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
 
   resize(); initBackdrop(); setupStage(); requestAnimationFrame(frame);
 })();
