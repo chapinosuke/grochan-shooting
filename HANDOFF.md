@@ -49,6 +49,12 @@
 - 検証: `.devtools/shot-title.js`(新規、menu状態スクショ)+`shot.js play 0`で回帰なし確認。
 - **メニューフロー3段階化**: タイトル(`#titleScreen`=canvasロゴ+クリック/ENTERヒント+ハイスコアのみ)→説明(`#startScreen`=HOW TO PLAY: 操作2列グリッド/難易度/GAME START、背景ほぼ不透過)→オープニング。`menuStep`('title'/'howto')で分岐、ENTER/クリック/パッドAで進む、ESCでタイトルに戻る。howto中はcanvasのロゴ/ぐろちゃん描画を停止。`shot.js`は`#titleEnter`→`#startButton`→`#launchButton`の順にクリックするよう更新、`shot-title.js`は`title|howto`引数対応。
 
+## 2026-07-18 セッション2 続き: BGM二重再生修正/円システム/ステージ間ショップ
+- **BGM二重再生修正**: opening/stage0が同曲(Neon Arcade Rush)を別Audioで持ち、オープニング→ゲーム開始で頭から流れ直していた。1つのAudio要素を共有し、`playBgm`に`previous === next`のシームレス継続分岐を追加(restartは同キー時のみ)。説明画面表示(最初のジェスチャ)で`playBgm('opening')`開始→説明→オープニング→ステージ1まで1曲が連続再生。`showHowto`はバブリング二重発火ガード追加。
+- **スコア→円**: 表示を`yen()`(`¥`+3桁区切り)に統一(HUD「MONEY」/リザルト「かせいだ金額」/タイトル「さいこう金額」)。内部変数は`score`のまま(獲得ロジック不変)、ショップで消費可能に。
+- **ステージ間ショップ**: クリア遷移(`bossState==='transition'`)完了時に`openShop()`→`state='shop'`(update()停止=休憩)。`#shopScreen`で購入: おにぎり¥3,000(HP全快)/パワー¥8,000/ワイド¥8,000/スピード¥5,000(各Lv3上限)/ハート¥12,000(コンティニュー+1)。`shopItems[]`が`can/apply/status`を持ち`updateShop()`で所持金・上限に応じてdisabled/MAX表示。「つぎのステージへ」ボタン/ENTER/パッドAで`leaveShop()`=旧ステージ前進処理(stageIndex++等)を実行。最終ステージ後は従来どおり即`finishGame(true)`。
+- ハーネス: `shot.js`のShift+Nスキップループがショップを`#nextStageButton`クリックで通過、`shop`モード追加(`node .devtools/shot.js shop 0`)。検証: ショップUI表示(金欠disabled/MAX表示)、ショップ経由のstage0→1進行、HUD「MONEY ¥976」表示。購入ボタンの実クリックは実機確認推奨。
+
 ## 技術メモ
 - 描画はワールド座標(VW=1280×VH=720)。`draw()`でビュー変換を1回適用。ボス/敵は`ctx`にライブ描画（`translate(e.x,e.y)`）。`rctx===ctx`（焼き込み未活性）。
 - ヘルパー: `hexA(hex,a)`, `shade(hex,f)`, `heartPath(cx,cy,s)`(ctx使用), `starPath`, `drawBox3D/drawCylinder3D/drawKawaiiEyes`(rctx使用), `clamp`。`ctx.roundRect`は利用可。

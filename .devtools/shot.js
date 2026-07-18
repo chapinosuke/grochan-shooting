@@ -50,8 +50,14 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
   const arg = process.argv[2] || 'boss';
   const stageSkips = parseInt(process.argv[3] || '0', 10);
-  for (let i = 0; i < stageSkips; i++) { await press('KeyN', true); await new Promise(r => setTimeout(r, 2600)); }
+  // Shift+N runs the clear transition, which now opens the between-stage shop —
+  // leave it via its button (or Enter) before the next skip.
+  for (let i = 0; i < stageSkips; i++) {
+    await press('KeyN', true); await new Promise(r => setTimeout(r, 2600));
+    await click('#nextStageButton'); await new Promise(r => setTimeout(r, 400));
+  }
   if (arg === 'play' && stageSkips > 0) await pollEnemies();
+  if (arg === 'shop') { await press('KeyN', true); await new Promise(r => setTimeout(r, 2900)); }  // clear transition -> shop overlay
   if (arg === 'boss') { await press('KeyB', true); await new Promise(r => setTimeout(r, 7000)); }
   if (arg === 'mid') { await press('KeyM', true); await new Promise(r => setTimeout(r, 7000)); }
 

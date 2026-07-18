@@ -218,6 +218,40 @@ kbd {
 .highscore { margin-top: 23px; color: #aaa1d1; font: 10px "Press Start 2P", monospace; }
 .highscore strong { margin-left: 12px; color: white; }
 
+/* Between-stage rest stop & shop. */
+.shop-screen { background: radial-gradient(circle at 50% 38%, rgba(26, 15, 62, .95), rgba(8, 4, 27, .97)); }
+.shop-title { color: white; font-size: clamp(24px, 4vw, 40px); text-shadow: 4px 4px 0 var(--pink); }
+.shop-lead { margin: 14px 0 4px; font-size: clamp(14px, 1.8vw, 19px); }
+.shop-lead strong { margin-left: 8px; color: var(--yellow); font: 15px "Press Start 2P", monospace; }
+.shop-items {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 168px));
+  gap: 14px;
+  margin: 20px 0 8px;
+}
+.shop-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 8px 13px;
+  border: 1px solid #655d95;
+  background: rgba(15, 9, 48, .85);
+  color: #d8d2ff;
+  font-family: "DotGothic16", monospace;
+  cursor: pointer;
+  transition: transform .1s, border-color .15s;
+}
+.shop-item:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--pink); }
+.shop-item:disabled { opacity: .42; cursor: default; }
+.shop-item i { font-style: normal; font-size: 32px; line-height: 1; }
+.shop-name { color: white; font-size: 15px; }
+.shop-desc { color: #bdb5e0; font-size: 12px; }
+.shop-price { color: var(--yellow); font: 10px "Press Start 2P", monospace; }
+.shop-status { color: var(--cyan); font-size: 12px; min-height: 15px; }
+.shop-next { margin: 10px 0 16px; color: #bdb5e0; font: 9px "Press Start 2P", monospace; letter-spacing: .1em; }
+.shop-next span { color: var(--cyan); }
+
 .result-screen { gap: 24px; }
 .result-stats {
   display: flex;
@@ -307,6 +341,7 @@ kbd {
   .lead { max-width: 310px; }
   .screen { justify-content: center; }
   .difficulty button { padding: 9px 10px; font-size: 8px; }
+  .shop-items { grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 10px; }
   .opening-title { font-size: 34px; }
   .opening-story { font-size: 14px; }
   .mission-card strong { font-size: 11px; }

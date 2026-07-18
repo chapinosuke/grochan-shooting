@@ -10,6 +10,10 @@
   const gameOverScreen = document.querySelector('#gameOverScreen');
   const pauseLabel = document.querySelector('#pauseLabel');
   const startButton = document.querySelector('#startButton');
+  const shopScreen = document.querySelector('#shopScreen');
+  const shopMoney = document.querySelector('#shopMoney');
+  const shopNext = document.querySelector('#shopNext');
+  const nextStageButton = document.querySelector('#nextStageButton');
   const launchButton = document.querySelector('#launchButton');
   const retryButton = document.querySelector('#retryButton');
   const finalScore = document.querySelector('#finalScore');
@@ -32,9 +36,12 @@
   const pointer = { active: false, x: 0, y: 0 };
   const spriteSheet = new Image();
   spriteSheet.src = 'assets/images/player-spritesheet.png';
+  // opening/stage0 share one Audio element so the title theme flows seamlessly
+  // into stage 1 instead of restarting from the top when the run begins.
+  const neonArcadeRush = new Audio('assets/bgm/Neon Arcade Rush.mp3');
   const bgmTracks = {
-    opening: new Audio('assets/bgm/Neon Arcade Rush.mp3'),
-    stage0: new Audio('assets/bgm/Neon Arcade Rush.mp3'),
+    opening: neonArcadeRush,
+    stage0: neonArcadeRush,
     stage1: new Audio('assets/bgm/Neon Arena.mp3'),
     stage2: new Audio('assets/bgm/Neon Arena (1).mp3'),
     stage3: new Audio('assets/bgm/Neon Demoness.mp3'),
@@ -225,7 +232,7 @@
   let delayedBursts = [];
   let shockwaves = [];
 
-  menuHighScore.textContent = pad(highScore);
+  menuHighScore.textContent = yen(highScore);
 
   function resize() {
     const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -336,6 +343,7 @@
     startScreen.classList.remove('is-visible');
     openingScreen.classList.remove('is-visible');
     gameOverScreen.classList.remove('is-visible');
+    shopScreen.classList.remove('is-visible');
     pauseLabel.classList.remove('is-visible');
     pauseButton.classList.add('is-visible');
     specialButton.classList.add('is-visible');
@@ -349,10 +357,13 @@
 
   // Menu flow: title (canvas logo + attract demo) -> how-to-play -> opening.
   function showHowto() {
+    if (menuStep !== 'title') return;   // titleEnter clicks also bubble to titleScreen
     menuStep = 'howto';
     titleScreen.classList.remove('is-visible');
     startScreen.classList.add('is-visible');
-    ensureAudio(); sfx('power');
+    // First user gesture: start the title theme here so it runs continuously
+    // through how-to -> opening -> stage 1 (all the same track).
+    ensureAudio(); playBgm('opening'); sfx('power');
   }
 
   function showTitle() {
@@ -371,7 +382,7 @@
     void openingScreen.offsetWidth;
     openingScreen.classList.add('is-visible');
     pauseButton.classList.remove('is-visible'); specialButton.classList.remove('is-visible');
-    playBgm('opening', true); ensureAudio(); sfx('power');
+    playBgm('opening'); ensureAudio(); sfx('power');
     openingTimeout = setTimeout(resetGame, 9000);
   }
 
@@ -381,8 +392,11 @@
     const previousKey = currentBgmKey;
     const previous = previousKey && bgmTracks[previousKey];
     const targetVolume = bgmVolumes[key] ?? .27;
-    if (previousKey === key) {
-      if (restart) next.currentTime = 0;
+    // previous === next covers keys that share one Audio element (opening/stage0):
+    // the track keeps playing seamlessly instead of fading against itself.
+    if (previousKey === key || previous === next) {
+      currentBgmKey = key;
+      if (restart && previousKey === key) next.currentTime = 0;
       next.volume = targetVolume;
       if (soundOn) next.play().catch(() => { /* starts on the next user gesture */ });
       return;
@@ -979,14 +993,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     } else if (bossState === 'transition' || bossState === 'final') {
       stageTransition -= dt;
       if (stageTransition <= 0) {
-        if (bossState === 'final') {
-          finishGame(true);
-        } else {
-          stageIndex++; stageTime = 0; stageBanner = 3; bossState = 'waiting'; midBossDone = false; spawnTimer = 1.2; pickupTimer = 4;
-          health = Math.min(maxHealth, health + 28); player.inv = 2;
-          stageResult = null; setupStage(); musicStep = 0; musicClock = 0;
-          playBgm(`stage${stageIndex}`, true);
-        }
+        if (bossState === 'final') finishGame(true);
+        else openShop();   // rest stop between stages: heal up / buy upgrades with earned yen
       }
     }
 
@@ -1339,6 +1347,58 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     sfx('special');
   }
 
+  // Between-stage shop: gameplay freezes (state 'shop' skips update()), the
+  // player spends earned yen, then leaveShop() performs the stage advance that
+  // used to happen inline in the transition timer.
+  const shopItems = [
+    { id: 'buyHeal', price: 3000, can: () => health < maxHealth, apply: () => { health = maxHealth; }, status: () => `HP ${Math.ceil(health)}/${maxHealth}` },
+    { id: 'buyPower', price: 8000, can: () => player.power < 3, apply: () => player.power++, status: () => `Lv ${player.power}/3` },
+    { id: 'buyWide', price: 8000, can: () => player.spread < 3, apply: () => player.spread++, status: () => `Lv ${player.spread}/3` },
+    { id: 'buySpeed', price: 5000, can: () => player.speed < 3, apply: () => player.speed++, status: () => `Lv ${player.speed}/3` },
+    { id: 'buyHeart', price: 12000, can: () => continuesLeft < 3, apply: () => continuesLeft++, status: () => `のこり ${continuesLeft}/3` }
+  ];
+  shopItems.forEach(item => {
+    item.btn = document.querySelector('#' + item.id);
+    item.btn.addEventListener('click', () => {
+      if (state !== 'shop' || !item.can() || score < item.price) return;
+      score -= item.price;
+      item.apply();
+      sfx('power');
+      updateShop();
+    });
+  });
+
+  function updateShop() {
+    shopMoney.textContent = yen(score);
+    for (const item of shopItems) {
+      const maxed = !item.can();
+      item.btn.disabled = maxed || score < item.price;
+      item.btn.querySelector('.shop-status').textContent = maxed ? 'MAX' : item.status();
+    }
+  }
+
+  function openShop() {
+    state = 'shop';
+    shopNext.textContent = `STAGE ${stageIndex + 2}  ${stages[stageIndex + 1].name}`;
+    updateShop();
+    shopScreen.classList.add('is-visible');
+    pauseButton.classList.remove('is-visible');
+    specialButton.classList.remove('is-visible');
+  }
+
+  function leaveShop() {
+    if (state !== 'shop') return;
+    shopScreen.classList.remove('is-visible');
+    stageIndex++; stageTime = 0; stageBanner = 3; bossState = 'waiting'; midBossDone = false; spawnTimer = 1.2; pickupTimer = 4;
+    health = Math.min(maxHealth, health + 28); player.inv = 2;
+    stageResult = null; setupStage(); musicStep = 0; musicClock = 0;
+    state = 'playing';
+    pauseButton.classList.add('is-visible');
+    specialButton.classList.add('is-visible');
+    updateSpecialButton();
+    playBgm(`stage${stageIndex}`, true);
+  }
+
   function finishGame(cleared) {
     state = 'over';
     pauseButton.classList.remove('is-visible', 'is-paused');
@@ -1351,8 +1411,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     statTime.textContent = `${elapsed.toFixed(1)}s`;
     const record = score > highScore;
     if (record) { highScore = score; localStorage.setItem('grochan-highscore', String(highScore)); }
-    finalScore.textContent = pad(score);
-    menuHighScore.textContent = pad(highScore);
+    finalScore.textContent = yen(score);
+    menuHighScore.textContent = yen(highScore);
     newRecord.classList.toggle('is-hidden', !record);
     setTimeout(() => gameOverScreen.classList.add('is-visible'), 450);
   }
@@ -3472,8 +3532,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const stage = stages[stageIndex];
     ctx.fillStyle = 'rgba(10,6,31,.82)'; ctx.fillRect(24, 23, 286, 70); ctx.fillRect(VW - 356, 23, 332, 70);
     ctx.strokeStyle = 'rgba(49,232,255,.6)'; ctx.strokeRect(24.5, 23.5, 286, 70); ctx.strokeRect(VW - 356.5, 23.5, 332, 70);
-    ctx.fillStyle = '#31e8ff'; ctx.font = '10px "Press Start 2P", monospace'; ctx.fillText('SCORE', 42, 45);
-    ctx.fillStyle = '#fff'; ctx.font = '25px "Press Start 2P", monospace'; ctx.fillText(pad(score), 42, 77);
+    ctx.fillStyle = '#31e8ff'; ctx.font = '10px "Press Start 2P", monospace'; ctx.fillText('MONEY', 42, 45);
+    ctx.fillStyle = '#fff'; ctx.font = '22px "Press Start 2P", monospace'; ctx.fillText(yen(score), 42, 77);
     ctx.fillStyle = 'rgba(10,6,31,.84)'; ctx.fillRect(24, 99, 286, 26); ctx.strokeStyle = 'rgba(255,225,90,.55)'; ctx.strokeRect(24.5, 99.5, 286, 26);
     ctx.fillStyle = '#2d2144'; ctx.fillRect(91, 107, 207, 10); ctx.fillStyle = special >= 100 ? '#ffe15a' : '#ff3e9d'; ctx.fillRect(91, 107, 207 * special / 100, 10);
     ctx.fillStyle = special >= 100 ? '#ffe15a' : '#fff'; ctx.font = '7px "Press Start 2P", monospace'; ctx.fillText('SPECIAL', 34, 116);
@@ -3620,6 +3680,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (startDown && !padStartWasDown && state === 'playing') togglePause();
     if (actionDown && !padActionWasDown && state !== 'playing') {
       if (state === 'menu') { if (menuStep === 'title') showHowto(); else showOpening(); }
+      else if (state === 'shop') leaveShop();
       else resetGame();
     }
     if (padInput.special && !padSpecialWasDown && state === 'playing') useSpecial();
@@ -3674,6 +3735,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
 
   function pad(n) { return Math.floor(n).toString().padStart(6, '0'); }
+  function yen(n) { return '¥' + Math.floor(n).toLocaleString('ja-JP'); }
   function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
   function rects(ax, ay, aw, ah, bx, by, bw, bh) { return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by; }
   function circleRect(cx, cy, r, x, y, w, h) { const nx = clamp(cx, x, x+w); const ny = clamp(cy, y, y+h); return (cx-nx)**2 + (cy-ny)**2 < r*r; }
@@ -3699,6 +3761,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (e.code === 'Enter' && state === 'menu') { if (menuStep === 'title') showHowto(); else showOpening(); }
     else if (e.code === 'Enter' && state === 'opening') resetGame();
     else if (e.code === 'Enter' && state === 'over') resetGame();
+    else if (e.code === 'Enter' && state === 'shop') leaveShop();
     if (e.code === 'Escape' && state === 'menu' && menuStep === 'howto') showTitle();
     // Hidden debug keys: Shift+N skips a stage, Shift+M summons its mid boss, Shift+B summons its boss.
     if (e.shiftKey && e.code === 'KeyN' && state === 'playing' && !paused) {
@@ -3733,6 +3796,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   titleScreen.addEventListener('click', showHowto);
   titleEnter.addEventListener('click', showHowto);
   startButton.addEventListener('click', showOpening);
+  nextStageButton.addEventListener('click', leaveShop);
   launchButton.addEventListener('click', resetGame);
   retryButton.addEventListener('click', resetGame);
   difficultyButtons.forEach(button => button.addEventListener('click', () => {
