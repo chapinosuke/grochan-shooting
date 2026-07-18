@@ -38,12 +38,24 @@
         <div class="eyebrow">MISSION RESULT</div>
         <h2 id="resultTitle">GAME OVER</h2>
         <div class="result-score"><span>SCORE</span><strong id="finalScore">000000</strong></div>
+        <div class="result-stats">
+          <div><span>STAGE</span><strong id="statStage">1 / 5</strong></div>
+          <div><span>KILLS</span><strong id="statKills">0</strong></div>
+          <div><span>TIME</span><strong id="statTime">0.0s</strong></div>
+        </div>
         <div id="newRecord" class="new-record">NEW RECORD!</div>
         <button id="retryButton" class="main-button">RETRY <i>↻</i></button>
       </section>
 
-      <div id="pauseLabel" class="pause-label">PAUSED</div>
-      <button id="soundButton" class="sound-button" aria-label="サウンド切り替え">♪ ON</button>
+      <div id="pauseLabel" class="pause-label">
+        <div class="pause-panel">
+          <span class="pause-title">PAUSED</span>
+          <p class="pause-hint">タップ / ESC で再開</p>
+          <button id="resumeButton" class="main-button">RESUME <i>▶</i></button>
+        </div>
+      </div>
+      <button id="pauseButton" class="corner-button pause-toggle" aria-label="ポーズ">❚❚</button>
+      <button id="soundButton" class="corner-button sound-button" aria-label="サウンド切り替え">♪ ON</button>
       <div id="controllerStatus" class="controller-status">🎮 CONTROLLER READY</div>
       <div class="scanlines"></div>
     </main>
