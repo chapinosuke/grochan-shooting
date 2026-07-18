@@ -185,6 +185,34 @@
     return { scale, ox: (canvas.width - VW * scale) / 2, oy: (canvas.height - VH * scale) / 2 };
   }
 
+  // --- Offscreen sprite-cache foundation ---------------------------------
+  // Expensive, deterministic body art is baked once into an offscreen canvas
+  // and blitted every frame; reactive bits (eyes, hit-flash, additive glow)
+  // stay live. Bake-target draw helpers render through `rctx`, which equals
+  // the on-screen `ctx` unless a bake is in progress. While no caller invokes
+  // bakeSprite yet, rctx === ctx always, so behaviour is unchanged.
+  const CACHE_SCALE = 2;              // matches the dpr cap in resize()
+  const spriteCache = new Map();      // key -> offscreen canvas (baked at CACHE_SCALE)
+  let rctx = ctx;                     // bake-target helpers draw through this
+  function bakeSprite(key, w, h, painter) {
+    const cached = spriteCache.get(key);
+    if (cached) return cached;
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil(w * CACHE_SCALE));
+    c.height = Math.max(1, Math.ceil(h * CACHE_SCALE));
+    const bc = c.getContext('2d');
+    bc.scale(CACHE_SCALE, CACHE_SCALE);
+    const prev = rctx;
+    rctx = bc;
+    try { painter(bc); } finally { rctx = prev; }
+    c._w = w; c._h = h;
+    spriteCache.set(key, c);
+    return c;
+  }
+  function blit(c, dx, dy, dw, dh) {
+    ctx.drawImage(c, dx, dy, dw ?? c._w, dh ?? c._h);
+  }
+
   function screenToWorld(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     const v = getView();
@@ -1947,36 +1975,36 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function drawBox3D(x, y, w, h, front, depth = 7) {
     const side = enemySideColor(front), top = enemyTopColor(front);
     const d = depth, dy = depth * .55;
-    ctx.fillStyle = top;
-    ctx.beginPath();
-    ctx.moveTo(x, y); ctx.lineTo(x + d, y - dy); ctx.lineTo(x + w + d, y - dy); ctx.lineTo(x + w, y);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = side;
-    ctx.beginPath();
-    ctx.moveTo(x + w, y); ctx.lineTo(x + w + d, y - dy); ctx.lineTo(x + w + d, y + h - dy); ctx.lineTo(x + w, y + h);
-    ctx.closePath(); ctx.fill();
-    const g = ctx.createLinearGradient(x, y, x, y + h);
+    rctx.fillStyle = top;
+    rctx.beginPath();
+    rctx.moveTo(x, y); rctx.lineTo(x + d, y - dy); rctx.lineTo(x + w + d, y - dy); rctx.lineTo(x + w, y);
+    rctx.closePath(); rctx.fill();
+    rctx.fillStyle = side;
+    rctx.beginPath();
+    rctx.moveTo(x + w, y); rctx.lineTo(x + w + d, y - dy); rctx.lineTo(x + w + d, y + h - dy); rctx.lineTo(x + w, y + h);
+    rctx.closePath(); rctx.fill();
+    const g = rctx.createLinearGradient(x, y, x, y + h);
     g.addColorStop(0, enemyTopColor(front)); g.addColorStop(.45, front); g.addColorStop(1, enemySideColor(front));
-    ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(x + 3, y + 3, Math.max(3, w * .35), 2);
+    rctx.fillStyle = g; rctx.fillRect(x, y, w, h);
+    rctx.fillStyle = 'rgba(255,255,255,.1)'; rctx.fillRect(x + 3, y + 3, Math.max(3, w * .35), 2);
   }
   function drawCylinder3D(x, y, w, h, front) {
-    const g = ctx.createLinearGradient(x, y, x + w, y);
+    const g = rctx.createLinearGradient(x, y, x + w, y);
     g.addColorStop(0, enemySideColor(front)); g.addColorStop(.22, enemyTopColor(front)); g.addColorStop(.55, front); g.addColorStop(1, enemySideColor(front));
-    ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = hexA('#ffffff', .2); ctx.fillRect(x + w * .18, y + 2, w * .14, h - 4);
+    rctx.fillStyle = g; rctx.fillRect(x, y, w, h);
+    rctx.fillStyle = hexA('#ffffff', .2); rctx.fillRect(x + w * .18, y + 2, w * .14, h - 4);
   }
   function drawEnemyUnderglow(e, color) {
     // Intentionally empty — under-rings read as unnatural frames around sprites.
   }
   function drawEnemyShadow(e) {
-    ctx.save(); ctx.globalAlpha = .18; ctx.fillStyle = '#020108';
-    ctx.beginPath(); ctx.ellipse(e.w * .5 + 6, e.h + 10, e.w * .48, Math.max(5, e.h * .11), 0, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
+    rctx.save(); rctx.globalAlpha = .18; rctx.fillStyle = '#020108';
+    rctx.beginPath(); rctx.ellipse(e.w * .5 + 6, e.h + 10, e.w * .48, Math.max(5, e.h * .11), 0, 0, Math.PI * 2); rctx.fill();
+    rctx.restore();
   }
   function drawKawaiiEyes(x1, x2, y, s = 9, pupil = 3) {
-    ctx.fillStyle = '#120b2e'; ctx.fillRect(x1, y, s, s); ctx.fillRect(x2, y, s, s);
-    ctx.fillStyle = '#fff'; ctx.fillRect(x1 + 2, y + 1, pupil, pupil); ctx.fillRect(x2 + 2, y + 1, pupil, pupil);
+    rctx.fillStyle = '#120b2e'; rctx.fillRect(x1, y, s, s); rctx.fillRect(x2, y, s, s);
+    rctx.fillStyle = '#fff'; rctx.fillRect(x1 + 2, y + 1, pupil, pupil); rctx.fillRect(x2 + 2, y + 1, pupil, pupil);
   }
   function drawExtrudeSilhouette(drawFn, color, depth = 6) {
     ctx.save(); ctx.translate(depth, depth * .55); ctx.fillStyle = color; ctx.strokeStyle = color;
