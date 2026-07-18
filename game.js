@@ -532,6 +532,7 @@
     if (formation) { e.x += formation.xOffset || 0; e.formation = formation.shape; e.formationSlot = formation.slot || 0; }
     const canDive = ['bat', 'racer', 'cupid', 'knight'].includes(e.type);
     e.behavior = formation ? 'formation' : canDive && Math.random() < .48 ? 'dive' : Math.random() < .24 ? 'stagger' : 'cruise';
+    e.fireMax = e.fire;
     enemies.push(e);
   }
 
@@ -1018,6 +1019,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         enemyShoot(e);
         const cadence = e.type === 'tank' ? 1.1 : e.type === 'turret' ? 1.4 : e.type === 'spinner' ? 1.8 : e.type === 'glitch' ? 1.9 : e.type === 'cupid' ? 2 : e.type === 'racer' ? 1.5 : e.type === 'manta' ? 1.9 : e.type === 'walker' ? 1.25 : e.type === 'seeker' ? 1.45 : e.type === 'knight' ? 1.7 : 2.1 + Math.random();
         e.fire = cadence * (e.variant === 'elite' ? .76 : 1);
+        e.fireMax = e.fire;
       }
     }
     for (const p of pickups) { p.x -= 130 * dt; p.t += dt; }
@@ -2261,6 +2263,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     rctx.restore();
   }
   function drawKawaiiEyes(x1, x2, y, s = 9, pupil = 3) {
+    // Async blink: phase is seeded from eye position so different enemies/spots
+    // blink out of sync without needing any per-enemy timer state.
+    const seed = (x1 * 12.9898 + x2 * 78.233) % 6.28;
+    if (((elapsed * .6 + seed) % 3.4) < .1) {
+      rctx.strokeStyle = '#120b2e'; rctx.lineWidth = Math.max(2, s * .22); rctx.lineCap = 'round';
+      rctx.beginPath(); rctx.moveTo(x1, y + s * .5); rctx.lineTo(x1 + s, y + s * .5);
+      rctx.moveTo(x2, y + s * .5); rctx.lineTo(x2 + s, y + s * .5); rctx.stroke();
+      return;
+    }
     rctx.fillStyle = '#120b2e'; rctx.fillRect(x1, y, s, s); rctx.fillRect(x2, y, s, s);
     rctx.fillStyle = '#fff'; rctx.fillRect(x1 + 2, y + 1, pupil, pupil); rctx.fillRect(x2 + 2, y + 1, pupil, pupil);
   }
@@ -2582,6 +2593,42 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const g = ctx.createRadialGradient(e.w * .5, e.h * .45, 2, e.w * .5, e.h * .45, e.w * .5);
       g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(e.w * .5, e.h * .45, e.w * .42, e.h * .4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    // Wind-up: a soft pulsing charge glow in the last stretch before the next shot,
+    // telegraphing an attack without needing bespoke muzzle art per enemy type.
+    if (e.fireMax > 0 && e.fire > 0) {
+      const windup = 1 - e.fire / e.fireMax;
+      if (windup > .78) {
+        const wt = (windup - .78) / .22;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = wt * (.3 + Math.sin(e.t * 30) * .15);
+        const wg = ctx.createRadialGradient(e.w * .5, e.h * .5, 1, e.w * .5, e.h * .5, e.w * .58);
+        wg.addColorStop(0, 'rgba(255,255,255,.85)'); wg.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = wg; ctx.beginPath(); ctx.arc(e.w * .5, e.h * .5, e.w * .55, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
+    // Damage state: cracked plating + occasional ember once badly hurt.
+    if (e.maxHp > 1 && e.hp / e.maxHp < .4) {
+      ctx.save(); ctx.globalAlpha = .5; ctx.strokeStyle = 'rgba(15,6,6,.6)'; ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(e.w * .32, e.h * .18); ctx.lineTo(e.w * .44, e.h * .48); ctx.lineTo(e.w * .34, e.h * .74);
+      ctx.moveTo(e.w * .6, e.h * .14); ctx.lineTo(e.w * .68, e.h * .42);
+      ctx.stroke(); ctx.restore();
+      if (Math.sin(e.t * 11 + e.w) > .82) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .8; ctx.fillStyle = '#ffb347';
+        ctx.beginPath(); ctx.arc(e.w * .4, e.h * .42, 2.2, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
+    // Stage-color decal: a small squad-insignia badge ties every enemy back
+    // to the current stage's palette, independent of the type's own colors.
+    if (e.type !== 'ember') {
+      const stage = stages[stageIndex];
+      ctx.save(); ctx.globalAlpha = .65; ctx.fillStyle = stage.accent2;
+      ctx.beginPath(); ctx.roundRect(e.w - 14, e.h - 14, 9, 9, 2); ctx.fill();
+      ctx.globalAlpha = .9; ctx.fillStyle = stage.accent;
+      ctx.beginPath(); ctx.arc(e.w - 9.5, e.h - 9.5, 2, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
     if (e.variant === 'standard') return;
@@ -3090,12 +3137,24 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     }
     if (stageBanner > 0) {
       const alpha = Math.min(1, stageBanner, (3 - stageBanner) * 2);
-      ctx.globalAlpha = Math.max(0, alpha); ctx.fillStyle = 'rgba(7,4,25,.78)'; ctx.fillRect(0, 258, VW, 176);
-      ctx.textAlign = 'center'; ctx.fillStyle = stage.accent; ctx.font = '16px "Press Start 2P", monospace'; ctx.fillText(`STAGE ${stageIndex + 1}`, VW / 2, 308);
-      ctx.fillStyle = '#fff'; ctx.font = '23px "Press Start 2P", monospace'; ctx.fillText(stage.name, VW / 2, 352);
-      ctx.fillStyle = '#ffd7ea'; ctx.font = '19px "DotGothic16", monospace'; ctx.fillText(stage.subtitle, VW / 2, 388);
-      ctx.fillStyle = stage.accent2; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText(`BOSS: ${stage.boss}`, VW / 2, 418);
-      ctx.globalAlpha = 1; ctx.textAlign = 'left';
+      const slide = (1 - Math.min(1, alpha)) * 26;
+      ctx.save(); ctx.globalAlpha = Math.max(0, alpha);
+      const bx = 150, by = 254 + slide, bw = VW - 300, bh = 180;
+      // Glowing bevelled card instead of a flat wash — same neon-panel language as the HUD.
+      const bg = ctx.createLinearGradient(0, by, 0, by + bh);
+      bg.addColorStop(0, 'rgba(14,8,34,.92)'); bg.addColorStop(1, 'rgba(6,3,16,.92)');
+      ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 18); ctx.fill();
+      ctx.save(); ctx.shadowColor = stage.accent; ctx.shadowBlur = 16; ctx.strokeStyle = hexA(stage.accent, .85); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, 18); ctx.stroke(); ctx.restore();
+      ctx.strokeStyle = stage.accent2; ctx.lineWidth = 3;
+      for (const [cx, cy, dx, dy] of [[bx, by, 1, 1], [bx + bw, by, -1, 1], [bx, by + bh, 1, -1], [bx + bw, by + bh, -1, -1]]) {
+        ctx.beginPath(); ctx.moveTo(cx, cy + dy * 22); ctx.lineTo(cx, cy); ctx.lineTo(cx + dx * 22, cy); ctx.stroke();
+      }
+      ctx.textAlign = 'center'; ctx.fillStyle = stage.accent; ctx.font = '16px "Press Start 2P", monospace'; ctx.fillText(`STAGE ${stageIndex + 1}`, VW / 2, by + 50);
+      ctx.fillStyle = '#fff'; ctx.font = '23px "Press Start 2P", monospace'; ctx.fillText(stage.name, VW / 2, by + 94);
+      ctx.fillStyle = '#ffd7ea'; ctx.font = '19px "DotGothic16", monospace'; ctx.fillText(stage.subtitle, VW / 2, by + 130);
+      ctx.fillStyle = stage.accent2; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText(`BOSS: ${stage.boss}`, VW / 2, by + 160);
+      ctx.restore(); ctx.textAlign = 'left';
     }
     if ((bossState === 'transition' || bossState === 'final') && state === 'playing') {
       ctx.globalAlpha = .92; ctx.fillStyle = 'rgba(7,4,25,.86)'; ctx.fillRect(0, 240, VW, 236);

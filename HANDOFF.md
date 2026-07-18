@@ -31,10 +31,10 @@
 - [x] **factory背景の深化**（`drawFactoryBackdrop` ~1592行）: `drawRefineryTanks`（リベット＋発光窓の精錬タンク3基、屋根越しに突出配置）、`drawHammerPress`（周期スラム＋着弾フラッシュのハイドロプレス、gearと同じ「浮遊」扱いで固定スクリーン座標）、`drawMoltenRiver`（コンベア下の流動溶岩グロー）を追加。`REFINERY_TANKS`定数追加。
 - [x] **ボス2〜5の磨き**（`drawBoss` の `stageIndex===1..4`）: 共有ヘルパー`drawVisorPanel`(角丸グラデ+ハイライト)/`drawGlowDot`(加算グローの発光瞳)を新設し、DEEP BLUE DIVA/BLAZE EMPRESS/VOLT PHANTOM/QUEEN OF HEARTBREAKの平板な黒fillRect目を角丸グロスバイザー＋発光瞳に刷新（最終ボスはハート型瞳でstage1と統一感）。
 - [x] **着弾FX/破片/ヒットストップ**（Phase3後半）: `hitStop`変数を追加し`frame()`で`dt*=.15`のスロー処理（`collisions()`の被弾/`destroyEnemy()`/`hurt()`から`Math.max`でセット、大きさは雑魚<タンク<中ボス<ボスの順）。`burstDebris()`を新設し、角ばった`shape:'shard'`パーティクル（回転しながら落下する破片）を`burst()`の丸グロー粒子と併用。自弾ヒット時は小チップ2枚、撃破時は雑魚7〜ボス26枚。
-- [ ] **二次アニメ**（Phase2の残り）: wind-up（`e.windup`）/被弾ダメージ状態/瞬き。※`e.recoil`は既にtank砲身が参照、turret砲身は既にプレイヤー追尾。
+- [x] **二次アニメ**（Phase2の残り）: `spawnEnemy`/リロード時に`e.fireMax`を記録し、`drawEnemyVariant`で発射直前25%区間にパルスする加算グロー(windup)を追加。同関数に被弾ダメージ状態（HP40%未満でクラック線+明滅エンバー）も追加。`drawKawaiiEyes`に座標シードの非同期瞬き（3.4秒周期・0.1秒だけ閉眼線）を追加し、call site変更なしで全カワイイ目の敵に適用。※`e.recoil`は既にtank砲身が参照、turret砲身は既にプレイヤー追尾。
 - [x] **中ボス5種差別化**: 各`stages[]`に`midBoss`名を追加（NEON/TIDAL/CINDER/GLITCH/VELVET WARDEN）、HUDの固定文字列`'CRIMSON WARDEN'`を`stage.midBoss`参照に置換。`drawMidBoss`のクレスト部をステージ別シルエット（ハート型アンテナ/ドーサルフィン/火炎スパイク/サーキット触角+点滅ノード/ハートクレスト）に分岐して差別化。
-- [ ] **Phase5 残り**: タイトルカード強化、敵へのステージ色デカール。
-- [ ] **Phase6 性能調整**（必要なら `bakeSprite` を実際に活性化して敵/背景を焼き込み。**スクショで見比べながら**やれば同一性リスクを回避できる）。
+- [x] **Phase5 残り**: `stageBanner`のタイトルカードを角丸グロー枠+四隅アクセントティック+スライドインに刷新。`drawEnemyVariant`に全雑魚共通のステージ色デカール（右下の小バッジ、accent2地+accentドット）を追加。
+- [ ] **Phase6 性能調整**（`bakeSprite`活性化）: **意図的に見送り**。敵の見た目は`e.t`ベースのロータースピン/明滅LED/recoil/windup/damage-crack/瞬き/ステージデカールなど大半が動的で、キャッシュキーに全部含めると焼き込みの意味がなくなる。現状ヘッドレスFPSは指標にならず実機での劣化報告も無いため、リスクに見合わないと判断。実機でF1計測してカクつきがあれば再検討。
 
 ## 技術メモ
 - 描画はワールド座標(VW=1280×VH=720)。`draw()`でビュー変換を1回適用。ボス/敵は`ctx`にライブ描画（`translate(e.x,e.y)`）。`rctx===ctx`（焼き込み未活性）。
