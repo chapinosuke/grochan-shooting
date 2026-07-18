@@ -2148,18 +2148,31 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawEnemyUnderglow(e, stage.accent2);
     }
     if (e.type === 'drone') {
-      // Floating purple surveillance cube with extruded volume + thrusters
-      drawBox3D(6, 10, 50, 30, '#8b3fff', 8);
-      drawBox3D(0, 18, 64, 14, '#5a28b8', 5);
-      ctx.fillStyle = '#dba6ff'; ctx.fillRect(12, 14, 38, 5);
+      // Recon pod: spinning rotor mast, camera-lens face, blinking LEDs, thrusters.
+      // Rotor blur disc + crossed blades on the mast.
+      ctx.save(); ctx.translate(32, 6);
+      ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(159,232,255,.16)';
+      ctx.beginPath(); ctx.ellipse(0, 0, 30, 5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over'; ctx.strokeStyle = '#bfeaff'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+      const rb = e.t * 26; ctx.beginPath();
+      ctx.moveTo(Math.cos(rb) * -28, Math.sin(rb) * -4); ctx.lineTo(Math.cos(rb) * 28, Math.sin(rb) * 4); ctx.stroke();
+      ctx.fillStyle = '#31e8ff'; ctx.fillRect(-3, -4, 6, 8); ctx.restore();
+      ctx.fillStyle = '#4a1f9e'; ctx.fillRect(30, 4, 4, 10);
+      // Chassis.
+      drawBox3D(6, 12, 50, 30, '#8b3fff', 8);
+      drawBox3D(0, 20, 64, 14, '#5a28b8', 5);
+      ctx.fillStyle = '#dba6ff'; ctx.fillRect(12, 16, 38, 5);
       drawKawaiiEyes(18, 38, 24, 10, 3);
+      // Blinking status LEDs.
       ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const on = Math.floor(e.t * 6) % 2;
+      ctx.fillStyle = on ? '#ff3e9d' : '#31e8ff'; ctx.fillRect(2, 24, 5, 5);
+      ctx.fillStyle = on ? '#31e8ff' : '#ff3e9d'; ctx.fillRect(57, 24, 5, 5);
       const thr = .55 + Math.abs(Math.sin(e.t * 14)) * .45;
       ctx.fillStyle = hexA('#31e8ff', .75 * thr);
-      ctx.beginPath(); ctx.ellipse(12, 50, 9 * thr, 4, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(52, 50, 9 * thr, 4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(12, 46, 9 * thr, 4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(52, 46, 9 * thr, 4, 0, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
-      ctx.fillStyle = '#31e8ff'; ctx.fillRect(4, 46, 16, 4); ctx.fillRect(44, 46, 16, 4);
     } else if (e.type === 'bat') {
       const flap = Math.sin(e.t * 12) * 10;
       // Darker wing undersides (depth), body gradient
@@ -2194,20 +2207,47 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = '#fff'; ctx.fillRect(-6, -6, 12, 12);
       ctx.restore();
     } else if (e.type === 'tank') {
-      drawBox3D(8, 22, 82, 48, '#6943c8', 9);
+      // Twin recoiling cannons pointing at the player (recoil eased by e.recoil).
+      const rec = (e.recoil || 0);
+      ctx.save();
+      const cann = ctx.createLinearGradient(-16, 0, 20, 0);
+      cann.addColorStop(0, '#8a8fb5'); cann.addColorStop(.5, '#4a4f75'); cann.addColorStop(1, '#20233c');
+      for (const cy of [30, 46]) {
+        ctx.fillStyle = cann; ctx.fillRect(-16 + rec * 34, cy, 34, 8);
+        ctx.fillStyle = '#0c0a1e'; ctx.fillRect(-20 + rec * 34, cy + 1, 8, 6);
+      }
+      ctx.restore();
+      // Animated tread with rolling wheels.
+      drawBox3D(2, 60, 88, 16, '#241035', 5);
+      ctx.save(); ctx.fillStyle = '#0c0a1e';
+      const to = (e.t * 60) % 16;
+      for (let x = 4 - to; x < 90; x += 16) { ctx.beginPath(); ctx.arc(x, 68, 5, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = 'rgba(255,225,90,.5)'; for (let x = 4 - to; x < 90; x += 16) ctx.fillRect(x - 1, 67, 2, 2);
+      ctx.restore();
+      // Wedge armor skirt + hull + cyan turret cap.
+      ctx.fillStyle = '#3a1c5e'; ctx.beginPath(); ctx.moveTo(4, 60); ctx.lineTo(14, 40); ctx.lineTo(80, 40); ctx.lineTo(90, 60); ctx.closePath(); ctx.fill();
+      drawBox3D(8, 22, 82, 44, '#6943c8', 9);
       drawBox3D(18, 2, 56, 24, '#31e8ff', 6);
-      ctx.fillStyle = '#120b2e'; ctx.fillRect(24, 28, 48, 26);
-      drawKawaiiEyes(30, 54, 34, 11, 4);
-      drawCylinder3D(4, 68, 24, 8, '#ffe15a');
-      drawCylinder3D(68, 68, 24, 8, '#ffe15a');
+      ctx.fillStyle = '#120b2e'; ctx.fillRect(24, 28, 48, 24);
+      drawKawaiiEyes(30, 54, 33, 11, 4);
       ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(22, 6, 20, 3);
     } else if (e.type === 'turret') {
+      // Rotating radar fin above a pop-up dome.
+      ctx.save(); ctx.translate(37, 22); ctx.rotate(Math.sin(e.t * 2) * .9);
+      ctx.fillStyle = '#a8b7d6'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(26, -6); ctx.lineTo(26, 6); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#31e8ff'; ctx.fillRect(-2, -10, 4, 12); ctx.restore();
+      // Aiming barrel: pivots toward Gro-chan.
+      const pivx = 34, pivy = 40;
+      let ang = Math.atan2((player.y + 51) - (e.y + pivy), (player.x + 59) - (e.x + pivx));
+      ang = clamp(ang, Math.PI * .62, Math.PI * 1.38);
+      ctx.save(); ctx.translate(pivx, pivy); ctx.rotate(ang);
+      const barrel = ctx.createLinearGradient(0, -5, 0, 5);
+      barrel.addColorStop(0, '#ffe15a'); barrel.addColorStop(1, '#9a6a10');
+      ctx.fillStyle = barrel; ctx.fillRect(0, -5, 40, 10);
+      ctx.fillStyle = '#120b2e'; ctx.fillRect(36, -3, 8, 6); ctx.restore();
+      // Dome base + hull.
       drawBox3D(6, 44, 62, 24, '#3a2068', 7);
       drawBox3D(14, 26, 46, 30, '#6943c8', 6);
-      const barrel = ctx.createLinearGradient(-10, 36, 30, 48);
-      barrel.addColorStop(0, '#ffe15a'); barrel.addColorStop(1, '#9a6a10');
-      ctx.fillStyle = barrel; ctx.fillRect(-10, 36, 32, 10);
-      ctx.fillStyle = '#120b2e'; ctx.fillRect(-12, 38, 8, 6);
       ctx.fillStyle = '#ff3e9d'; ctx.fillRect(20, 32, 30, 14);
       drawKawaiiEyes(24, 38, 35, 7, 2);
       drawCylinder3D(8, 66, 18, 5, '#31e8ff');
@@ -2292,15 +2332,34 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.ellipse(43, 16, 14, 5, 0, 0, Math.PI * 2); ctx.fill();
       drawKawaiiEyes(31, 50, 18, 7, 2);
     } else if (e.type === 'walker') {
+      // Two-joint chicken-walker legs (thigh + shin) with a stepping gait.
       const step = Math.sin(e.t * 7) * 8;
-      ctx.strokeStyle = '#1a0c14'; ctx.lineWidth = 13; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(24, 58); ctx.lineTo(18 + step, 88); ctx.moveTo(60, 58); ctx.lineTo(66 - step, 88); ctx.stroke();
-      ctx.strokeStyle = '#ff8a35'; ctx.lineWidth = 4;
-      ctx.beginPath(); ctx.moveTo(24, 58); ctx.lineTo(18 + step, 88); ctx.moveTo(60, 58); ctx.lineTo(66 - step, 88); ctx.stroke();
+      for (const [hipx, ph] of [[26, 0], [58, Math.PI]]) {
+        const sw = Math.sin(e.t * 7 + ph) * 8;
+        const kneeX = hipx - 8 + sw, kneeY = 66;
+        const footX = hipx - 12 + sw * .3, footY = 90;
+        ctx.strokeStyle = '#1a0c14'; ctx.lineWidth = 12; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(hipx, 56); ctx.lineTo(kneeX, kneeY); ctx.lineTo(footX, footY); ctx.stroke();
+        ctx.strokeStyle = '#ff8a35'; ctx.lineWidth = 3.5;
+        ctx.beginPath(); ctx.moveTo(hipx, 56); ctx.lineTo(kneeX, kneeY); ctx.lineTo(footX, footY); ctx.stroke();
+        ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.arc(kneeX, kneeY, 3, 0, Math.PI * 2); ctx.fill();
+      }
+      // Shoulder cannon.
+      const sc = ctx.createLinearGradient(0, 6, 0, 18);
+      sc.addColorStop(0, '#8a8fb5'); sc.addColorStop(1, '#2a1c30');
+      ctx.fillStyle = sc; ctx.fillRect(52, 6, 30, 11);
+      ctx.fillStyle = '#0c0a1e'; ctx.fillRect(78, 8, 7, 7);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = hexA('#ff5a36', .5);
+      ctx.beginPath(); ctx.arc(85, 11, 3 + Math.abs(Math.sin(e.t * 4)) * 2, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      // Cockpit hull + canopy.
       drawBox3D(8, 16, 68, 46, '#6e3548', 8);
       drawBox3D(16, 4, 50, 18, '#d04b3f', 5);
       ctx.fillStyle = '#15080d'; ctx.fillRect(18, 26, 47, 22);
       drawKawaiiEyes(24, 48, 30, 11, 3);
+      const canopy = ctx.createLinearGradient(20, 6, 40, 20);
+      canopy.addColorStop(0, '#ffd6a0'); canopy.addColorStop(1, '#ff5a36');
+      ctx.fillStyle = canopy; ctx.beginPath(); ctx.ellipse(40, 13, 18, 7, 0, Math.PI, 0); ctx.fill();
+      // Chin gun.
       const gun = ctx.createLinearGradient(-10, 18, 20, 32);
       gun.addColorStop(0, '#ffd6a0'); gun.addColorStop(1, '#ff5a36');
       ctx.fillStyle = gun; ctx.fillRect(-10, 18, 26, 10);
