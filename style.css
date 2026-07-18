@@ -55,17 +55,40 @@ canvas {
 .screen.is-visible { opacity: 1; visibility: visible; transform: scale(1); }
 
 /* Title screen: the logo + attract demo are drawn on the canvas, so the HTML
-   layer is a slim bottom panel that lets the animated backdrop show through. */
-#startScreen {
+   layer is only a click-catcher with a start hint and the high score. */
+#titleScreen {
   justify-content: flex-end;
-  padding-bottom: 3.5vh;
-  background: linear-gradient(180deg, rgba(9,5,28,0) 40%, rgba(9,5,28,.5) 66%, rgba(9,5,28,.88) 100%);
+  padding-bottom: 6vh;
+  background: linear-gradient(180deg, rgba(9,5,28,0) 55%, rgba(9,5,28,.7) 100%);
+  cursor: pointer;
 }
-#startScreen .lead { margin: 0 0 16px; font-size: clamp(14px, 1.7vw, 19px); text-shadow: 0 2px 6px rgba(0,0,0,.8); }
-#startScreen .difficulty { margin: 0 0 14px; }
-#startScreen .controls { margin-bottom: 18px; padding: 10px 16px; gap: 14px; font-size: 13px; background: rgba(9,5,28,.45); }
-#startScreen kbd { min-width: 32px; padding: 5px 6px; font-size: 8px; }
-#startScreen .highscore { margin-top: 16px; }
+.title-enter {
+  border: 1px solid rgba(49,232,255,.55);
+  padding: 14px 22px;
+  background: rgba(9,5,28,.6);
+  color: white;
+  font: 10px "Press Start 2P", monospace;
+  letter-spacing: .12em;
+  cursor: pointer;
+  animation: blink 1.3s steps(2) infinite;
+}
+.title-enter:hover { border-color: var(--pink); animation: none; }
+#titleScreen .highscore { margin-top: 18px; }
+
+/* How-to-play screen: readable centered panel between title and launch. */
+#startScreen { background: radial-gradient(circle at 50% 40%, rgba(26, 15, 62, .94), rgba(8, 4, 27, .97)); }
+#startScreen .lead { margin: 16px 0 6px; }
+#startScreen .controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px 30px;
+  text-align: left;
+  margin: 18px 0 22px;
+  padding: 18px 28px;
+  background: rgba(9,5,28,.5);
+}
+#startScreen .difficulty { margin: 0 0 22px; }
+.howto-hint { margin: 16px 0 0; color: #837aa7; font: 8px "Press Start 2P", monospace; letter-spacing: .1em; }
 
 .opening-screen {
   overflow: hidden;

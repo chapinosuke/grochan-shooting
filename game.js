@@ -3,6 +3,8 @@
 
   const canvas = document.querySelector('#game');
   const ctx = canvas.getContext('2d');
+  const titleScreen = document.querySelector('#titleScreen');
+  const titleEnter = document.querySelector('#titleEnter');
   const startScreen = document.querySelector('#startScreen');
   const openingScreen = document.querySelector('#openingScreen');
   const gameOverScreen = document.querySelector('#gameOverScreen');
@@ -68,6 +70,7 @@
   let idleFrame = null;
   let jumpFrame = null;
   let state = 'menu';
+  let menuStep = 'title';   // 'title' -> 'howto' -> showOpening()
   let paused = false;
   let lastTime = 0;
   let score = 0;
@@ -329,6 +332,7 @@
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
     player.fire = 0; player.missileFire = .8; player.inv = 1.2; player.frame = 0; player.grounded = false; player.takeoff = 0; player.power = 1; player.spread = 1; player.speed = 1;
     state = 'playing'; paused = false;
+    titleScreen.classList.remove('is-visible');
     startScreen.classList.remove('is-visible');
     openingScreen.classList.remove('is-visible');
     gameOverScreen.classList.remove('is-visible');
@@ -343,9 +347,24 @@
     playBgm('stage0', true);
   }
 
+  // Menu flow: title (canvas logo + attract demo) -> how-to-play -> opening.
+  function showHowto() {
+    menuStep = 'howto';
+    titleScreen.classList.remove('is-visible');
+    startScreen.classList.add('is-visible');
+    ensureAudio(); sfx('power');
+  }
+
+  function showTitle() {
+    menuStep = 'title';
+    startScreen.classList.remove('is-visible');
+    titleScreen.classList.add('is-visible');
+  }
+
   function showOpening() {
     clearTimeout(openingTimeout);
     state = 'opening'; paused = false;
+    titleScreen.classList.remove('is-visible');
     startScreen.classList.remove('is-visible'); gameOverScreen.classList.remove('is-visible');
     openingScreen.classList.remove('is-visible');
     // Restart the CSS timeline even when the intro is replayed after returning to the menu.
@@ -1374,7 +1393,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawBackdrop();
     drawGame();
     drawForeground(stages[stageIndex]);
-    if (state === 'menu') drawTitleScreen();
+    if (state === 'menu' && menuStep === 'title') drawTitleScreen();
     ctx.restore();
     if (fpsShow) drawFpsMeter();
   }
@@ -2430,7 +2449,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
     }
     for (const e of enemies) drawEnemy(e);
-    if (state === 'playing' || state === 'over' || state === 'menu') drawPlayer();
+    if (state === 'playing' || state === 'over' || (state === 'menu' && menuStep === 'title')) drawPlayer();
     // Additive blending makes overlapping sparks glow white-hot like real light.
     ctx.globalCompositeOperation = 'lighter';
     for (const p of particles) {
@@ -3599,7 +3618,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const startDown = Boolean(pad.buttons[9]?.pressed);
     const actionDown = Boolean(pad.buttons[0]?.pressed);
     if (startDown && !padStartWasDown && state === 'playing') togglePause();
-    if (actionDown && !padActionWasDown && state !== 'playing') resetGame();
+    if (actionDown && !padActionWasDown && state !== 'playing') {
+      if (state === 'menu') { if (menuStep === 'title') showHowto(); else showOpening(); }
+      else resetGame();
+    }
     if (padInput.special && !padSpecialWasDown && state === 'playing') useSpecial();
     padStartWasDown = startDown; padActionWasDown = actionDown;
     padSpecialWasDown = padInput.special;
@@ -3674,9 +3696,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (e.code === 'F1') { e.preventDefault(); fpsShow = !fpsShow; }
     if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'playing') togglePause();
     if (e.code === 'KeyX' && !e.repeat) useSpecial();
-    if (e.code === 'Enter' && state === 'menu') showOpening();
+    if (e.code === 'Enter' && state === 'menu') { if (menuStep === 'title') showHowto(); else showOpening(); }
     else if (e.code === 'Enter' && state === 'opening') resetGame();
     else if (e.code === 'Enter' && state === 'over') resetGame();
+    if (e.code === 'Escape' && state === 'menu' && menuStep === 'howto') showTitle();
     // Hidden debug keys: Shift+N skips a stage, Shift+M summons its mid boss, Shift+B summons its boss.
     if (e.shiftKey && e.code === 'KeyN' && state === 'playing' && !paused) {
       enemies = []; enemyBullets = []; bullets = [];
@@ -3707,6 +3730,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   canvas.addEventListener('pointermove', e => { if (!pointer.active) return; const p=screenToWorld(e.clientX,e.clientY); pointer.x=p.x; pointer.y=p.y; });
   canvas.addEventListener('pointerup', () => pointer.active = false);
   canvas.addEventListener('pointercancel', () => pointer.active = false);
+  titleScreen.addEventListener('click', showHowto);
+  titleEnter.addEventListener('click', showHowto);
   startButton.addEventListener('click', showOpening);
   launchButton.addEventListener('click', resetGame);
   retryButton.addEventListener('click', resetGame);

@@ -35,7 +35,8 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   await new Promise(r => setTimeout(r, 400));
 
   const click = async sel => { const el = await page.$(sel); if (el) await el.click(); };
-  await click('#startButton'); await new Promise(r => setTimeout(r, 200));
+  await click('#titleEnter'); await new Promise(r => setTimeout(r, 200));   // title -> how-to
+  await click('#startButton'); await new Promise(r => setTimeout(r, 200));  // how-to -> opening
   await click('#launchButton');   // opening -> resetGame -> playing
 
   const press = (code, shift = false) => page.evaluate(({ code, shift }) => {

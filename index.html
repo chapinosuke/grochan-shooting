@@ -11,16 +11,14 @@
     <main class="game-shell">
       <canvas id="game" aria-label="ぐろちゃんシューティングゲーム"></canvas>
 
-      <section id="startScreen" class="screen title-screen is-visible">
+      <section id="titleScreen" class="screen is-visible" aria-label="タイトル">
+        <button id="titleEnter" class="title-enter">クリック / ENTER でスタート</button>
+        <div class="highscore">HIGH SCORE <strong id="menuHighScore">000000</strong></div>
+      </section>
+
+      <section id="startScreen" class="screen" aria-label="あそびかた">
+        <div class="eyebrow">HOW TO PLAY</div>
         <p class="lead">ネオンシティを飛び回って、ハート泥棒をやっつけろ！</p>
-        <div class="difficulty" aria-label="難易度選択">
-          <span>DIFFICULTY</span>
-          <div>
-            <button data-difficulty="easy">EASY</button>
-            <button data-difficulty="normal" class="is-active">NORMAL</button>
-            <button data-difficulty="hard">HARD</button>
-          </div>
-        </div>
         <div class="controls">
           <div><kbd>WASD</kbd><kbd>矢印</kbd><span>移動</span></div>
           <div><kbd>SPACE</kbd><span>ショット（手動・押しっぱなしで連射）</span></div>
@@ -31,8 +29,16 @@
           <div><kbd>HIT</kbd><span>被弾でPOWERが1段階ダウン</span></div>
           <div class="touch-note">スマホはドラッグで移動・押しっぱなしでショット</div>
         </div>
-        <button id="startButton" class="main-button">START GAME <i>→</i></button>
-        <div class="highscore">HIGH SCORE <strong id="menuHighScore">000000</strong></div>
+        <div class="difficulty" aria-label="難易度選択">
+          <span>DIFFICULTY</span>
+          <div>
+            <button data-difficulty="easy">EASY</button>
+            <button data-difficulty="normal" class="is-active">NORMAL</button>
+            <button data-difficulty="hard">HARD</button>
+          </div>
+        </div>
+        <button id="startButton" class="main-button">GAME START <i>→</i></button>
+        <p class="howto-hint">ENTER でスタート ／ ESC でタイトルにもどる</p>
       </section>
 
       <section id="openingScreen" class="screen opening-screen" aria-label="ミッションオープニング">

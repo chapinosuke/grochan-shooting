@@ -47,6 +47,7 @@
 - **被弾パワーダウン**: `hurt()`で`player.power`が1段階ダウン(下限1、spread/speedは維持)。`powerDownBanner`(1.4s)でプレイヤー頭上に上昇する「POWER DOWN」表示+HUDのPOWERラベル赤点滅。スタート画面の操作説明に「HIT 被弾でPOWERが1段階ダウン」を追記。`GRO_DEBUG`に`power`を追加。
 - **タイトル画面**: canvas描画に移行。`update()`冒頭のmenuブランチで`elapsed`を進め(resetGameで0リセットされるので安全)、渋谷背景をアニメさせつつぐろちゃんがロゴ下を8の字飛行(`drawPlayer`をmenuでも描画)。`drawTitleScreen()`(draw()内、menu時のみ): 上部暗ウォッシュ+「GRO-CHAN」ピンクグラデ+グロー、「SKY BLASTER」シアン、両脇パルスハート、瞬き星8個、PRESS ENTER点滅。HTML `#startScreen`はh1/eyebrow撤去、下部アンカーの透過パネル(難易度/操作/START/ハイスコア)に縮小。
 - 検証: `.devtools/shot-title.js`(新規、menu状態スクショ)+`shot.js play 0`で回帰なし確認。
+- **メニューフロー3段階化**: タイトル(`#titleScreen`=canvasロゴ+クリック/ENTERヒント+ハイスコアのみ)→説明(`#startScreen`=HOW TO PLAY: 操作2列グリッド/難易度/GAME START、背景ほぼ不透過)→オープニング。`menuStep`('title'/'howto')で分岐、ENTER/クリック/パッドAで進む、ESCでタイトルに戻る。howto中はcanvasのロゴ/ぐろちゃん描画を停止。`shot.js`は`#titleEnter`→`#startButton`→`#launchButton`の順にクリックするよう更新、`shot-title.js`は`title|howto`引数対応。
 
 ## 技術メモ
 - 描画はワールド座標(VW=1280×VH=720)。`draw()`でビュー変換を1回適用。ボス/敵は`ctx`にライブ描画（`translate(e.x,e.y)`）。`rctx===ctx`（焼き込み未活性）。
