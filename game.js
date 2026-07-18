@@ -117,9 +117,9 @@
   let padActionWasDown = false;
   let padSpecialWasDown = false;
   const difficulties = {
-    easy: { spawn: .92, speed: .88, damage: .72, timeScale: 1.06, bossHp: 220, score: .8, midHp: 70 },
-    normal: { spawn: .72, speed: 1.05, damage: 1.05, timeScale: 1, bossHp: 340, score: 1, midHp: 110 },
-    hard: { spawn: .55, speed: 1.28, damage: 1.35, timeScale: .92, bossHp: 480, score: 1.45, midHp: 160 }
+    easy: { spawn: .92, speed: .88, damage: .72, timeScale: 1.06, bossHp: 340, score: .8, midHp: 100 },
+    normal: { spawn: .72, speed: 1.05, damage: 1.05, timeScale: 1, bossHp: 560, score: 1, midHp: 170 },
+    hard: { spawn: .55, speed: 1.28, damage: 1.35, timeScale: .92, bossHp: 800, score: 1.45, midHp: 240 }
   };
   const stages = [
     {
@@ -551,7 +551,7 @@
     return table[0][0];
   }
 
-  function spawnEnemy(typeOverride = null, formation = null) {
+  function spawnEnemy(typeOverride = null, formation = null, flank = false) {
     const type = typeOverride || pickSpawnType();
     const y = formation?.y ?? (80 + Math.random() * (VH - 210));
     // Difficulty ramps with phase intensity + early stage progress, capped so a
@@ -583,10 +583,24 @@
     e.points = Math.round(e.points * (1 + stageIndex * .22));
     if (e.variant === 'armored') e.shield = Math.ceil(e.maxHp * .6);
     if (formation) { e.x += formation.xOffset || 0; e.formation = formation.shape; e.formationSlot = formation.slot || 0; }
+    if (flank) {
+      // Sweep in from behind the player and cross the screen rightward.
+      e.flank = true; e.x = -e.w - 20;
+      burst(30, e.y + e.h / 2, stages[stageIndex].accent2, 10, 200);
+    }
     const canDive = ['bat', 'racer', 'cupid', 'knight'].includes(e.type);
-    e.behavior = formation ? 'formation' : canDive && Math.random() < .48 ? 'dive' : Math.random() < .24 ? 'stagger' : 'cruise';
+    e.behavior = flank ? 'cruise' : formation ? 'formation' : canDive && Math.random() < .48 ? 'dive' : Math.random() < .24 ? 'stagger' : 'cruise';
     e.fireMax = e.fire;
     enemies.push(e);
+  }
+
+  // A single fast air-type slipping in from the left so "shoot straight ahead
+  // forever" stops being a safe strategy once a stage heats up.
+  function spawnFlanker() {
+    const GROUND_TYPES = ['tank', 'turret', 'ember', 'walker'];
+    const air = stages[stageIndex].spawnTable.filter(([t]) => !GROUND_TYPES.includes(t));
+    const type = air.length ? air[Math.floor(Math.random() * air.length)][0] : 'drone';
+    spawnEnemy(type, null, true);
   }
 
   function spawnFormation(elite = false) {
@@ -725,8 +739,11 @@
       enemyBullets = []; sfx('boss');
     }
     const engaged = e.x < parkX + 30;
-    e.fire -= dt;
-    e.sp = e.sp === undefined ? 3.5 : e.sp - dt;
+    // Final rage tier below 25% HP: every attack cadence ticks 35% faster,
+    // on top of the existing phase2 pattern upgrades at 50%.
+    const rageMul = e.hp < e.maxHp * .25 ? 1.35 : 1;
+    e.fire -= dt * rageMul;
+    e.sp = e.sp === undefined ? 3.5 : e.sp - dt * rageMul;
     if (e.tel > 0) {
       e.tel -= dt;
       if (e.tel <= 0) executeBossSpecial(e);
@@ -947,7 +964,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (keys.has('ArrowRight') || keys.has('KeyD')) ax++;
     if (keys.has('ArrowUp') || keys.has('KeyW')) ay--;
     if (keys.has('ArrowDown') || keys.has('KeyS')) ay++;
-    const speedBoost = 1 + (player.speed - 1) * .18;
+    const speedBoost = 1 + (player.speed - 1) * .32;
     player.takeoff = Math.max(0, player.takeoff - dt);
     // Clear vertical intent (ignore tiny stick noise so walking is not cancelled).
     const upHeld = keys.has('ArrowUp') || keys.has('KeyW') || padInput.y < -.45;
@@ -982,7 +999,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const drag = Math.pow(.0009, dt);
     player.vx *= drag; player.vy *= drag;
     const speed = Math.hypot(player.vx, player.vy);
-    const maxMoveSpeed = (player.grounded ? 380 : 420) * (1 + (player.speed - 1) * .16);
+    const maxMoveSpeed = (player.grounded ? 380 : 420) * (1 + (player.speed - 1) * .28);
     if (speed > maxMoveSpeed) { player.vx *= maxMoveSpeed / speed; player.vy *= maxMoveSpeed / speed; }
     player.x = clamp(player.x + player.vx * dt, 28, VW * .62);
     if (player.grounded) {
@@ -1028,6 +1045,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         if (enemies.length < 4) spawnEnemy();
         spawnTimer = 1.1 + Math.random() * .5;
       } else if (mode === 'formation') {
+        if (inten >= .5 && Math.random() < .1 + .2 * inten) spawnFlanker();
         const cap = Math.round(7 + 4 * inten) + stageIndex;
         if (enemies.length < cap) {
           spawnFormation(activePhase.elite);
@@ -1035,6 +1053,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         }
         spawnTimer = 1.2 + Math.random() * .5;
       } else { // assault
+        // Hot phases also roll rear flankers so the player has to watch their back.
+        if (inten >= .5 && Math.random() < .1 + .2 * inten) spawnFlanker();
         const cap = Math.round(6 + 4 * inten) + stageIndex;
         if (formationTimer <= 0 && enemies.length < cap) {
           spawnFormation();
@@ -1115,7 +1135,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       e.hit = Math.max(0, (e.hit || 0) - dt);
       if (e.type === 'boss') { updateBoss(e, dt); continue; }
       if (e.type === 'midboss') { updateMidBoss(e, dt); continue; }
-      e.x -= e.vx * dt * gameSpeed * difficulty.speed;
+      // Flankers sweep in from behind (left) and cross rightward, slightly slower.
+      e.x -= (e.flank ? -.75 : 1) * e.vx * dt * gameSpeed * difficulty.speed;
       if (e.behavior === 'dive' && e.x < 1040 && e.x > 380) {
         const targetY = clamp(player.y + 20 + Math.sin(e.t * 5) * 45, 60, 575);
         e.baseY += (targetY - e.baseY) * dt * (e.type === 'racer' ? 2.8 : 1.55);
@@ -1154,7 +1175,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     collisions();
     bullets = bullets.filter(b => b.life > 0 && b.x < VW + 80 && b.y > -30 && b.y < VH + 30);
     enemyBullets = enemyBullets.filter(b => b.life > 0 && b.x > -40 && b.x < VW + 240 && b.y > -80 && b.y < VH + 80);
-    enemies = enemies.filter(e => e.hp > 0 && e.x > -130);
+    enemies = enemies.filter(e => e.hp > 0 && e.x > -130 && (!e.flank || e.x < VW + 170));
     particles = particles.filter(p => p.life > 0);
     shockwaves = shockwaves.filter(r => r.life > 0);
     pickups = pickups.filter(p => p.x > -50 && !p.taken);
@@ -2562,6 +2583,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function drawEnemy(e) {
     const stage = stages[stageIndex];
     ctx.save(); ctx.translate(Math.round(e.x), Math.round(e.y));
+    // Flankers travel rightward — mirror the sprite so they face their heading.
+    if (e.flank) { ctx.translate(e.w, 0); ctx.scale(-1, 1); }
     if (e.type !== 'boss' && e.type !== 'midboss') {
       drawEnemyShadow(e);
       drawEnemyUnderglow(e, stage.accent2);
@@ -3631,7 +3654,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, stageTime, phaseId: activePhase.id, enemies: enemies.length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, stageTime, phaseId: activePhase.id, enemies: enemies.length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
 
   resize(); initBackdrop(); setupStage(); requestAnimationFrame(frame);
 })();
