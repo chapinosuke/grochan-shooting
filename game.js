@@ -2091,15 +2091,23 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     rctx.moveTo(x + w, y); rctx.lineTo(x + w + d, y - dy); rctx.lineTo(x + w + d, y + h - dy); rctx.lineTo(x + w, y + h);
     rctx.closePath(); rctx.fill();
     const g = rctx.createLinearGradient(x, y, x, y + h);
-    g.addColorStop(0, enemyTopColor(front)); g.addColorStop(.45, front); g.addColorStop(1, enemySideColor(front));
+    g.addColorStop(0, enemyTopColor(front)); g.addColorStop(.4, front); g.addColorStop(1, enemySideColor(front));
     rctx.fillStyle = g; rctx.fillRect(x, y, w, h);
-    rctx.fillStyle = 'rgba(255,255,255,.1)'; rctx.fillRect(x + 3, y + 3, Math.max(3, w * .35), 2);
+    // Plastic gloss across the upper face + crisp top rim → reads as a lit volume.
+    const gl = rctx.createLinearGradient(x, y, x, y + h * .58);
+    gl.addColorStop(0, 'rgba(255,255,255,.3)'); gl.addColorStop(1, 'rgba(255,255,255,0)');
+    rctx.fillStyle = gl; rctx.fillRect(x + 2, y + 1, w - 4, h * .5);
+    rctx.fillStyle = 'rgba(255,255,255,.4)'; rctx.fillRect(x + 2, y, w - 4, 1.5);
+    rctx.fillStyle = 'rgba(255,255,255,.16)'; rctx.fillRect(x, y, 2, h);          // left rim
+    const sh = Math.max(3, h * .18);
+    rctx.fillStyle = 'rgba(0,0,0,.16)'; rctx.fillRect(x, y + h - sh, w, sh);       // grounded shade
   }
   function drawCylinder3D(x, y, w, h, front) {
     const g = rctx.createLinearGradient(x, y, x + w, y);
-    g.addColorStop(0, enemySideColor(front)); g.addColorStop(.22, enemyTopColor(front)); g.addColorStop(.55, front); g.addColorStop(1, enemySideColor(front));
+    g.addColorStop(0, enemySideColor(front)); g.addColorStop(.2, enemyTopColor(front)); g.addColorStop(.5, front); g.addColorStop(.8, enemySideColor(front)); g.addColorStop(1, shade(front, .32));
     rctx.fillStyle = g; rctx.fillRect(x, y, w, h);
-    rctx.fillStyle = hexA('#ffffff', .2); rctx.fillRect(x + w * .18, y + 2, w * .14, h - 4);
+    rctx.fillStyle = hexA('#ffffff', .32); rctx.fillRect(x + w * .16, y + 1, w * .12, h - 2);
+    rctx.fillStyle = hexA('#ffffff', .12); rctx.fillRect(x + w * .42, y + 1, w * .08, h - 2);
   }
   function drawEnemyUnderglow(e, color) {
     // Intentionally empty — under-rings read as unnatural frames around sprites.
