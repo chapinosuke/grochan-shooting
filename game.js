@@ -506,7 +506,8 @@
 
   function spawnBoss() {
     const bossHp = Math.round(difficulties[difficultyKey].bossHp * (1 + stageIndex * .55));
-    enemies.push({ type: 'boss', x: VW + 260, y: 220, baseY: 220, w: 230, h: 190, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8 });
+    // Design art is 230×190; scale way up so the boss fills a large chunk of the arena.
+    enemies.push({ type: 'boss', x: VW + 380, y: 90, baseY: 90, w: 460, h: 380, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8 });
     bossState = 'active';
     musicStep = 0; musicClock = 0;
     enemyBullets = [];
@@ -518,17 +519,18 @@
   function spawnMidBoss() {
     const baseHp = difficulties[difficultyKey].midHp;
     const hp = Math.round(baseHp * (1 + stageIndex * .38));
-    enemies.push({ type: 'midboss', x: VW + 190, y: 210, baseY: 210, w: 158, h: 132, hp, maxHp: hp, vx: 0, t: 0, wave: false, points: 6200 + stageIndex * 1200, fire: .55, sp: 2.1, variant: 'standard' });
+    enemies.push({ type: 'midboss', x: VW + 240, y: 140, baseY: 140, w: 280, h: 230, hp, maxHp: hp, vx: 0, t: 0, wave: false, points: 6200 + stageIndex * 1200, fire: .55, sp: 2.1, variant: 'standard' });
     bossState = 'midboss-active';
     enemyBullets = []; shake = 14; flash = .45;
     playBgm('midBoss', true); sfx('boss'); sfx('warning');
   }
 
   function updateMidBoss(e, dt) {
-    if (e.x > VW - 250) e.x -= 300 * dt;
-    e.y = e.baseY + Math.sin(e.t * (1.25 + stageIndex * .1)) * (120 + stageIndex * 10);
+    const midPark = VW - e.w - 50;
+    if (e.x > midPark) e.x -= 300 * dt;
+    e.y = clamp(e.baseY + Math.sin(e.t * (1.25 + stageIndex * .1)) * (70 + stageIndex * 6), 20, VH - e.h - 30);
     e.fire -= dt; e.sp -= dt;
-    const engaged = e.x <= VW - 240;
+    const engaged = e.x <= midPark + 20;
     const rage = e.hp < e.maxHp * .45;
     if (engaged && e.fire <= 0) {
       const ox = e.x + 12, oy = e.y + e.h / 2;
@@ -588,37 +590,40 @@
 
   function updateBoss(e, dt) {
     const idx = stageIndex;
-    if (e.x > VW - 290 && e.mode !== 'dash' && e.mode !== 'return') e.x -= 250 * dt;
+    const parkX = VW - e.w - 40;
+    if (e.x > parkX && e.mode !== 'dash' && e.mode !== 'return') e.x -= 250 * dt;
     if (!e.phase2 && e.hp <= e.maxHp / 2) {
       e.phase2 = true; shake = 14; flash = .5;
       burst(e.x + e.w / 2, e.y + e.h / 2, stages[idx].accent2, 40, 420);
       enemyBullets = []; sfx('boss');
     }
-    const engaged = e.x < VW - 180;
+    const engaged = e.x < parkX + 30;
     e.fire -= dt;
     e.sp = e.sp === undefined ? 3.5 : e.sp - dt;
     if (e.tel > 0) {
       e.tel -= dt;
       if (e.tel <= 0) executeBossSpecial(e);
     }
+    const yMin = 16, yMax = Math.max(40, VH - e.h - 24);
+    const bobY = (mid, amp) => clamp(mid + Math.sin(e.t * 1.1) * amp, yMin, yMax);
     if (idx === 0) {
       if (e.mode === 'dash') {
         e.x -= 780 * dt;
         if (e.x < 40) e.mode = 'return';
       } else if (e.mode === 'return') {
         e.x += 430 * dt;
-        if (e.x >= VW - 290) { e.x = VW - 290; e.mode = 'hover'; }
+        if (e.x >= parkX) { e.x = parkX; e.mode = 'hover'; }
       } else {
-        e.y = 225 + Math.sin(e.t * 1.25) * 125;
+        e.y = bobY(e.baseY + 40, 70);
         if (engaged && e.fire <= 0) { bossFan(e, e.phase2 ? 9 : 6); e.fire = e.phase2 ? .48 : .62; }
         if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .7; e.telType = 'dash'; e.telY = clamp(player.y - 30, 40, 480); e.sp = e.phase2 ? 3.8 : 5.2; }
       }
     } else if (idx === 1) {
-      e.y = 205 + Math.sin(e.t * .8) * 165;
+      e.y = bobY(e.baseY + 30, 80);
       if (engaged && e.fire <= 0) { bossBubbles(e); e.fire = e.phase2 ? .48 : .7; }
       if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .85; e.telType = 'wave'; e.sp = e.phase2 ? 3.2 : 4.6; }
     } else if (idx === 2) {
-      e.y = 250 + Math.sin(e.t * .9) * 100;
+      e.y = bobY(e.baseY + 50, 55);
       if (engaged && e.fire <= 0) {
         if (e.phase2) { bossFlameSweep(e); e.fire = .12; } else { bossFireball(e); e.fire = .85; }
       }
@@ -629,14 +634,15 @@
       if (e.tpT <= 0) {
         e.tpT = e.phase2 ? 1.7 : 2.4; e.blink = .3;
         burst(e.x + e.w / 2, e.y + e.h / 2, '#72ff68', 16, 260);
-        e.x = VW - 570 + Math.random() * 300; e.y = 60 + Math.random() * 380;
+        e.x = clamp(VW - e.w - 80 - Math.random() * 200, 200, parkX);
+        e.y = clamp(40 + Math.random() * (yMax - 40), yMin, yMax);
         burst(e.x + e.w / 2, e.y + e.h / 2, '#72ff68', 16, 260); sfx('teleport');
         if (e.phase2) bossVoltRing(e);
       }
       if (engaged && e.fire <= 0) { bossVoltShot(e); e.fire = e.phase2 ? .55 : .75; }
       if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .75; e.telType = 'strike'; e.telX = clamp(player.x + 45, 60, VW - 100); e.sp = e.phase2 ? 2.5 : 3.8; }
     } else {
-      e.y = 215 + Math.sin(e.t * 1.05) * 140;
+      e.y = bobY(e.baseY + 35, 75);
       e.spiral = (e.spiral || 0) + dt * (e.phase2 ? 3.4 : 2.4);
       if (engaged && e.fire <= 0) { bossHeartSpiral(e); e.fire = e.phase2 ? .16 : .24; }
       if (engaged && e.sp <= 0 && !(e.tel > 0)) {
@@ -856,9 +862,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         burst(player.x + 55, GROUND_Y + 132, '#ffe15a', 10, 110);
       }
     }
-    // Always shoot while playing — walk assets hold a gun, so ground run-and-gun is the default.
-    const canShoot = !['transition', 'final', 'warning', 'midboss-warning'].includes(bossState);
-    player.frame += dt * (player.grounded ? (Math.abs(player.vx) > 18 ? 11 : 8) : 10);
+    // Manual fire only: Space / Z / hold pointer / pad fire.
+    const firing = keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire;
+    const canShoot = firing && !['transition', 'final', 'warning', 'midboss-warning'].includes(bossState);
+    const groundAnim = player.grounded && (Math.abs(player.vx) > 18 || firing);
+    player.frame += dt * (player.grounded ? (groundAnim ? 11 : 0) : 10);
     player.fire -= dt; player.missileFire -= dt;
     if (canShoot && player.fire <= 0) {
       shoot();
@@ -890,7 +898,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     pickupTimer -= dt;
     if (pickupTimer <= 0 && (bossState === 'waiting' || bossState === 'active' || bossState === 'midboss-active')) {
       const roll = Math.random();
-      pickups.push({ type: roll < .28 ? 'heal' : roll < .53 ? 'power' : roll < .76 ? 'spread' : 'speed', x: VW + 30, y: 100 + Math.random() * (VH - 240), r: 19, t: 0 });
+      const type = roll < .28 ? 'heal' : roll < .53 ? 'power' : roll < .76 ? 'spread' : 'speed';
+      pickups.push({ type, kind: type === 'heal' ? (Math.random() < .5 ? 'drink' : 'burger') : null, x: VW + 30, y: 100 + Math.random() * (VH - 240), r: 19, t: 0 });
       pickupTimer = 8 + Math.random() * 7;
     }
 
@@ -1063,7 +1072,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const bossAtNow = difficulties[difficultyKey].bossTime + stageIndex * 3;
       stageTime = Math.max(stageTime, bossAtNow * .38 + 1.2);
       pickups.push({ type: 'power', x: e.x + e.w / 2, y: e.y + e.h / 2, r: 19, t: 0 });
-      pickups.push({ type: Math.random() < .5 ? 'spread' : 'heal', x: e.x + e.w / 2 + 40, y: e.y + e.h / 2 - 20, r: 19, t: 0 });
+      const drop = Math.random() < .5 ? 'spread' : 'heal';
+      pickups.push({ type: drop, kind: drop === 'heal' ? (Math.random() < .5 ? 'drink' : 'burger') : null, x: e.x + e.w / 2 + 40, y: e.y + e.h / 2 - 20, r: 19, t: 0 });
       playBgm(`stage${stageIndex}`, true);
       stageBanner = 2.2;
     }
@@ -1861,12 +1871,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (player.takeoff > 0 && jumpFrame) {
       // Jump / takeoff cell from the sheet.
       ctx.drawImage(jumpFrame, player.x - 10, player.y - 26 + bob, 128, 175);
-    } else if (player.grounded && walkFrames.length) {
-      // Walk cycle asset includes the pink gun — this is the run-and-gun pose.
-      const frame = walkFrames[Math.floor(Math.abs(player.frame)) % walkFrames.length];
-      ctx.drawImage(frame, player.x - 8, player.y - 28, 130, 190);
-      // Small recurring muzzle glint while grounded (shooting is continuous).
-      if (Math.floor(elapsed * 18) % 2 === 0) {
+    } else if (player.grounded && (idleFrame || walkFrames.length)) {
+      // Idle has no gun; walk frames hold the gun — use walk while moving or firing.
+      const firingNow = keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire;
+      const useWalk = walkFrames.length && (Math.abs(player.vx) > 18 || firingNow);
+      const frame = useWalk
+        ? walkFrames[Math.floor(Math.abs(player.frame)) % walkFrames.length]
+        : (idleFrame || walkFrames[0]);
+      if (frame) ctx.drawImage(frame, player.x - 8, player.y - 28, 130, 190);
+      if (firingNow && Math.floor(elapsed * 18) % 2 === 0) {
         ctx.save(); ctx.globalCompositeOperation = 'lighter';
         ctx.fillStyle = 'rgba(255,225,90,.85)';
         ctx.beginPath(); ctx.arc(player.x + 114, player.y + 80, 5 + Math.random() * 3, 0, Math.PI * 2); ctx.fill();
@@ -1945,7 +1958,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const g = ctx.createLinearGradient(x, y, x, y + h);
     g.addColorStop(0, enemyTopColor(front)); g.addColorStop(.45, front); g.addColorStop(1, enemySideColor(front));
     ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(x + 2, y + 2, Math.max(4, w - 6), 3);
+    ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(x + 3, y + 3, Math.max(3, w * .35), 2);
   }
   function drawCylinder3D(x, y, w, h, front) {
     const g = ctx.createLinearGradient(x, y, x + w, y);
@@ -1954,13 +1967,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.fillStyle = hexA('#ffffff', .2); ctx.fillRect(x + w * .18, y + 2, w * .14, h - 4);
   }
   function drawEnemyUnderglow(e, color) {
-    ctx.save(); ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = .12 + Math.sin((e.t || 0) * 5) * .05;
-    const cx = e.w * .5, cy = e.h * .55;
-    const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, e.w * .72);
-    g.addColorStop(0, hexA(color, .7)); g.addColorStop(.55, hexA(color, .2)); g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, cy, e.w * .58, e.h * .42, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
+    // Intentionally empty — under-rings read as unnatural frames around sprites.
   }
   function drawEnemyShadow(e) {
     ctx.save(); ctx.globalAlpha = .18; ctx.fillStyle = '#020108';
@@ -1977,14 +1984,16 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
   function drawShieldBubble(e) {
     if (!(e.shield > 0)) return;
-    const max = Math.max(1, e.maxHp * .6);
-    const a = .22 + (e.shield / max) * .28 + Math.sin((e.t || 0) * 8) * .05;
-    const cx = e.w * .5, cy = e.h * .48, rx = e.w * .62, ry = e.h * .58;
+    // Tiny sparkles only — no outer ring/frame.
+    const a = .35 + Math.sin((e.t || 0) * 9) * .15;
     ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a;
-    ctx.strokeStyle = '#d0e4ff'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.globalAlpha = a * .35; ctx.fillStyle = '#a8b7d6';
-    ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#d0e4ff';
+    for (let i = 0; i < 4; i++) {
+      const ang = (e.t || 0) * 2 + i * 1.6;
+      ctx.beginPath();
+      ctx.arc(e.w * .5 + Math.cos(ang) * e.w * .28, e.h * .45 + Math.sin(ang) * e.h * .22, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -2048,8 +2057,6 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawKawaiiEyes(30, 54, 34, 11, 4);
       drawCylinder3D(4, 68, 24, 8, '#ffe15a');
       drawCylinder3D(68, 68, 24, 8, '#ffe15a');
-      ctx.fillStyle = '#120b2e'; ctx.fillRect(14, 62, 70, 5);
-      ctx.fillStyle = '#ff3e9d'; ctx.fillRect(14, 62, 70 * Math.max(0, e.hp / e.maxHp), 5);
       ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.fillRect(22, 6, 20, 3);
     } else if (e.type === 'turret') {
       drawBox3D(6, 44, 62, 24, '#3a2068', 7);
@@ -2199,35 +2206,51 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawKawaiiEyes(22, 36, 28, 6, 2);
       ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(2, 32, 10, -1.1, 1.1); ctx.stroke();
     } else if (e.type === 'midboss') {
+      // Art authored at 158×132
+      ctx.save(); ctx.scale(e.w / 158, e.h / 132);
       drawMidBoss(e);
+      ctx.restore();
     } else {
+      // Art authored at 230×190 — scale to the larger hitbox.
+      ctx.save(); ctx.scale(e.w / 230, e.h / 190);
       drawBoss(e);
+      ctx.restore();
     }
     if (e.type !== 'boss' && e.type !== 'midboss') {
       drawShieldBubble(e);
       drawEnemyVariant(e);
+    } else if (e.hit > 0) {
+      // Soft hit flash (no hard bounding-box frame).
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(.55, e.hit * 4);
+      const g = ctx.createRadialGradient(e.w * .5, e.h * .5, 4, e.w * .5, e.h * .5, e.w * .55);
+      g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(e.w * .5, e.h * .5, e.w * .48, e.h * .42, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
     }
     ctx.restore();
   }
 
   function drawEnemyVariant(e) {
     if (e.hit > 0) {
-      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, e.hit * 5); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, e.w, e.h); ctx.restore();
+      // Soft body flash — never stroke a full rect "frame" around the enemy.
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(.5, e.hit * 4);
+      const g = ctx.createRadialGradient(e.w * .5, e.h * .45, 2, e.w * .5, e.h * .45, e.w * .5);
+      g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(e.w * .5, e.h * .45, e.w * .42, e.h * .4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
     }
     if (e.variant === 'standard') return;
     const color = e.variant === 'elite' ? '#ffe15a' : '#a8b7d6';
-    ctx.save(); ctx.globalAlpha = .85;
+    ctx.save(); ctx.globalAlpha = .9;
     ctx.fillStyle = color;
     if (e.variant === 'elite') {
+      // Crown only — no outline box, no HP frame bar.
       ctx.beginPath(); ctx.moveTo(e.w / 2 - 12, 5); ctx.lineTo(e.w / 2 - 5, -7); ctx.lineTo(e.w / 2, 3); ctx.lineTo(e.w / 2 + 6, -8); ctx.lineTo(e.w / 2 + 13, 5); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = hexA('#ffe15a', .5); ctx.lineWidth = 2;
-      ctx.strokeRect(2, 2, e.w - 4, e.h - 4);
     } else {
-      for (let x = 7; x < e.w - 4; x += 14) ctx.fillRect(x, 4, 8, 3);
-    }
-    if (e.maxHp > 4 || e.variant === 'armored') {
-      ctx.fillStyle = '#14091f'; ctx.fillRect(5, e.h - 5, e.w - 10, 3);
-      ctx.fillStyle = color; ctx.fillRect(5, e.h - 5, (e.w - 10) * Math.max(0, e.hp / e.maxHp), 3);
+      // Armored: small rivet dots on the body, not a border.
+      for (let x = 14; x < e.w - 10; x += 18) {
+        ctx.beginPath(); ctx.arc(x, 12, 2.2, 0, Math.PI * 2); ctx.fill();
+      }
     }
     ctx.restore();
   }
@@ -2250,7 +2273,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.fillStyle = stage.accent;
     if (stageIndex === 1) { for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.ellipse(50 + i * 28, 112, 10, 5, 0, 0, Math.PI * 2); ctx.fill(); } }
     else if (stageIndex === 2) { ctx.fillRect(40, 18, 8, 12); ctx.fillRect(110, 18, 8, 12); }
-    else if (stageIndex === 3) { ctx.strokeStyle = stage.accent; ctx.lineWidth = 2; ctx.strokeRect(52, 40, 54, 20); }
+    else if (stageIndex === 3) { ctx.fillStyle = stage.accent; ctx.fillRect(56, 44, 46, 4); ctx.fillRect(56, 54, 46, 4); }
     else if (stageIndex === 4) { heartPath(79, 36, 8); ctx.fill(); }
     else { ctx.fillRect(48, 18, 62, 4); }
     ctx.fillStyle = '#211039'; ctx.fillRect(48, 45, 63, 43);
@@ -2264,54 +2287,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawBox3D(22, 108, 44, 12, '#24102f', 4);
     drawBox3D(93, 108, 44, 12, '#24102f', 4);
     ctx.shadowBlur = 0;
-    if (e.hit > 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, e.hit * 5); ctx.fillStyle = '#fff'; ctx.fillRect(18, 14, 124, 108); }
     ctx.restore();
   }
 
 
-
-  function drawStageMap() {
-    const x0 = 348, y0 = 99, w = 584, h = 55;
-    const route = stages.map((_, i) => ({ x: 404 + i * 118, y: 116 + (i % 2 ? 9 : 0) }));
-    const targetTime = difficulties[difficultyKey].bossTime + stageIndex * 2;
-    const progress = ['waiting', 'midboss-warning', 'midboss-active'].includes(bossState) ? clamp(stageTime / targetTime, 0, 1) : 1;
-    ctx.save();
-    ctx.fillStyle = 'rgba(10,6,31,.82)'; ctx.fillRect(x0, y0, w, h);
-    ctx.strokeStyle = 'rgba(123,110,174,.42)'; ctx.strokeRect(x0 + .5, y0 + .5, w - 1, h - 1);
-    ctx.fillStyle = '#9188b4'; ctx.font = '6px "Press Start 2P", monospace'; ctx.fillText('AREA ROUTE', x0 + 10, y0 + 13);
-
-    ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    for (let i = 0; i < route.length - 1; i++) {
-      const a = route[i], b = route[i + 1];
-      ctx.strokeStyle = i < stageIndex ? '#ffe15a' : 'rgba(101,89,145,.48)';
-      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-      if (i === stageIndex && stageIndex < route.length - 1) {
-        const px = a.x + (b.x - a.x) * progress, py = a.y + (b.y - a.y) * progress;
-        ctx.strokeStyle = stages[stageIndex].accent; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(px, py); ctx.stroke();
-      }
-    }
-
-    route.forEach((p, i) => {
-      const current = i === stageIndex, cleared = i < stageIndex;
-      if (current) {
-        ctx.globalAlpha = .18 + Math.sin(elapsed * 6) * .06; ctx.fillStyle = stages[i].accent;
-        ctx.beginPath(); ctx.arc(p.x, p.y, 15, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
-      }
-      ctx.fillStyle = cleared ? '#ffe15a' : current ? stages[i].accent : '#251b43';
-      ctx.beginPath(); ctx.arc(p.x, p.y, current ? 8 : 7, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = cleared ? '#fff1a8' : current ? '#fff' : '#6d638f'; ctx.lineWidth = 2; ctx.stroke();
-      ctx.fillStyle = cleared ? '#120b2e' : '#fff'; ctx.font = '6px "Press Start 2P", monospace'; ctx.textAlign = 'center';
-      ctx.fillText(cleared ? '✓' : String(i + 1), p.x, p.y + 3);
-    });
-
-    const barX = 391, barY = 143, barW = 475;
-    ctx.fillStyle = '#21163f'; ctx.fillRect(barX, barY, barW, 5);
-    const pg = ctx.createLinearGradient(barX, 0, barX + barW, 0); pg.addColorStop(0, stages[stageIndex].accent); pg.addColorStop(1, stages[stageIndex].accent2);
-    ctx.fillStyle = pg; ctx.fillRect(barX, barY, barW * progress, 5);
-    ctx.textAlign = 'left'; ctx.fillStyle = '#a9a2ce'; ctx.font = '6px "Press Start 2P", monospace'; ctx.fillText('START', x0 + 10, 148);
-    ctx.textAlign = 'right'; ctx.fillStyle = bossState === 'active' ? stages[stageIndex].accent2 : '#a9a2ce'; ctx.fillText(bossState === 'active' ? 'BOSS!' : 'BOSS', x0 + w - 10, 148);
-    ctx.restore();
-  }
 
   function drawBoss(e) {
     const stage = stages[stageIndex];
@@ -2370,10 +2349,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.beginPath(); ctx.moveTo(85, 55); ctx.lineTo(95, 30); ctx.lineTo(105, 55); ctx.lineTo(115, 26); ctx.lineTo(125, 55); ctx.lineTo(135, 32); ctx.lineTo(145, 55); ctx.closePath(); ctx.fill();
       ctx.shadowBlur = 0;
     } else if (stageIndex === 3) {
-      if (e.blink > 0 && Math.floor(e.blink * 30) % 2 === 0) {
-        if (e.hit > 0) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = e.hit * 5; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, e.w, e.h); ctx.restore(); }
-        return;
-      }
+      if (e.blink > 0 && Math.floor(e.blink * 30) % 2 === 0) return;
       ctx.save();
       ctx.globalAlpha = .82 + Math.sin(e.t * 7) * .12;
       ctx.shadowColor = '#72ff68'; ctx.shadowBlur = 18;
@@ -2411,19 +2387,168 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = '#31e8ff'; ctx.beginPath(); ctx.arc(115, 18, 8, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
     }
-    if (e.hit > 0) {
-      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, e.hit * 5);
-      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, e.w, e.h); ctx.restore();
-    }
+    // Hit flash handled by drawEnemy parent after scale.
   }
 
   function drawPickup(p) {
-    const s = 1 + Math.sin(p.t * 5) * .13;
-    ctx.save(); ctx.translate(p.x, p.y); ctx.scale(s, s); ctx.rotate(p.t);
-    ctx.fillStyle = 'rgba(255,225,90,.2)'; ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI*2); ctx.fill();
-    const color = p.type === 'power' ? '#ff8a35' : p.type === 'spread' ? '#31e8ff' : p.type === 'speed' ? '#72ff68' : '#ffe15a';
-    ctx.fillStyle = color; starPath(0, 0, 19, 8, p.type === 'spread' ? 6 : 5); ctx.fill();
-    ctx.rotate(-p.t); ctx.fillStyle = '#120b2e'; ctx.font = '11px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.fillText(p.type === 'power' ? 'P' : p.type === 'spread' ? 'W' : p.type === 'speed' ? 'S' : '+', 0, 4); ctx.restore();
+    const bob = Math.sin(p.t * 4.2) * 4;
+    const s = 1 + Math.sin(p.t * 5) * .08;
+    ctx.save(); ctx.translate(p.x, p.y + bob); ctx.scale(s, s);
+    // Soft ground glow only — no hard circle/frame.
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .28;
+    const aura = p.type === 'heal' ? '#72ff68' : p.type === 'power' ? '#ff8a35' : p.type === 'spread' ? '#31e8ff' : '#ffe15a';
+    const ag = ctx.createRadialGradient(0, 8, 2, 0, 8, 26);
+    ag.addColorStop(0, hexA(aura, .55)); ag.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = ag; ctx.beginPath(); ctx.ellipse(0, 10, 20, 8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    if (p.type === 'heal') {
+      if (p.kind === 'burger') drawBurgerPickup(p.t);
+      else drawEnergyDrinkPickup(p.t);
+    } else if (p.type === 'power') drawPowerPickup(p.t);
+    else if (p.type === 'spread') drawSpreadPickup(p.t);
+    else drawSpeedPickup(p.t);
+    ctx.restore();
+  }
+
+  function drawEnergyDrinkPickup(t) {
+    // Tall slim energy can with tab, label, and sparkles
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.25)';
+    ctx.beginPath(); ctx.ellipse(1, 18, 11, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+    // body shell
+    ctx.fillStyle = '#14101f';
+    ctx.beginPath(); ctx.roundRect ? null : null;
+    ctx.beginPath();
+    ctx.moveTo(-10, -18); ctx.quadraticCurveTo(-12, 0, -11, 16); ctx.lineTo(11, 16); ctx.quadraticCurveTo(12, 0, 10, -18); ctx.closePath(); ctx.fill();
+    const body = ctx.createLinearGradient(-12, 0, 12, 0);
+    body.addColorStop(0, '#0a2f22'); body.addColorStop(.25, '#3dff9a'); body.addColorStop(.55, '#31e8ff'); body.addColorStop(.8, '#7b5cff'); body.addColorStop(1, '#0a1a40');
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(-8, -16); ctx.quadraticCurveTo(-10, 0, -9, 14); ctx.lineTo(9, 14); ctx.quadraticCurveTo(10, 0, 8, -16); ctx.closePath(); ctx.fill();
+    // silver lid + pull tab
+    ctx.fillStyle = '#d5dbe8'; ctx.fillRect(-7, -20, 14, 5);
+    ctx.fillStyle = '#9aa3b5'; ctx.fillRect(-3, -23, 6, 3);
+    ctx.strokeStyle = '#c8d0e0'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(4, -21, 3.5, -.2, Math.PI * 1.2); ctx.stroke();
+    // label band
+    ctx.fillStyle = 'rgba(8,6,18,.55)'; ctx.fillRect(-7, -6, 14, 14);
+    ctx.fillStyle = '#ffe15a'; ctx.font = 'bold 8px "Press Start 2P", monospace'; ctx.textAlign = 'center';
+    ctx.fillText('E', 0, 5);
+    ctx.fillStyle = '#fff'; ctx.font = '5px sans-serif'; ctx.fillText('ENERGY', 0, -1);
+    // specular
+    ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.fillRect(-6, -14, 2.5, 22);
+    // sparkles
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = hexA('#ffe15a', .55 + Math.sin(t * 10) * .3);
+    ctx.beginPath(); ctx.arc(12, -10 + Math.sin(t * 6) * 2, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-12, 4, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawBurgerPickup(t) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.22)';
+    ctx.beginPath(); ctx.ellipse(1, 16, 15, 4, 0, 0, Math.PI * 2); ctx.fill();
+    // bottom bun
+    ctx.fillStyle = '#d4923a';
+    ctx.beginPath(); ctx.ellipse(0, 10, 15, 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e8a84a'; ctx.fillRect(-15, 6, 30, 6);
+    // patty
+    ctx.fillStyle = '#5c2a12'; ctx.fillRect(-14, 2, 28, 5);
+    ctx.fillStyle = '#7a3a18'; ctx.fillRect(-13, 3, 26, 2);
+    // cheese drip
+    ctx.fillStyle = '#ffc938'; ctx.fillRect(-13, -1, 26, 4);
+    ctx.beginPath(); ctx.moveTo(-6, 3); ctx.lineTo(-4, 8); ctx.lineTo(-2, 3); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(5, 3); ctx.lineTo(7, 9); ctx.lineTo(9, 3); ctx.fill();
+    // lettuce
+    ctx.fillStyle = '#3cb85a';
+    ctx.beginPath(); ctx.moveTo(-14, -2); ctx.quadraticCurveTo(-8, -6, 0, -2); ctx.quadraticCurveTo(8, -6, 14, -2); ctx.lineTo(13, 1); ctx.lineTo(-13, 1); ctx.closePath(); ctx.fill();
+    // tomato
+    ctx.fillStyle = '#ff4d6a'; ctx.fillRect(-12, -5, 24, 3);
+    // top bun
+    const bun = ctx.createLinearGradient(0, -16, 0, -2);
+    bun.addColorStop(0, '#f0c06a'); bun.addColorStop(1, '#c47a28');
+    ctx.fillStyle = bun;
+    ctx.beginPath(); ctx.ellipse(0, -4, 15, 9, 0, Math.PI, 0); ctx.fill();
+    ctx.fillRect(-15, -5, 30, 4);
+    // sesame
+    ctx.fillStyle = '#ffe9b0';
+    for (const [x, y] of [[-7, -10], [-2, -12], [3, -11], [8, -9], [0, -8], [-5, -7]]) {
+      ctx.beginPath(); ctx.ellipse(x, y, 1.4, .9, .4, 0, Math.PI * 2); ctx.fill();
+    }
+    // steam
+    ctx.globalAlpha = .35 + Math.sin(t * 5) * .15; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-4, -18); ctx.quadraticCurveTo(-6, -24, -2, -28); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(5, -17); ctx.quadraticCurveTo(8, -23, 4, -27); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPowerPickup(t) {
+    // Hot sauce / power flask
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(0, 16, 10, 3, 0, 0, Math.PI * 2); ctx.fill();
+    // bottle
+    const glass = ctx.createLinearGradient(-10, -14, 10, 14);
+    glass.addColorStop(0, '#ffb070'); glass.addColorStop(.4, '#ff5a20'); glass.addColorStop(1, '#7a1808');
+    ctx.fillStyle = glass;
+    ctx.beginPath(); ctx.moveTo(-8, -8); ctx.lineTo(8, -8); ctx.lineTo(10, 12); ctx.lineTo(-10, 12); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ff8a35'; ctx.fillRect(-5, -16, 10, 9);
+    ctx.fillStyle = '#ffe15a'; ctx.fillRect(-6, -18, 12, 3);
+    // chili mark
+    ctx.fillStyle = '#fff'; ctx.beginPath();
+    ctx.moveTo(0, -4); ctx.quadraticCurveTo(6, 2, 2, 8); ctx.quadraticCurveTo(0, 4, -2, 8); ctx.quadraticCurveTo(-6, 2, 0, -4); ctx.fill();
+    ctx.fillStyle = '#3cb85a'; ctx.fillRect(-1, -6, 2, 4);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = hexA('#ff8a35', .4 + Math.sin(t * 8) * .2);
+    ctx.beginPath(); ctx.arc(0, 2, 14, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawSpreadPickup(t) {
+    // Triple blaster / wide shot
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(0, 14, 14, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1a1040';
+    ctx.beginPath(); ctx.moveTo(-6, 8); ctx.lineTo(4, 8); ctx.lineTo(6, -2); ctx.lineTo(-4, -2); ctx.closePath(); ctx.fill();
+    const metal = ctx.createLinearGradient(-14, 0, 14, 0);
+    metal.addColorStop(0, '#0a6a7a'); metal.addColorStop(.5, '#65fff2'); metal.addColorStop(1, '#1a4a9a');
+    ctx.fillStyle = metal;
+    for (const [ox, oy, rot] of [[-10, -2, -.35], [0, -6, 0], [10, -2, .35]]) {
+      ctx.save(); ctx.translate(ox, oy); ctx.rotate(rot);
+      ctx.fillRect(-3, -10, 6, 16);
+      ctx.fillStyle = '#ffe15a'; ctx.fillRect(-2, -12, 4, 3);
+      ctx.fillStyle = metal; ctx.restore();
+    }
+    ctx.fillStyle = '#31e8ff'; ctx.fillRect(-5, 0, 12, 6);
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = hexA('#31e8ff', .45 + Math.sin(t * 7) * .2);
+    for (const a of [-.4, 0, .4]) {
+      ctx.beginPath(); ctx.moveTo(4, -4); ctx.lineTo(18 * Math.cos(a), -4 + 18 * Math.sin(a)); ctx.lineTo(14 * Math.cos(a), 2 + 14 * Math.sin(a)); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawSpeedPickup(t) {
+    // Neon sneakers
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(0, 14, 14, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+    // shoe body
+    const shoe = ctx.createLinearGradient(-14, -8, 14, 10);
+    shoe.addColorStop(0, '#9dff7a'); shoe.addColorStop(.5, '#72ff68'); shoe.addColorStop(1, '#1a6a30');
+    ctx.fillStyle = shoe;
+    ctx.beginPath(); ctx.moveTo(-12, 2); ctx.quadraticCurveTo(-14, -6, -4, -10); ctx.lineTo(10, -8); ctx.quadraticCurveTo(16, -4, 14, 4); ctx.lineTo(-10, 8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#120b2e'; ctx.fillRect(-8, -2, 16, 3);
+    ctx.fillStyle = '#fff'; ctx.fillRect(-6, -6, 8, 2);
+    // sole
+    ctx.fillStyle = '#0a2818'; ctx.fillRect(-12, 6, 26, 4);
+    ctx.fillStyle = '#ffe15a';
+    for (let i = 0; i < 4; i++) ctx.fillRect(-10 + i * 6, 7, 3, 2);
+    // motion lines
+    ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = hexA('#72ff68', .5 + Math.sin(t * 9) * .25); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-18, -2); ctx.lineTo(-10, -2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-17, 3); ctx.lineTo(-9, 3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-16, 8); ctx.lineTo(-10, 8); ctx.stroke();
+    ctx.restore();
   }
 
   function drawHUD() {
@@ -2445,7 +2570,6 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.fillStyle = '#ffe15a'; ctx.font = '7px "Press Start 2P", monospace'; ctx.fillText(`POWER ${player.power}`, VW - 336, 88);
     ctx.fillStyle = '#31e8ff'; ctx.fillText(`WIDE ${player.spread}`, VW - 220, 88);
     ctx.fillStyle = '#72ff68'; ctx.fillText(`SPEED ${player.speed}`, VW - 126, 88);
-    drawStageMap();
     if (combo > 1 && comboTimer > 0) {
       ctx.textAlign = 'center'; ctx.fillStyle = '#ffe15a'; ctx.font = '18px "Press Start 2P", monospace'; ctx.fillText(`${combo} COMBO!`, VW / 2, 61);
       ctx.fillStyle = '#fff'; ctx.font = '10px "Press Start 2P", monospace'; ctx.fillText(`SCORE ×${Math.min(5, 1 + Math.floor(combo / 5))}`, VW/2, 84);
@@ -2660,7 +2784,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, enemies: enemies.length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, firing: true, walkFrames: walkFrames.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, enemies: enemies.length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
 
   resize(); initBackdrop(); setupStage(); requestAnimationFrame(frame);
 })();
