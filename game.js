@@ -81,6 +81,7 @@
   let pickupTimer = 0;
   let shake = 0;
   let flash = 0;
+  let hitStop = 0;
   let gameSpeed = 1;
   let bossState = 'waiting';
   let bossWarning = 0;
@@ -267,7 +268,7 @@
   function resetGame() {
     clearTimeout(openingTimeout); openingTimeout = 0;
     score = 0; combo = 0; comboTimer = 0; health = maxHealth; elapsed = 0;
-    spawnTimer = .7; pickupTimer = 6; shake = 0; flash = 0; gameSpeed = 1;
+    spawnTimer = .7; pickupTimer = 6; shake = 0; flash = 0; hitStop = 0; gameSpeed = 1;
     bossState = 'waiting'; bossWarning = 0; midBossDone = false;
     stageIndex = 0; stageTime = 0; stageBanner = 3; stageTransition = 0;
     musicClock = 0; musicStep = 0;
@@ -1020,7 +1021,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }
     }
     for (const p of pickups) { p.x -= 130 * dt; p.t += dt; }
-    for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.gravity || 0) * dt; p.life -= dt; p.vx *= Math.pow(.08, dt); }
+    for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.gravity || 0) * dt; p.life -= dt; p.vx *= Math.pow(.08, dt); if (p.vr) p.rot = (p.rot || 0) + p.vr * dt; }
     for (const r of shockwaves) { r.r += r.speed * dt; r.life -= dt; }
     for (const d of delayedBursts) {
       d.t -= dt;
@@ -1052,8 +1053,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
             const absorbed = Math.min(e.shield, damage); e.shield -= absorbed; damage -= absorbed;
             shockwaves.push({ x: b.x, y: b.y, r: 3, speed: 130, life: .24, max: .24, color: '#a8b7d6' }); sfx('shield');
           }
-          e.hp -= damage; e.hit = .11; special = Math.min(100, special + .35 + (b.missile ? .5 : 0)); shake = 3; burst(b.x, b.y, '#31e8ff', 5, 150); sfx('hit');
-          if (e.hp <= 0) destroyEnemy(e);
+          e.hp -= damage; e.hit = .11; special = Math.min(100, special + .35 + (b.missile ? .5 : 0)); shake = 3; burst(b.x, b.y, '#31e8ff', 5, 150); burstDebris(b.x, b.y, ['#c9d6ec', '#8fa3c8'], 2, 140); sfx('hit');
+          if (e.hp <= 0) destroyEnemy(e); else hitStop = Math.max(hitStop, .02);
           break;
         }
       }
@@ -1107,8 +1108,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }
       for (const victim of chainVictims) destroyEnemy(victim, false);
     }
-    burst(e.x + e.w / 2, e.y + e.h / 2, e.type === 'bat' ? '#ff3e9d' : '#ffe15a', isMajor ? (isBoss ? 90 : 55) : e.type === 'tank' ? 28 : 15, isMajor ? (isBoss ? 520 : 420) : e.type === 'tank' ? 330 : 240);
+    const ex = e.x + e.w / 2, ey = e.y + e.h / 2;
+    burst(ex, ey, e.type === 'bat' ? '#ff3e9d' : '#ffe15a', isMajor ? (isBoss ? 90 : 55) : e.type === 'tank' ? 28 : 15, isMajor ? (isBoss ? 520 : 420) : e.type === 'tank' ? 330 : 240);
+    burstDebris(ex, ey, [stages[stageIndex].accent2, '#5a4058', '#2a1f2c'], isMajor ? (isBoss ? 26 : 18) : e.type === 'tank' ? 12 : 7, isMajor ? 420 : e.type === 'tank' ? 300 : 220);
     shake = isMajor ? (isBoss ? 28 : 20) : e.type === 'tank' ? 12 : 6; flash = isMajor ? (isBoss ? 1 : .6) : e.type === 'tank' ? .35 : .12; sfx(isMajor ? 'bigBoom' : 'boom');
+    hitStop = Math.max(hitStop, isMajor ? (isBoss ? .12 : .09) : e.type === 'tank' ? .05 : .03);
     if (isMidBoss) {
       midBossDone = true; bossState = 'waiting'; enemyBullets = []; bullets = [];
       health = Math.min(maxHealth, health + 22); special = Math.min(100, special + 30);
@@ -1136,7 +1140,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
 
   function hurt(damage) {
-    health = Math.max(0, health - damage * difficulties[difficultyKey].damage); player.inv = 1.4; combo = 0; shake = 18; flash = .7;
+    health = Math.max(0, health - damage * difficulties[difficultyKey].damage); player.inv = 1.4; combo = 0; shake = 18; flash = .7; hitStop = Math.max(hitStop, .07);
     stageDamaged = true;
     burst(player.x + player.w / 2, player.y + player.h / 2, '#ff3e9d', 28, 330); sfx('hurt');
     if (health <= 0) finishGame(false);
@@ -1165,6 +1169,21 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const a = Math.random() * Math.PI * 2;
       const v = speed * (.35 + Math.random() * .65);
       particles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: .35 + Math.random() * .55, max: .9, color, size: 3 + Math.random() * 7, gravity: 90 });
+    }
+  }
+
+  // Chunky angular debris (armor plating, casing fragments) that tumbles as it
+  // flies — used alongside burst() for a heavier, more physical impact feel.
+  function burstDebris(x, y, colors, count, speed) {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const v = speed * (.4 + Math.random() * .6);
+      const color = Array.isArray(colors) ? colors[i % colors.length] : colors;
+      particles.push({
+        x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 60,
+        life: .4 + Math.random() * .5, max: .9, color, size: 6 + Math.random() * 10,
+        gravity: 260, shape: 'shard', rot: Math.random() * Math.PI * 2, vr: (Math.random() - .5) * 14
+      });
     }
   }
 
@@ -2057,8 +2076,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const p of particles) {
       const a = Math.max(0, p.life / p.max);
       ctx.globalAlpha = a; ctx.fillStyle = p.color;
-      const s = Math.ceil(p.size); ctx.fillRect(Math.round(p.x), Math.round(p.y), s, s);
-      if (p.size > 4) { ctx.globalAlpha = a * .4; ctx.fillRect(Math.round(p.x) - 2, Math.round(p.y) - 2, s + 4, s + 4); }
+      if (p.shape === 'shard') {
+        // Angular chunk of debris tumbling as it flies, instead of a soft glow blob.
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot || 0);
+        ctx.fillRect(-p.size * .5, -p.size * .22, p.size, p.size * .44);
+        ctx.restore();
+      } else {
+        const s = Math.ceil(p.size); ctx.fillRect(Math.round(p.x), Math.round(p.y), s, s);
+        if (p.size > 4) { ctx.globalAlpha = a * .4; ctx.fillRect(Math.round(p.x) - 2, Math.round(p.y) - 2, s + 4, s + 4); }
+      }
     }
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
@@ -3121,9 +3147,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   function frame(now) {
     const raw = (now - lastTime) / 1000;
-    const dt = clamp(raw || 0, 0, .033);
+    let dt = clamp(raw || 0, 0, .033);
     if (fpsShow && raw > 0 && raw < 1) fpsAvg += (1 / raw - fpsAvg) * .1;
-    lastTime = now; pollGamepad(); update(dt); draw(); requestAnimationFrame(frame);
+    lastTime = now;
+    // Brief hitstop on hard impacts: real time keeps ticking (so it self-clears)
+    // but gameplay dt is crushed to a near-freeze for a punchy, readable hit.
+    if (hitStop > 0) { hitStop = Math.max(0, hitStop - dt); dt *= .15; }
+    pollGamepad(); update(dt); draw(); requestAnimationFrame(frame);
   }
 
   function pad(n) { return Math.floor(n).toString().padStart(6, '0'); }
