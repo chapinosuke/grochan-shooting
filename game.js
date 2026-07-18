@@ -122,6 +122,8 @@
   let continueBanner = 0;
   let powerDownBanner = 0;
   let bgCam = 0;
+  let bgCamX = 0;        // horizontal camera yaw, eased from player.x (parallax)
+  let bokeh = [];        // front-of-camera defocused light orbs
   let formationTimer = 3;
   let fpsShow = false;   // F1 toggles a verification-only FPS readout
   let fpsAvg = 60;       // EMA of 1/rawDt
@@ -447,6 +449,15 @@
   function initBackdrop() {
     stars = Array.from({ length: 90 }, () => ({ x: Math.random() * VW, y: Math.random() * VH * .74, s: 1 + Math.random() * 3, a: Math.random() * 6 }));
     clouds = Array.from({ length: 8 }, () => ({ x: Math.random() * VW, y: 70 + Math.random() * 410, s: .5 + Math.random() * 1.1, v: 10 + Math.random() * 18 }));
+    // Big soft light orbs that live in front of the focal plane. They race past
+    // fast (near-field), stay low-alpha and use the stage tint (assigned at draw
+    // time) so the frame reads like a lens with shallow depth of field.
+    bokeh = Array.from({ length: 6 }, (_, i) => ({
+      x: Math.random() * VW, y: 60 + Math.random() * 560,
+      r: 46 + Math.random() * 78, spd: 120 + Math.random() * 130,
+      tint: i % 2, bob: Math.random() * 6, bobV: .5 + Math.random() * .6,
+      a: .05 + Math.random() * .05
+    }));
   }
 
   function setupStage() {
@@ -951,6 +962,7 @@
       player.y = 342 + Math.sin(elapsed * 1.1) * 30;
       player.grounded = false; player.frame += dt * 8;
       bgCam += (((player.y - 360) / 360) * 14 - bgCam) * Math.min(1, dt * 3);
+      bgCamX += ((clamp(-(player.x - 560) / 560, -1, 1) * 16 - bgCamX)) * Math.min(1, dt * 3);
     }
     if (state !== 'playing' || paused) return;
     elapsed += dt;
@@ -969,6 +981,12 @@
     specialFlash = Math.max(0, specialFlash - dt);
     player.inv = Math.max(0, player.inv - dt);
     bgCam += (((player.y - 360) / 360) * 14 - bgCam) * Math.min(1, dt * 3);
+    bgCamX += ((clamp(-(player.x - 560) / 560, -1, 1) * 16 - bgCamX)) * Math.min(1, dt * 3);
+    // Drift the front bokeh orbs; recycle off the left edge with a fresh lane.
+    for (const b of bokeh) {
+      b.x -= b.spd * dt * gameSpeed;
+      if (b.x < -b.r * 2) { b.x = VW + b.r + Math.random() * 260; b.y = 60 + Math.random() * 560; }
+    }
     comboTimer -= dt;
     if (comboTimer <= 0) combo = 0;
 
@@ -1533,8 +1551,16 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
+  // A slow, low-amplitude sway shared by the backdrop and foreground so the
+  // whole world gently breathes like a hand-held camera. Kept off the HUD and
+  // gameplay sprites (which draw in drawGame) so only scenery drifts.
+  function camBreath() { return { x: Math.sin(elapsed * .07) * 4, y: Math.cos(elapsed * .05) * 3 }; }
+
   function drawBackdrop() {
     const stage = stages[stageIndex];
+    const br = camBreath();
+    ctx.save();
+    ctx.translate(br.x, br.y);
     const g = cachedGrad('sky' + stageIndex, () => {
       const grad = ctx.createLinearGradient(0, 0, 0, VH);
       grad.addColorStop(0, stage.sky[0]); grad.addColorStop(.52, stage.sky[1]); grad.addColorStop(1, stage.sky[2]);
@@ -1550,6 +1576,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawAmbient();
     drawNearScenery(stage);
     drawAtmosphere(stage);
+    ctx.restore();
   }
 
   // Vertical camera parallax: layers shift with the player's height. The gameplay
@@ -1557,7 +1584,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // shifts the opposite way. bgCam is eased in update().
   function bgLayer(depth, fn) {
     ctx.save();
-    ctx.translate(0, bgCam * depth);
+    ctx.translate(bgCamX * depth, bgCam * depth);
     fn();
     ctx.restore();
   }
@@ -1597,8 +1624,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // silhouettes confined below y≈660 so the flight lane stays readable.
   function drawForeground(stage) {
     const speed = (stage.theme === 'aqua' ? 92 : stage.theme === 'palace' ? 72 : 118) * 1.45;
+    const br = camBreath();
     ctx.save();
-    ctx.translate(0, bgCam * -.4);
+    ctx.translate(bgCamX * -.4 + br.x * 1.6, bgCam * -.4 + br.y * 1.6);
     ctx.globalAlpha = .42; ctx.fillStyle = '#050212';
     const off = ((elapsed * speed) % 420 + 420) % 420;
     for (let i = -1; i < 5; i++) {
@@ -1621,6 +1649,34 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       } else {
         for (let k = 0; k < 340; k += 46) { ctx.beginPath(); ctx.arc(x + k, 704, 24, Math.PI, 0); ctx.fill(); }
       }
+    }
+    ctx.restore();
+    drawBokeh(stage);
+  }
+
+  // Defocused foreground light orbs: big, soft, low-alpha radial gradients that
+  // race past faster than anything else and shift hardest with the camera, so
+  // the scene reads as if shot through a lens with a shallow focal plane. Alpha
+  // stays low and blending stays normal (not additive) to keep the flight lane
+  // readable. Auto-skips when the frame budget is tight.
+  function drawBokeh(stage) {
+    if (fpsAvg < 45) return;
+    ctx.save();
+    ctx.translate(bgCamX * -.8, bgCam * -.8);
+    for (const b of bokeh) {
+      const y = b.y + Math.sin(elapsed * b.bobV + b.bob) * 14;
+      const col = b.tint ? stage.accent2 : stage.accent;
+      const g = ctx.createRadialGradient(b.x, y, 0, b.x, y, b.r);
+      g.addColorStop(0, hexA(col, b.a * 1.6));
+      g.addColorStop(.55, hexA(col, b.a));
+      g.addColorStop(1, hexA(col, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(b.x, y, b.r, 0, Math.PI * 2); ctx.fill();
+      // A brighter core hints at the iris without lifting overall brightness.
+      ctx.globalAlpha = b.a * 3;
+      ctx.fillStyle = hexA(col, .5);
+      ctx.beginPath(); ctx.arc(b.x, y, b.r * .16, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
     }
     ctx.restore();
   }
@@ -1698,7 +1754,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     bgLayer(.15, () => {
       for (const p of bgProps) if (p.kind === 'car') drawFlyingCar(p, stage);
       drawCity((elapsed * -20) % 120, 600, stage.city, 54, .78, 18);
-      drawNeonSigns();
+      drawStorefronts(stage);
       drawShibuyaScreen(stage);
     });
     drawScrambleCrossing(stage);
@@ -1721,38 +1777,131 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
-  // Shibuya-style neon: a jumble of Japanese vertical and horizontal signs on the storefronts.
-  const SHIBUYA_SIGNS = [
-    { x: 120, y: 468, w: 60, h: 128, text: 'カラオケ', c: '#ff3e9d', v: true },
-    { x: 330, y: 506, w: 122, h: 40, text: 'ラーメン', c: '#ffe15a' },
-    { x: 545, y: 460, w: 56, h: 130, text: '居酒屋', c: '#31e8ff', v: true },
-    { x: 690, y: 512, w: 118, h: 38, text: '安い！', c: '#72ff68' },
-    { x: 880, y: 470, w: 58, h: 120, text: '薬粧', c: '#ff8a35', v: true },
-    { x: 1010, y: 505, w: 132, h: 42, text: 'SHIBUYA', c: '#ff3e9d' },
-    { x: 1180, y: 520, w: 84, h: 36, text: '24H', c: '#ffe15a' }
+  // Shibuya-style row of actual shops lining the street. Each entry is a whole
+  // storefront — facade, lit interior with patrons, awning, entrance and a neon
+  // sign mounted on it — so the signs read as belonging to real buildings rather
+  // than floating text. They scroll at the same speed as the near city behind.
+  const SHOPS = [
+    { x: 40,   w: 178, text: 'ラーメン', c: '#ffe15a', v: false, awn: '#c0143b', kind: 'ramen' },
+    { x: 288,  w: 150, text: 'カラオケ', c: '#ff3e9d', v: true,  awn: '#3a1c6e', kind: 'karaoke' },
+    { x: 500,  w: 186, text: '居酒屋',   c: '#31e8ff', v: false, awn: '#b5321f', kind: 'izakaya' },
+    { x: 754,  w: 150, text: '薬粧',     c: '#ff8a35', v: true,  awn: '#1f6e4a', kind: 'pharmacy' },
+    { x: 968,  w: 178, text: '安い！',   c: '#72ff68', v: false, awn: '#7a1c5a', kind: 'discount' },
+    { x: 1204, w: 196, text: 'SHIBUYA', c: '#ff3e9d', v: false, awn: '#243a8a', kind: 'fashion' }
   ];
-  function drawNeonSigns() {
-    const stage = stages[stageIndex];
-    const scroll = (elapsed * 35) % 1600;
-    for (let repeat = 0; repeat < 2; repeat++) for (const s of SHIBUYA_SIGNS) {
-      const x = s.x - scroll + repeat * 1600;
-      if (x < -170 || x > VW + 40) continue;
-      const on = (Math.floor(elapsed * 2 + s.x * .1) % 11) !== 0;
-      ctx.save();
-      ctx.fillStyle = '#0b0929'; ctx.fillRect(x, s.y, s.w, s.h);
-      ctx.shadowColor = s.c; ctx.shadowBlur = on ? 14 : 2;
-      ctx.strokeStyle = on ? s.c : '#3a2a66'; ctx.lineWidth = 3; ctx.strokeRect(x + 1.5, s.y + 1.5, s.w - 3, s.h - 3);
-      ctx.fillStyle = on ? s.c : '#4a3a76';
-      ctx.textAlign = 'center';
-      if (s.v) {
-        ctx.font = '17px "DotGothic16", monospace';
-        [...s.text].forEach((ch, i) => ctx.fillText(ch, x + s.w / 2, s.y + 25 + i * 25));
-      } else {
-        ctx.font = s.text === 'SHIBUYA' || s.text === '24H' ? '13px "Press Start 2P", monospace' : '18px "DotGothic16", monospace';
-        ctx.fillText(s.text, x + s.w / 2, s.y + s.h / 2 + 7);
-      }
-      ctx.restore();
+  const SHOP_STRIP = 1460;
+
+  function drawStorefronts(stage) {
+    const scroll = (elapsed * 20) % SHOP_STRIP;
+    for (let repeat = 0; repeat < 3; repeat++) for (const s of SHOPS) {
+      const x = s.x - scroll + repeat * SHOP_STRIP;
+      if (x < -280 || x > VW + 60) continue;
+      drawShop(x, s, stage);
     }
+  }
+
+  function drawShopSign(bx, by, bw, bh, s) {
+    const on = (Math.floor(elapsed * 2 + bx * .07) % 11) !== 0;
+    ctx.save();
+    ctx.fillStyle = '#0b0929'; ctx.fillRect(bx, by, bw, bh);
+    ctx.shadowColor = s.c; ctx.shadowBlur = on ? 14 : 2;
+    ctx.strokeStyle = on ? s.c : '#3a2a66'; ctx.lineWidth = 3; ctx.strokeRect(bx + 1.5, by + 1.5, bw - 3, bh - 3);
+    ctx.fillStyle = on ? s.c : '#4a3a76';
+    ctx.textAlign = 'center';
+    if (s.v) {
+      ctx.font = '17px "DotGothic16", monospace';
+      [...s.text].forEach((ch, i) => ctx.fillText(ch, bx + bw / 2, by + 24 + i * 22));
+    } else {
+      ctx.font = s.text === 'SHIBUYA' ? '13px "Press Start 2P", monospace' : '18px "DotGothic16", monospace';
+      ctx.fillText(s.text, bx + bw / 2, by + bh / 2 + 7);
+    }
+    ctx.restore();
+  }
+
+  function drawShop(x, s, stage) {
+    const base = 604, top = 452, w = s.w, h = base - top;
+    const gf = base - 76;                       // ground-floor shopfront top
+    const warm = s.kind === 'pharmacy' ? '#8fffe0' : '#ffbf66';
+    ctx.save();
+
+    // Facade block with a touch of side shading for volume.
+    ctx.fillStyle = '#0d0b24'; ctx.fillRect(x, top, w, h);
+    ctx.fillStyle = 'rgba(0,0,0,.34)'; ctx.fillRect(x + w - 9, top, 9, h);
+    ctx.fillStyle = hexA(s.c, .5); ctx.fillRect(x, top, w, 3);
+
+    // Dim upper-floor windows.
+    ctx.fillStyle = hexA(stage.accent, .1);
+    for (let yy = top + 12; yy < gf - 22; yy += 22)
+      for (let xx = x + 12; xx < x + w - 14; xx += 26)
+        if ((xx + yy) % 3 !== 0) ctx.fillRect(xx, yy, 15, 12);
+
+    // Lit ground-floor interior: warm gradient with patron silhouettes.
+    const winTop = gf + 2, winBot = base - 6;
+    const glow = ctx.createLinearGradient(0, winTop, 0, winBot);
+    glow.addColorStop(0, '#241704'); glow.addColorStop(1, hexA(warm, .92));
+    ctx.fillStyle = glow; ctx.fillRect(x + 6, winTop, w - 12, winBot - winTop);
+    ctx.fillStyle = 'rgba(9,5,18,.85)';
+    const seats = Math.max(2, Math.floor(w / 58));
+    for (let i = 0; i < seats; i++) {
+      const px = x + 22 + i * ((w - 40) / seats) + Math.sin(elapsed * .8 + i + s.x) * 1.4;
+      ctx.beginPath(); ctx.arc(px, base - 32, 7, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(px - 7, base - 26, 14, 22);
+    }
+    ctx.strokeStyle = hexA(s.c, .5); ctx.lineWidth = 2; ctx.strokeRect(x + 6, winTop, w - 12, winBot - winTop);
+
+    // Entrance: split noren for the eateries, glowing glass door for the rest.
+    const dw = 48, dx = x + w / 2 - dw / 2;
+    if (s.kind === 'ramen' || s.kind === 'izakaya') {
+      const pw = dw / 3 - 2;
+      for (let p = 0; p < 3; p++) {
+        const sway = Math.sin(elapsed * 1.6 + p) * 2, lx = dx + p * (pw + 2);
+        ctx.fillStyle = p % 2 ? shade(s.awn, 1.3) : s.awn;
+        ctx.beginPath();
+        ctx.moveTo(lx, winTop + 2); ctx.lineTo(lx + pw, winTop + 2);
+        ctx.lineTo(lx + pw + sway, winTop + 30); ctx.lineTo(lx + sway, winTop + 30);
+        ctx.closePath(); ctx.fill();
+      }
+    } else {
+      ctx.fillStyle = hexA(s.c, .28); ctx.fillRect(dx, winTop + 4, dw, winBot - winTop - 8);
+      ctx.strokeStyle = hexA(s.c, .7); ctx.lineWidth = 2; ctx.strokeRect(dx, winTop + 4, dw, winBot - winTop - 8);
+    }
+
+    // Striped fabric awning with a scalloped hem over the shopfront.
+    const ay = gf, ah = 15;
+    for (let i = 0; i * 18 < w - 4; i++) {
+      ctx.fillStyle = i % 2 ? s.awn : shade(s.awn, 1.45);
+      ctx.fillRect(x + 2 + i * 18, ay - ah, Math.min(18, w - 4 - i * 18), ah);
+    }
+    ctx.fillStyle = s.awn;
+    for (let i = 0; i * 18 < w - 16; i++) { ctx.beginPath(); ctx.arc(x + 11 + i * 18, ay, 9, 0, Math.PI); ctx.fill(); }
+
+    // Red paper lantern by the entrance of the eateries.
+    if (s.kind === 'ramen' || s.kind === 'izakaya') {
+      const lx = x + w - 24, ly = gf + 16;
+      ctx.fillStyle = 'rgba(0,0,0,.5)'; ctx.fillRect(lx - 1, gf - 8, 2, 22);
+      ctx.save(); ctx.shadowColor = '#ff5a36'; ctx.shadowBlur = 14; ctx.fillStyle = '#ff5233';
+      ctx.beginPath(); ctx.ellipse(lx, ly, 11, 15, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(lx - 11, ly - 2, 22, 2);
+    }
+
+    // Neon shop sign: a blade sign for vertical text, a marquee otherwise.
+    if (s.v) drawShopSign(x + 8, top + 16, 34, s.text.length * 22 + 18, s);
+    else {
+      const sw = Math.min(w - 16, s.text.length * 20 + 22);
+      drawShopSign(x + w / 2 - sw / 2, top + 20, sw, 34, s);
+    }
+
+    // Warm light spilling from the doorway onto the pavement.
+    const spill = ctx.createLinearGradient(0, base, 0, base + 48);
+    spill.addColorStop(0, hexA(warm, .2)); spill.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = spill;
+    const cx = x + w / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx - 32, base); ctx.lineTo(cx + 32, base);
+    ctx.lineTo(cx + 58, base + 48); ctx.lineTo(cx - 58, base + 48);
+    ctx.closePath(); ctx.fill();
+
+    ctx.restore();
   }
 
   // The 109-style cylindrical landmark tower with its vertical sign.
