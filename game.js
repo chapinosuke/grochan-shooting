@@ -37,11 +37,31 @@
     stage2: new Audio('Neon Arena (1).mp3'),
     stage3: new Audio('Neon Demoness.mp3'),
     stage4: new Audio('Neon Bullet Heaven.mp3'),
+    midBoss: new Audio('The Crimson Labyrinth.mp3'),
     bossBattle: new Audio('Neon Bullet Heaven.mp3'),
     finalBoss: new Audio('Red Planet Showdown.mp3')
   };
-  const bgmVolumes = { opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, bossBattle: .3, finalBoss: .32 };
+  const bgmVolumes = { opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32 };
   Object.entries(bgmTracks).forEach(([key, track]) => { track.loop = true; track.preload = 'auto'; track.volume = bgmVolumes[key]; });
+  const sampledSfx = {
+    shoot: { src: 'assets/sfx/player-shot.mp3', volume: .2, pool: 7, max: .42 },
+    hit: { src: 'assets/sfx/hit.mp3', volume: .24, pool: 5, max: .5 },
+    boom: { src: 'assets/sfx/explosion.mp3', volume: .19, pool: 5, max: 1.7 },
+    bigBoom: { src: 'assets/sfx/big-explosion.mp3', volume: .32, pool: 2, max: 3.4 },
+    missile: { src: 'assets/sfx/missile.mp3', volume: .25, pool: 3, max: .85 },
+    special: { src: 'assets/sfx/special-beam.mp3', volume: .34, pool: 2, max: 2.4 },
+    boss: { src: 'assets/sfx/charge.mp3', volume: .23, pool: 2, max: 1.6 },
+    warning: { src: 'assets/sfx/boss-warning.mp3', volume: .2, pool: 1, max: 3.15 },
+    power: { src: 'assets/sfx/power-up.mp3', volume: .3, pool: 2, max: .9 },
+    shield: { src: 'assets/sfx/shield.mp3', volume: .28, pool: 3, max: .75 },
+    hurt: { src: 'assets/sfx/heavy-hit.mp3', volume: .28, pool: 2, max: 1.25 }
+  };
+  const sfxPools = {};
+  Object.entries(sampledSfx).forEach(([key, def]) => {
+    sfxPools[key] = { cursor: 0, voices: Array.from({ length: def.pool }, () => {
+      const voice = new Audio(def.src); voice.preload = 'auto'; voice.volume = def.volume; return voice;
+    }) };
+  });
 
   let spriteFrames = [];
   let walkFrames = [];
@@ -63,6 +83,7 @@
   let gameSpeed = 1;
   let bossState = 'waiting';
   let bossWarning = 0;
+  let midBossDone = false;
   let stageIndex = 0;
   let stageTime = 0;
   let stageBanner = 0;
@@ -199,7 +220,7 @@
     clearTimeout(openingTimeout); openingTimeout = 0;
     score = 0; combo = 0; comboTimer = 0; health = maxHealth; elapsed = 0;
     spawnTimer = .7; pickupTimer = 6; shake = 0; flash = 0; gameSpeed = 1;
-    bossState = 'waiting'; bossWarning = 0;
+    bossState = 'waiting'; bossWarning = 0; midBossDone = false;
     stageIndex = 0; stageTime = 0; stageBanner = 3; stageTransition = 0;
     musicClock = 0; musicStep = 0;
     totalKills = 0; stageResult = null; lightning = 0; delayedBursts = [];
@@ -268,10 +289,25 @@
 
   function pauseBgm() { bgmFadeToken++; Object.values(bgmTracks).forEach(track => track.pause()); }
 
+  function pauseSampledSfx() {
+    Object.values(sfxPools).forEach(pool => pool.voices.forEach(voice => { voice.pause(); voice.currentTime = 0; }));
+  }
+
   function desiredBgmKey() {
     if (state === 'opening' || state === 'menu') return 'opening';
+    if (bossState === 'midboss-active' || bossState === 'midboss-warning') return 'midBoss';
     if (bossState === 'active') return stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle';
     return `stage${stageIndex}`;
+  }
+
+  function playSampledSfx(type) {
+    const def = sampledSfx[type], pool = sfxPools[type];
+    if (!soundOn || !def || !pool) return false;
+    const voice = pool.voices[pool.cursor++ % pool.voices.length];
+    voice.pause(); voice.currentTime = 0; voice.volume = def.volume;
+    voice.play().catch(() => { /* audio resumes on the next user gesture */ });
+    if (def.max) setTimeout(() => { if (!voice.paused && voice.currentTime >= def.max - .08) { voice.pause(); voice.currentTime = 0; } }, def.max * 1000);
+    return true;
   }
 
   function initBackdrop() {
@@ -380,7 +416,7 @@
     enemyBullets = [];
     for (const e of [...enemies]) {
       if (e.hp <= 0) continue;
-      const damage = e.type === 'boss' ? 16 + player.power * 4 : 10 + player.power * 4;
+      const damage = e.type === 'boss' ? 16 + player.power * 4 : e.type === 'midboss' ? 13 + player.power * 4 : 10 + player.power * 4;
       e.hp -= damage; e.hit = .3;
       if (e.hp <= 0) destroyEnemy(e);
     }
@@ -459,6 +495,42 @@
     shake = 15;
     playBgm(stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle', true);
     sfx('boss');
+  }
+
+  function spawnMidBoss() {
+    const baseHp = { easy: 24, normal: 34, hard: 46 }[difficultyKey];
+    const hp = Math.round(baseHp * (1 + stageIndex * .24));
+    enemies.push({ type: 'midboss', x: VW + 190, y: 210, baseY: 210, w: 158, h: 132, hp, maxHp: hp, vx: 0, t: 0, wave: false, points: 4200 + stageIndex * 900, fire: .8, sp: 2.8, variant: 'standard' });
+    bossState = 'midboss-active';
+    enemyBullets = []; shake = 12;
+    playBgm('midBoss'); sfx('boss');
+  }
+
+  function updateMidBoss(e, dt) {
+    if (e.x > VW - 235) e.x -= 280 * dt;
+    e.y = e.baseY + Math.sin(e.t * (1.1 + stageIndex * .08)) * (105 + stageIndex * 7);
+    e.fire -= dt; e.sp -= dt;
+    const engaged = e.x <= VW - 225;
+    if (engaged && e.fire <= 0) {
+      const ox = e.x + 12, oy = e.y + e.h / 2;
+      const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
+      const count = e.hp < e.maxHp / 2 ? 5 : 3;
+      for (let i = 0; i < count; i++) {
+        const a = aim + (i - (count - 1) / 2) * .2;
+        enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * (245 + stageIndex * 18), vy: Math.sin(a) * (245 + stageIndex * 18), r: 9, life: 6, damage: 13 + stageIndex, boss: true, volt: stageIndex === 3, fire: stageIndex === 2, heart: stageIndex === 4, bubble: stageIndex === 1 });
+      }
+      burst(ox, oy, stages[stageIndex].accent2, 8, 170); e.fire = e.hp < e.maxHp / 2 ? .62 : .85;
+    }
+    if (engaged && e.sp <= 0) {
+      const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
+      const count = e.hp < e.maxHp / 2 ? 12 : 8;
+      for (let i = 0; i < count; i++) {
+        const a = i / count * Math.PI * 2 + e.t * .35;
+        enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 175, vy: Math.sin(a) * 175, r: 8, life: 5.5, damage: 12 + stageIndex, boss: true });
+      }
+      shockwaves.push({ x: cx, y: cy, r: 16, speed: 290, life: .55, max: .55, color: stages[stageIndex].accent2 });
+      sfx('boss'); e.sp = e.hp < e.maxHp / 2 ? 3.2 : 4.3;
+    }
   }
 
   function enemyShoot(e) {
@@ -673,8 +745,15 @@
     const difficulty = difficulties[difficultyKey];
     // The supplied full-length tracks replace the old generated note loop.
 
-    if (bossState === 'waiting' && stageTime >= difficulty.bossTime + stageIndex * 2) {
-      bossState = 'warning'; bossWarning = 3.2; enemies = []; enemyBullets = [];
+    const bossAt = difficulty.bossTime + stageIndex * 2;
+    if (bossState === 'waiting' && !midBossDone && stageTime >= bossAt * .46) {
+      bossState = 'midboss-warning'; bossWarning = 2.1; enemies = []; enemyBullets = []; sfx('warning');
+      playBgm('midBoss', true);
+    } else if (bossState === 'midboss-warning') {
+      bossWarning -= dt;
+      if (bossWarning <= 0) spawnMidBoss();
+    } else if (bossState === 'waiting' && stageTime >= bossAt) {
+      bossState = 'warning'; bossWarning = 3.2; enemies = []; enemyBullets = []; sfx('warning');
     } else if (bossState === 'warning') {
       bossWarning -= dt;
       if (bossWarning <= 0) spawnBoss();
@@ -684,7 +763,7 @@
         if (bossState === 'final') {
           finishGame(true);
         } else {
-          stageIndex++; stageTime = 0; stageBanner = 3; bossState = 'waiting'; spawnTimer = 1.2; pickupTimer = 4;
+          stageIndex++; stageTime = 0; stageBanner = 3; bossState = 'waiting'; midBossDone = false; spawnTimer = 1.2; pickupTimer = 4;
           health = Math.min(maxHealth, health + 28); player.inv = 2;
           stageResult = null; setupStage(); musicStep = 0; musicClock = 0;
           playBgm(`stage${stageIndex}`, true);
@@ -741,7 +820,7 @@
       else { spawnEnemy(); spawnTimer = ((.55 + Math.random() * .45) * difficulty.spawn) / gameSpeed; }
     }
     pickupTimer -= dt;
-    if (pickupTimer <= 0 && (bossState === 'waiting' || bossState === 'active')) {
+    if (pickupTimer <= 0 && (bossState === 'waiting' || bossState === 'active' || bossState === 'midboss-active')) {
       const roll = Math.random();
       pickups.push({ type: roll < .28 ? 'heal' : roll < .53 ? 'power' : roll < .76 ? 'spread' : 'speed', x: VW + 30, y: 100 + Math.random() * (VH - 240), r: 19, t: 0 });
       pickupTimer = 8 + Math.random() * 7;
@@ -792,6 +871,7 @@
       e.t += dt;
       e.hit = Math.max(0, (e.hit || 0) - dt);
       if (e.type === 'boss') { updateBoss(e, dt); continue; }
+      if (e.type === 'midboss') { updateMidBoss(e, dt); continue; }
       e.x -= e.vx * dt * gameSpeed * difficulty.speed;
       if (e.behavior === 'dive' && e.x < 1040 && e.x > 380) {
         const targetY = clamp(player.y + 20 + Math.sin(e.t * 5) * 45, 60, 575);
@@ -851,7 +931,7 @@
             const absorbed = Math.min(e.shield, damage); e.shield -= absorbed; damage -= absorbed;
             shockwaves.push({ x: b.x, y: b.y, r: 3, speed: 130, life: .24, max: .24, color: '#a8b7d6' }); sfx('shield');
           }
-          e.hp -= damage; e.hit = .11; special = Math.min(100, special + .35 + (b.missile ? .5 : 0)); shake = 3; burst(b.x, b.y, '#31e8ff', 5, 150);
+          e.hp -= damage; e.hit = .11; special = Math.min(100, special + .35 + (b.missile ? .5 : 0)); shake = 3; burst(b.x, b.y, '#31e8ff', 5, 150); sfx('hit');
           if (e.hp <= 0) destroyEnemy(e);
           break;
         }
@@ -860,8 +940,8 @@
     if (player.inv <= 0) {
       for (const e of enemies) {
         if (e.hp > 0 && rects(hitX, hitY, hitW, hitH, e.x, e.y, e.w, e.h)) {
-          if (e.type !== 'boss') { e.hp = 0; destroyEnemy(e); }
-          hurt(e.type === 'boss' ? 38 : 28); break;
+          if (e.type !== 'boss' && e.type !== 'midboss') { e.hp = 0; destroyEnemy(e); }
+          hurt(e.type === 'boss' ? 38 : e.type === 'midboss' ? 32 : 28); break;
         }
       }
       for (const b of enemyBullets) {
@@ -883,7 +963,7 @@
   function destroyEnemy(e, allowChain = true) {
     combo++; comboTimer = 2.2;
     totalKills++; stageKills++;
-    special = Math.min(100, special + (e.type === 'boss' ? 30 : e.variant === 'elite' ? 8 : 4));
+    special = Math.min(100, special + (e.type === 'boss' ? 30 : e.type === 'midboss' ? 20 : e.variant === 'elite' ? 8 : 4));
     const mult = Math.min(5, 1 + Math.floor(combo / 5));
     score += e.points * mult * difficulties[difficultyKey].score;
     if (e.type === 'jelly') {
@@ -893,19 +973,27 @@
       }
     }
     const isBoss = e.type === 'boss';
-    if (!isBoss && combo >= 5 && allowChain) {
+    const isMidBoss = e.type === 'midboss';
+    const isMajor = isBoss || isMidBoss;
+    if (!isMajor && combo >= 5 && allowChain) {
       const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
       const chainVictims = [];
       shockwaves.push({ x: cx, y: cy, r: 8, speed: 330, life: .42, max: .42, color: stages[stageIndex].accent2 });
       for (const other of enemies) {
-        if (other === e || other.hp <= 0 || other.type === 'boss') continue;
+        if (other === e || other.hp <= 0 || other.type === 'boss' || other.type === 'midboss') continue;
         const dx = other.x + other.w / 2 - cx, dy = other.y + other.h / 2 - cy;
         if (dx * dx + dy * dy < 145 * 145) { other.hp -= 1; other.hit = .14; if (other.hp <= 0) chainVictims.push(other); }
       }
       for (const victim of chainVictims) destroyEnemy(victim, false);
     }
-    burst(e.x + e.w / 2, e.y + e.h / 2, e.type === 'bat' ? '#ff3e9d' : '#ffe15a', isBoss ? 90 : e.type === 'tank' ? 28 : 15, isBoss ? 520 : e.type === 'tank' ? 330 : 240);
-    shake = isBoss ? 28 : e.type === 'tank' ? 12 : 6; flash = isBoss ? 1 : e.type === 'tank' ? .35 : .12; sfx('boom');
+    burst(e.x + e.w / 2, e.y + e.h / 2, e.type === 'bat' ? '#ff3e9d' : '#ffe15a', isMajor ? (isBoss ? 90 : 55) : e.type === 'tank' ? 28 : 15, isMajor ? (isBoss ? 520 : 420) : e.type === 'tank' ? 330 : 240);
+    shake = isMajor ? (isBoss ? 28 : 20) : e.type === 'tank' ? 12 : 6; flash = isMajor ? (isBoss ? 1 : .6) : e.type === 'tank' ? .35 : .12; sfx(isMajor ? 'bigBoom' : 'boom');
+    if (isMidBoss) {
+      midBossDone = true; bossState = 'waiting'; enemyBullets = []; bullets = [];
+      health = Math.min(maxHealth, health + 18); special = Math.min(100, special + 25);
+      pickups.push({ type: 'power', x: e.x + e.w / 2, y: e.y + e.h / 2, r: 19, t: 0 });
+      playBgm(`stage${stageIndex}`);
+    }
     if (isBoss) {
       bossState = stageIndex === stages.length - 1 ? 'final' : 'transition'; stageTransition = 4.6;
       enemyBullets = []; bullets = []; health = Math.min(maxHealth, health + 40); musicStep = 0; musicClock = 0;
@@ -1753,12 +1841,10 @@
 
   function drawEnemy(e) {
     ctx.save(); ctx.translate(Math.round(e.x), Math.round(e.y));
-    if (e.type !== 'boss') {
+    if (e.type !== 'boss' && e.type !== 'midboss') {
       ctx.save(); ctx.globalAlpha = .16; ctx.fillStyle = '#020108';
       ctx.beginPath(); ctx.ellipse(e.w * .5 + 7, e.h + 9, e.w * .46, Math.max(5, e.h * .1), 0, 0, Math.PI * 2); ctx.fill();
-      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = e.variant === 'elite' ? .18 : .08;
-      ctx.fillStyle = e.variant === 'elite' ? stages[stageIndex].accent2 : stages[stageIndex].accent;
-      ctx.beginPath(); ctx.ellipse(e.w * .5, e.h * .52, e.w * .65, e.h * .68, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      ctx.restore();
     }
     if (e.type === 'drone') {
       ctx.fillStyle = '#180d3d'; ctx.fillRect(8, 8, 48, 39); ctx.fillRect(0, 18, 64, 18);
@@ -1863,10 +1949,12 @@
       ctx.fillStyle = '#ffd7ea'; heartPath(26, 25, 9); ctx.fill();
       ctx.fillStyle = '#120b2e'; ctx.fillRect(22, 28, 6, 7); ctx.fillRect(36, 28, 6, 7);
       ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(2, 32, 10, -1.1, 1.1); ctx.stroke();
+    } else if (e.type === 'midboss') {
+      drawMidBoss(e);
     } else {
       drawBoss(e);
     }
-    if (e.type !== 'boss') drawEnemyVariant(e);
+    if (e.type !== 'boss' && e.type !== 'midboss') drawEnemyVariant(e);
     ctx.restore();
   }
 
@@ -1884,10 +1972,24 @@
       for (let x = 7; x < e.w - 4; x += 14) ctx.fillRect(x, 4, 8, 3);
     }
     if (e.maxHp > 4) { ctx.fillStyle = '#14091f'; ctx.fillRect(5, e.h - 5, e.w - 10, 3); ctx.fillStyle = color; ctx.fillRect(5, e.h - 5, (e.w - 10) * Math.max(0, e.hp / e.maxHp), 3); }
-    if (e.shield > 0) {
-      ctx.globalAlpha = .28 + Math.sin(elapsed * 8 + e.x) * .08; ctx.strokeStyle = '#dce7ff'; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.ellipse(e.w / 2, e.h / 2, e.w * .62, e.h * .66, 0, 0, Math.PI * 2); ctx.stroke();
-    }
+    ctx.restore();
+  }
+
+  function drawMidBoss(e) {
+    const stage = stages[stageIndex], pulse = 6 + Math.sin(e.t * 7) * 4;
+    ctx.save(); ctx.shadowColor = stage.accent2; ctx.shadowBlur = 22;
+    ctx.fillStyle = '#10091f';
+    ctx.beginPath(); ctx.moveTo(18, 66); ctx.lineTo(48, 14); ctx.lineTo(111, 14); ctx.lineTo(142, 66); ctx.lineTo(111, 118); ctx.lineTo(48, 118); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = stage.accent2;
+    ctx.beginPath(); ctx.moveTo(31, 65); ctx.lineTo(55, 28); ctx.lineTo(103, 28); ctx.lineTo(128, 65); ctx.lineTo(103, 104); ctx.lineTo(55, 104); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#211039'; ctx.fillRect(48, 45, 63, 43);
+    ctx.fillStyle = stage.accent; ctx.fillRect(57, 54, 16, 12); ctx.fillRect(87, 54, 16, 12);
+    ctx.fillStyle = '#fff'; ctx.fillRect(61, 57, 6, 5); ctx.fillRect(91, 57, 6, 5);
+    ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.arc(79, 82, 10 + pulse * .25, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = stage.accent; ctx.fillRect(-pulse, 57, 42 + pulse, 9); ctx.fillRect(117, 57, 42 + pulse, 9);
+    ctx.fillStyle = '#24102f'; ctx.fillRect(22, 110, 44, 12); ctx.fillRect(93, 110, 44, 12);
+    ctx.shadowBlur = 0;
+    if (e.hit > 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = e.hit * 5; ctx.fillStyle = '#fff'; ctx.fillRect(18, 14, 124, 108); }
     ctx.restore();
   }
 
@@ -1895,7 +1997,7 @@
     const x0 = 348, y0 = 99, w = 584, h = 55;
     const route = stages.map((_, i) => ({ x: 404 + i * 118, y: 116 + (i % 2 ? 9 : 0) }));
     const targetTime = difficulties[difficultyKey].bossTime + stageIndex * 2;
-    const progress = bossState === 'waiting' ? clamp(stageTime / targetTime, 0, 1) : 1;
+    const progress = ['waiting', 'midboss-warning', 'midboss-active'].includes(bossState) ? clamp(stageTime / targetTime, 0, 1) : 1;
     ctx.save();
     ctx.fillStyle = 'rgba(10,6,31,.82)'; ctx.fillRect(x0, y0, w, h);
     ctx.strokeStyle = 'rgba(123,110,174,.42)'; ctx.strokeRect(x0 + .5, y0 + .5, w - 1, h - 1);
@@ -2050,26 +2152,26 @@
       ctx.textAlign = 'center'; ctx.fillStyle = stage.accent; ctx.font = '10px "Press Start 2P", monospace'; ctx.fillText(`STAGE ${stageIndex + 1} / ${stages.length}`, VW / 2, 48);
       ctx.fillStyle = '#fff'; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText(stage.name, VW / 2, 70); ctx.textAlign = 'left';
     }
-    const boss = enemies.find(e => e.type === 'boss');
+    const boss = enemies.find(e => e.type === 'boss' || e.type === 'midboss');
     if (boss) {
       ctx.fillStyle = 'rgba(10,6,31,.9)'; ctx.fillRect(330, VH - 52, 620, 28);
       ctx.fillStyle = '#311848'; ctx.fillRect(338, VH - 44, 604, 12);
       const ratio = Math.max(0, boss.hp / boss.maxHp);
-      if (stageIndex === stages.length - 1) {
+      if (boss.type === 'boss' && stageIndex === stages.length - 1) {
         // Final boss shows two stacked gauges: yellow drains first, then pink.
         ctx.fillStyle = stage.accent2; ctx.fillRect(338, VH - 44, 604 * Math.min(1, ratio * 2), 12);
         if (ratio > .5) { ctx.fillStyle = '#ffe15a'; ctx.fillRect(338, VH - 44, 604 * ((ratio - .5) * 2), 12); }
       } else {
         ctx.fillStyle = stage.accent2; ctx.fillRect(338, VH - 44, 604 * ratio, 12);
       }
-      ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText(`BOSS  ${stage.boss}`, VW / 2, VH - 58);
+      ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText(boss.type === 'midboss' ? 'MID BOSS  CRIMSON WARDEN' : `BOSS  ${stage.boss}`, VW / 2, VH - 58);
       if (boss.phase2) { ctx.fillStyle = stage.accent2; ctx.font = '8px "Press Start 2P", monospace'; ctx.fillText('- FINAL PHASE -', VW / 2, VH - 18); }
       ctx.textAlign = 'left';
     }
-    if (bossState === 'warning') {
+    if (bossState === 'warning' || bossState === 'midboss-warning') {
       ctx.globalAlpha = .55 + Math.sin(bossWarning * 12) * .35; ctx.fillStyle = stage.accent2; ctx.fillRect(0, 292, VW, 102);
       ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '28px "Press Start 2P", monospace'; ctx.fillText('WARNING', VW / 2, 344);
-      ctx.font = '11px "Press Start 2P", monospace'; ctx.fillText('BOSS APPROACHING', VW / 2, 374); ctx.textAlign = 'left';
+      ctx.font = '11px "Press Start 2P", monospace'; ctx.fillText(bossState === 'midboss-warning' ? 'MID BOSS APPROACHING' : 'BOSS APPROACHING', VW / 2, 374); ctx.textAlign = 'left';
     }
     if (stageBanner > 0) {
       const alpha = Math.min(1, stageBanner, (3 - stageBanner) * 2);
@@ -2147,17 +2249,19 @@
   function sfx(type) {
     if (!soundOn) return;
     try {
-      ensureAudio();
-      const o = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-      o.connect(gain); gain.connect(audioCtx.destination);
-      const now = audioCtx.currentTime;
+      const hasSample = playSampledSfx(type);
       const map = {
         shoot: [650, 980, .035, .035], boom: [130, 48, .1, .12], hurt: [180, 70, .18, .15], power: [480, 1200, .24, .12], boss: [90, 260, .7, .16],
         thunder: [75, 38, .5, .2], teleport: [900, 210, .16, .09], bubble: [290, 720, .13, .06], fireball: [230, 60, .26, .11],
         missile: [180, 760, .12, .07], special: [75, 1280, .85, .18], graze: [1200, 1650, .045, .025], shield: [760, 340, .08, .04]
       };
+      if (!map[type]) return;
+      ensureAudio();
+      const o = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+      o.connect(gain); gain.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
       const [a, b, dur, vol] = map[type];
-      const mixedVolume = Math.min(.3, vol * 1.85);
+      const mixedVolume = Math.min(.3, vol * (hasSample ? .72 : 1.85));
       o.type = type === 'shoot' ? 'square' : 'sawtooth';
       o.frequency.setValueAtTime(a, now); o.frequency.exponentialRampToValueAtTime(b, now + dur);
       gain.gain.setValueAtTime(mixedVolume, now); gain.gain.exponentialRampToValueAtTime(.001, now + dur);
@@ -2207,14 +2311,17 @@
     if (e.code === 'Enter' && state === 'menu') showOpening();
     else if (e.code === 'Enter' && state === 'opening') resetGame();
     else if (e.code === 'Enter' && state === 'over') resetGame();
-    // Hidden debug keys: Shift+N skips to the next stage, Shift+B summons the boss.
+    // Hidden debug keys: Shift+N skips a stage, Shift+M summons its mid boss, Shift+B summons its boss.
     if (e.shiftKey && e.code === 'KeyN' && state === 'playing' && !paused) {
       enemies = []; enemyBullets = []; bullets = [];
       bossState = stageIndex === stages.length - 1 ? 'final' : 'transition';
       stageTransition = 2.4;
       stageResult = { kills: stageKills, time: elapsed - stageStart, noDamageBonus: stageDamaged ? 0 : 5000, timeBonus: 0 };
     }
-    if (e.shiftKey && e.code === 'KeyB' && state === 'playing' && !paused && bossState === 'waiting') stageTime = 9999;
+    if (e.shiftKey && e.code === 'KeyM' && state === 'playing' && !paused && bossState === 'waiting' && !midBossDone) {
+      stageTime = (difficulties[difficultyKey].bossTime + stageIndex * 2) * .46;
+    }
+    if (e.shiftKey && e.code === 'KeyB' && state === 'playing' && !paused && bossState === 'waiting') { midBossDone = true; stageTime = 9999; }
   });
   addEventListener('keyup', e => keys.delete(e.code));
   canvas.addEventListener('pointerdown', e => { if (state !== 'playing') return; pointer.active = true; const p = screenToWorld(e.clientX, e.clientY); pointer.x=p.x; pointer.y=p.y; canvas.setPointerCapture(e.pointerId); });
@@ -2237,7 +2344,7 @@
       ensureAudio();
       playBgm(desiredBgmKey());
       sfx('power');
-    } else pauseBgm();
+    } else { pauseBgm(); pauseSampledSfx(); }
   });
   pauseButton.addEventListener('click', togglePause);
   specialButton.addEventListener('click', useSpecial);
