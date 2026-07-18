@@ -40,6 +40,7 @@
   // into stage 1 instead of restarting from the top when the run begins.
   const neonArcadeRush = new Audio('assets/bgm/Neon Arcade Rush.mp3');
   const bgmTracks = {
+    title: new Audio('assets/bgm/Neon Pink Dreams.mp3'),
     opening: neonArcadeRush,
     stage0: neonArcadeRush,
     stage1: new Audio('assets/bgm/Neon Arena.mp3'),
@@ -50,7 +51,7 @@
     bossBattle: new Audio('assets/bgm/Neon Bullet Heaven.mp3'),
     finalBoss: new Audio('assets/bgm/Red Planet Showdown.mp3')
   };
-  const bgmVolumes = { opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32 };
+  const bgmVolumes = { title: .3, opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32 };
   Object.entries(bgmTracks).forEach(([key, track]) => { track.loop = true; track.preload = 'auto'; track.volume = bgmVolumes[key]; });
   const sampledSfx = {
     shoot: { src: 'assets/sfx/player-shot.mp3', volume: .2, pool: 7, max: .42 },
@@ -366,9 +367,9 @@
     menuStep = 'howto';
     titleScreen.classList.remove('is-visible');
     startScreen.classList.add('is-visible');
-    // First user gesture: start the title theme here so it runs continuously
-    // through how-to -> opening -> stage 1 (all the same track).
-    ensureAudio(); playBgm('opening'); sfx('power');
+    // First user gesture: start the title theme here. It carries through the
+    // how-to and opening screens, then crossfades to the stage music on launch.
+    ensureAudio(); playBgm('title'); sfx('power');
   }
 
   function showTitle() {
@@ -387,7 +388,7 @@
     void openingScreen.offsetWidth;
     openingScreen.classList.add('is-visible');
     pauseButton.classList.remove('is-visible'); specialButton.classList.remove('is-visible');
-    playBgm('opening'); ensureAudio(); sfx('power');
+    playBgm('title'); ensureAudio(); sfx('power');
     openingTimeout = setTimeout(resetGame, 9000);
   }
 
@@ -431,7 +432,7 @@
   }
 
   function desiredBgmKey() {
-    if (state === 'opening' || state === 'menu') return 'opening';
+    if (state === 'opening' || state === 'menu') return 'title';
     if (bossState === 'midboss-active' || bossState === 'midboss-warning') return 'midBoss';
     if (bossState === 'active') return stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle';
     return `stage${stageIndex}`;
@@ -4043,6 +4044,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
   Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, stageTime, phaseId: activePhase.id, enemies: enemies.length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+
+  // Menu theme: try to start it immediately (works when audio is already
+  // unlocked, e.g. after returning from a run), and arm a one-shot gesture so a
+  // fresh load's first interaction kicks it off, since browsers block autoplay.
+  playBgm('title');
+  const startMenuBgm = () => { if (soundOn && (state === 'menu' || state === 'opening')) { ensureAudio(); playBgm('title'); } };
+  ['pointerdown', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, startMenuBgm, { once: true }));
 
   resize(); initBackdrop(); setupStage(); requestAnimationFrame(frame);
 })();
