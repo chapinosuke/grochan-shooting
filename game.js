@@ -12,6 +12,7 @@
   const endingButton = document.querySelector('#endingButton');
   const staffRollScreen = document.querySelector('#staffRollScreen');
   const staffRollTrack = document.querySelector('#staffRollTrack');
+  const staffRollFin = document.querySelector('#staffRollFin');
   const storyScreen = document.querySelector('#storyScreen');
   const storyImage = document.querySelector('#storyImage');
   const storyText = document.querySelector('#storyText');
@@ -60,10 +61,13 @@
     midBoss: new Audio('assets/bgm/The Crimson Labyrinth.mp3'),
     bossBattle: new Audio('assets/bgm/Neon Bullet Heaven.mp3'),
     finalBoss: new Audio('assets/bgm/Red Planet Showdown.mp3'),
-    gameOver: new Audio('assets/bgm/Game Over, Again.mp3')
+    gameOver: new Audio('assets/bgm/Game Over, Again.mp3'),
+    ending: new Audio('assets/bgm/静かに睨め.mp3')
   };
-  const bgmVolumes = { title: .3, opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32, gameOver: .28 };
-  Object.entries(bgmTracks).forEach(([key, track]) => { track.loop = true; track.preload = 'auto'; track.volume = bgmVolumes[key]; });
+  const bgmVolumes = { title: .3, opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32, gameOver: .28, ending: .3 };
+  // The ending theme plays through once and stops (the staff roll holds on
+  // FIN afterward instead of looping the credits), unlike every other track.
+  Object.entries(bgmTracks).forEach(([key, track]) => { track.loop = key !== 'ending'; track.preload = 'auto'; track.volume = bgmVolumes[key]; });
   const sampledSfx = {
     shoot: { src: 'assets/sfx/player-shot.mp3', volume: .2, pool: 7, max: .42 },
     hit: { src: 'assets/sfx/hit.mp3', volume: .24, pool: 5, max: .5 },
@@ -682,8 +686,27 @@
     if (previousKey === key || previous === next) {
       currentBgmKey = key;
       if (restart && previousKey === key) next.currentTime = 0;
-      next.volume = targetVolume;
-      if (soundOn) next.play().catch(() => { /* starts on the next user gesture */ });
+      if (!soundOn) { next.volume = targetVolume; return; }
+      // next.paused means this track isn't actually sounding yet — either a
+      // genuine first start, or an autoplay block that only just got lifted
+      // by a user gesture (e.g. the ?ending/?staffroll test modes, or a mute
+      // toggle). Ease it in instead of snapping straight to full volume.
+      if (next.paused) {
+        const token = ++bgmFadeToken;
+        next.volume = 0;
+        next.play().catch(() => { /* starts on the next user gesture */ });
+        const started = performance.now(), duration = 900;
+        const fadeIn = now => {
+          if (token !== bgmFadeToken) return;
+          const t = clamp((now - started) / duration, 0, 1);
+          next.volume = targetVolume * t;
+          if (t < 1) requestAnimationFrame(fadeIn);
+        };
+        requestAnimationFrame(fadeIn);
+      } else {
+        next.volume = targetVolume;
+        next.play().catch(() => { /* starts on the next user gesture */ });
+      }
       return;
     }
     const token = ++bgmFadeToken;
@@ -712,7 +735,7 @@
 
   function desiredBgmKey() {
     if (state === 'opening' || state === 'menu') return 'title';
-    if (state === 'over' && gameShell.classList.contains('is-game-over')) return 'gameOver';
+    if (state === 'over') return gameShell.classList.contains('is-game-over') ? 'gameOver' : 'ending';
     if (bossState === 'midboss-active' || bossState === 'midboss-warning') return 'midBoss';
     if (bossState === 'active') return stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle';
     return `stage${stageIndex}`;
@@ -1808,20 +1831,23 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     newRecord.classList.toggle('is-hidden', !record);
     // On a full clear, roll the ending slides then the cameo screen; the RESULT
     // card follows once the player continues. A game over shows its own slide
-    // before RESULT.
-    if (cleared) setTimeout(() => showStory(STORY.ending, () => endingScreen.classList.add('is-visible')), 450);
+    // before RESULT. The ending theme starts exactly when the cameo screen
+    // appears, not underneath the preceding cutscene slides.
+    if (cleared) setTimeout(() => showStory(STORY.ending, () => { endingScreen.classList.add('is-visible'); playBgm('ending', true); }), 450);
     else setTimeout(() => showStory(STORY.gameover, () => gameOverScreen.classList.add('is-visible')), 450);
   }
 
   // On a full clear, the ending cameo hands off to a scrolling staff roll
   // (creditting the AI tools behind the game, aliased to their in-game
-  // counterparts) before the RESULT card. It finishes on its own once the
-  // scroll clears the top, or instantly on a click / ENTER skip.
+  // counterparts). The scroll runs once, then holds on a static FIN card —
+  // it does NOT auto-advance to RESULT; a click / ENTER moves on at any time,
+  // whether the roll is still scrolling or already resting on FIN.
   function showStaffRoll() {
     endingScreen.classList.remove('is-visible');
+    staffRollFin.classList.remove('is-shown');
     staffRollScreen.classList.add('is-visible', 'is-rolling');
-    playBgm('title');
   }
+  function landOnFin() { staffRollFin.classList.add('is-shown'); }
   function finishStaffRoll() {
     if (!staffRollScreen.classList.contains('is-visible')) return;
     staffRollScreen.classList.remove('is-visible', 'is-rolling');
@@ -5252,7 +5278,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   launchButton.addEventListener('click', resetGame);
   endingButton.addEventListener('click', showStaffRoll);
   staffRollScreen.addEventListener('click', finishStaffRoll);
-  staffRollTrack.addEventListener('animationend', finishStaffRoll);
+  staffRollTrack.addEventListener('animationend', landOnFin);
   storyScreen.addEventListener('click', advanceStory);
   retryButton.addEventListener('click', resetGame);
   const difficultyOrder = ['easy', 'normal', 'hard'];
@@ -5294,8 +5320,12 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // Menu theme: try to start it immediately (works when audio is already
   // unlocked, e.g. after returning from a run), and arm a one-shot gesture so a
   // fresh load's first interaction kicks it off, since browsers block autoplay.
+  // Resolves via desiredBgmKey() rather than a hardcoded 'title' so it also
+  // recovers correctly if the very first gesture lands after the game has
+  // already moved on (e.g. the ?ending / ?staffroll direct-test modes, which
+  // jump straight past the title screen with no earlier click to unlock audio).
   playBgm('title');
-  const startMenuBgm = () => { if (soundOn && (state === 'menu' || state === 'opening')) { ensureAudio(); playBgm('title'); } };
+  const startMenuBgm = () => { if (soundOn) { ensureAudio(); playBgm(desiredBgmKey()); } };
   ['pointerdown', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, startMenuBgm, { once: true }));
 
   resize(); initBackdrop(); setupStage(); requestAnimationFrame(frame);
@@ -5326,15 +5356,30 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }, 120);
     } else if (q.get('staffroll')) {
       // Jumps straight past the ending cutscene + cameo card into the staff
-      // roll itself, for a one-click check of just the credits. finishGame()
-      // schedules the ending cutscene 450ms out, so wait for that to actually
-      // start before cancelling it in favor of the roll.
+      // roll itself, for a one-click check of just the credits. resetGame()
+      // kicks off its own title->stage0 crossfade (~900ms); finishGame() is
+      // held back until that settles so its ending-BGM crossfade has a clean
+      // "previous" track to fade from instead of colliding mid-fade. It then
+      // cancels the (real, click-through) cutscene before it can display and
+      // replicates what its done-callback would have done — show the cameo
+      // beat and start the ending theme — before jumping into the roll.
       setTimeout(() => {
-        resetGame(); stageIndex = stages.length - 1; finishGame(true);
-        setTimeout(() => { cancelStory(); showStaffRoll(); }, 600);
+        resetGame(); stageIndex = stages.length - 1;
+        setTimeout(() => {
+          finishGame(true);
+          setTimeout(() => { cancelStory(); playBgm('ending', true); showStaffRoll(); }, 600);
+        }, 950);
       }, 120);
     } else if (q.get('ending')) {
-      setTimeout(() => { resetGame(); stageIndex = stages.length - 1; finishGame(true); }, 120);
+      // Same idea as ?staffroll but stops at the cameo card instead of
+      // continuing into the roll.
+      setTimeout(() => {
+        resetGame(); stageIndex = stages.length - 1;
+        setTimeout(() => {
+          finishGame(true);
+          setTimeout(() => { cancelStory(); endingScreen.classList.add('is-visible'); playBgm('ending', true); }, 600);
+        }, 950);
+      }, 120);
     }
   }
 })();
