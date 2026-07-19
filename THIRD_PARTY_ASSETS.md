@@ -39,3 +39,33 @@
 | `assets/voice/swordwoman-death1.mp3` | きゃああーー！ | ゲームオーバー |
 
 ※ 上記以外の女剣士ボイス（attack/guard/faint/lose/greeting/special3）も `assets/voice/` に取得済み（未使用・差し替え用）。
+
+## ボス別ボイス
+
+効果音ラボ「ゲームキャラクターボイス」を2026-07-19に取得。フリー・商用利用無料・クレジット表記不要。
+`assets/voice/boss/<char>-<line>.mp3` に格納し、`game.js` の `bossVoiceCfg` で各ボスにキャラ＋playbackRateを割当（少数音源を音色調整して5体に差別化）。
+
+- 使用ページ: https://soundeffect-lab.info/sound/voice/game.html
+
+| ボス | 元キャラ（音源） | playbackRate |
+| --- | --- | --- |
+| MASQUERADE（仮面の道化） | 盗賊の少年（thief-boy） | 1.05 |
+| SERVER GOLEM（鋼鉄巨人） | 男剣士（swordman） | 0.72 |
+| INFERNO DJINN（炎上魔人） | ネクロマンサー老婆（necromancer-oldwoman） | 0.88 |
+| BOT GENERAL（ロボ将軍） | 冷静な魔術師（wizard） | 0.85 |
+| QUEEN OF HEARTBREAK（女王） | 高飛車な魔女（witch） | 1.0 |
+
+各キャラの greeting/start/attack/damage/special/death/lose/win 系を取得（登場/フェーズ2/攻撃/被弾/撃破で使用）。
+
+## 重厚SFX（ボス戦）
+
+効果音ラボ「戦闘」を2026-07-19に取得。フリー・商用利用無料・クレジット表記不要。
+
+- 使用ページ: https://soundeffect-lab.info/sound/battle/
+
+| ゲーム内ファイル | 元素材 | 再生場面 |
+| --- | --- | --- |
+| `assets/sfx/boss-roar.mp3` | ドラゴンの鳴き声1 | ボス登場 |
+| `assets/sfx/boss-quake.mp3` | 地響き1 | ボス登場 |
+| `assets/sfx/boss-superhit.mp3` | 超必殺技がヒット1 | フェーズ2突入（HP50%） |
+| `assets/sfx/boss-collapse.mp3` | 建物の崩壊1 | ボス撃破 |

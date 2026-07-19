@@ -470,7 +470,7 @@
   const GROUND_Y = 500;
   const CHIMNEYS = [[120, 60, 210], [196, 44, 160], [880, 70, 230], [1010, 50, 180], [430, 40, 140]];
   const REFINERY_TANKS = [[240, 46, 250], [730, 38, 210], [1080, 52, 268]];
-  const player = { x: 170, y: 360, w: 118, h: 102, vx: 0, vy: 0, fire: 0, missileFire: 0, inv: 0, hit: 0, frame: 0, grounded: false, power: 1, spread: 1, speed: 1, takeoff: 0, facing: 1 };
+  const player = { x: 170, y: 360, w: 118, h: 102, vx: 0, vy: 0, fire: 0, missileFire: 0, inv: 0, hit: 0, frame: 0, walkPhase: 0, walkStep: 0, grounded: false, power: 1, spread: 1, speed: 1, takeoff: 0, facing: 1 };
   let bullets = [];
   let enemyBullets = [];
   let enemies = [];
@@ -609,7 +609,7 @@
     bullets = []; enemyBullets = []; enemies = []; particles = []; pickups = []; shockwaves = [];
     setupStage();
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
-    player.fire = 0; player.missileFire = .8; player.inv = 1.2; player.hit = 0; player.frame = 0; player.grounded = false; player.takeoff = 0; player.power = 1; player.spread = 1; player.speed = 1; player.facing = 1;
+    player.fire = 0; player.missileFire = .8; player.inv = 1.2; player.hit = 0; player.frame = 0; player.walkPhase = 0; player.walkStep = 0; player.grounded = false; player.takeoff = 0; player.power = 1; player.spread = 1; player.speed = 1; player.facing = 1;
     state = 'playing'; paused = false;
     cancelStory();
     titleScreen.classList.remove('is-visible');
@@ -1411,8 +1411,18 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // retreat-and-fire pose. The backward flip only applies when she isn't shooting.
     if (firing) player.facing = 1;
     const canShoot = firing && !['transition', 'final', 'warning', 'midboss-warning'].includes(bossState);
-    const groundAnim = player.grounded && (Math.abs(player.vx) > 18 || firing);
-    player.frame += dt * (player.grounded ? (groundAnim ? 11 : 0) : 10);
+    // Drive the gait by distance travelled, not by a fixed clock. This keeps the
+    // boots planted instead of skating at low speed, and standing fire stays idle.
+    const walking = player.grounded && Math.abs(player.vx) > 24;
+    if (walking) {
+      player.walkPhase += Math.abs(player.vx) * dt / 36;
+      const nextStep = Math.floor(player.walkPhase / 2);
+      if (nextStep !== player.walkStep) {
+        player.walkStep = nextStep;
+        burst(player.x + (player.vx > 0 ? 38 : 80), GROUND_Y + 153, '#8ffcff', 3, 48);
+      }
+    }
+    player.frame += dt * (player.grounded ? 8 : 10);
     player.fire -= dt; player.missileFire -= dt;
     if (canShoot && player.fire <= 0) {
       shoot();
@@ -2073,15 +2083,30 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.lineTo(VW + 80, deckY + 38); ctx.lineTo(-80, deckY + 46); ctx.closePath(); ctx.fill();
       ctx.strokeStyle = hexA(stage.accent, .72); ctx.lineWidth = 3;
       ctx.beginPath(); ctx.moveTo(-80, deckY); ctx.lineTo(VW + 80, deckY - 4); ctx.stroke();
-      // Extruded bridge towers.
+      // The main suspension cable spans the whole screen, with hangers reaching
+      // the deck. Its broad silhouette remains readable even behind a huge boss.
+      const cableY = x => {
+        if (x < 318) return 330 + Math.pow((318 - x) / 318, 2) * 122;
+        if (x > 956) return 330 + Math.pow((x - 956) / 324, 2) * 122;
+        return 330 + (1 - Math.pow((x - 637) / 319, 2)) * 132;
+      };
+      ctx.save(); ctx.shadowColor = stage.accent; ctx.shadowBlur = 12;
+      ctx.strokeStyle = hexA(stage.accent, .78); ctx.lineWidth = 5;
+      ctx.beginPath();
+      for (let x = -40; x <= VW + 40; x += 16) x === -40 ? ctx.moveTo(x, cableY(x)) : ctx.lineTo(x, cableY(x));
+      ctx.stroke(); ctx.shadowBlur = 0; ctx.lineWidth = 2; ctx.globalAlpha = .62;
+      for (let x = 18; x < VW; x += 64) {
+        ctx.beginPath(); ctx.moveTo(x, cableY(x)); ctx.lineTo(x, deckY); ctx.stroke();
+      }
+      ctx.restore();
+      // Extruded double-leg bridge towers with luminous crossbeams.
       for (const tx of [318, 956]) {
-        drawVolumeBox(tx - 18, 360, 36, 190, 16, '#0a2a50', '#041327', '#31709b', .88, hexA(stage.accent, .6));
-        drawVolumeBox(tx - 52, 384, 104, 18, 13, '#123d65', '#06192f', '#4f91b4', .84, stage.accent);
-        ctx.strokeStyle = hexA(stage.accent, .45); ctx.lineWidth = 2;
-        for (let i = 0; i < 7; i++) {
-          const ex = tx + (i - 3) * 94;
-          ctx.beginPath(); ctx.moveTo(tx, 366); ctx.quadraticCurveTo((tx + ex) / 2, 430 + Math.abs(i - 3) * 9, ex, deckY); ctx.stroke();
-        }
+        drawVolumeBox(tx - 43, 326, 22, 224, 14, '#0a2a50', '#041327', '#31709b', .92, hexA(stage.accent, .65));
+        drawVolumeBox(tx + 21, 326, 22, 224, 14, '#0a2a50', '#041327', '#31709b', .92, hexA(stage.accent, .65));
+        drawVolumeBox(tx - 52, 350, 104, 20, 13, '#123d65', '#06192f', '#4f91b4', .9, stage.accent);
+        drawVolumeBox(tx - 52, 418, 104, 16, 11, '#102f55', '#06192f', '#4386aa', .86, hexA(stage.accent, .8));
+        ctx.save(); ctx.globalAlpha = .42; ctx.fillStyle = stage.accent;
+        ctx.fillRect(tx - 38, 338, 4, 202); ctx.fillRect(tx + 28, 338, 4, 202); ctx.restore();
       }
       // Deck lane streaks shrink toward the centre.
       ctx.fillStyle = 'rgba(255,255,255,.45)';
@@ -2972,6 +2997,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       for (const c of clouds) drawCloud(c, '#eaf6ff', .16);
     });
     bgLayer(.32, () => {
+      drawAquaCoastline(stage);
       // Second, dimmer island row drifting far behind the main pair.
       const idrift = Math.sin(elapsed * .05) * 8;
       ctx.save(); ctx.globalAlpha = .28; ctx.fillStyle = stage.far;
@@ -2991,6 +3017,44 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawOcean(stage);
     for (const p of bgProps) if (p.kind === 'fish') drawFish(p, stage);
     drawHighway(stage);
+  }
+
+  // Dense Tokyo-bay silhouette: lit towers, a rotating ferris wheel and port
+  // cranes give the open water a recognizable destination instead of empty sky.
+  function drawAquaCoastline(stage) {
+    const base = 552, off = (elapsed * -5) % 86;
+    ctx.save(); ctx.globalAlpha = .62;
+    for (let i = -1; i < 18; i++) {
+      const x = i * 86 + off;
+      const h = 54 + ((i * 47 + 190) % 125 + 125) % 125;
+      const w = 42 + ((i * 19) % 30 + 30) % 30;
+      const g = ctx.createLinearGradient(x, base - h, x, base);
+      g.addColorStop(0, '#174f78'); g.addColorStop(1, '#061b35');
+      ctx.fillStyle = g; ctx.fillRect(x, base - h, w, h);
+      ctx.fillStyle = i % 3 ? hexA(stage.accent, .35) : hexA(stage.accent2, .4);
+      for (let yy = base - h + 14; yy < base - 10; yy += 17) {
+        for (let xx = x + 7; xx < x + w - 5; xx += 13) if ((xx + yy + i) % 4 > 1) ctx.fillRect(xx, yy, 4, 6);
+      }
+      if (i % 5 === 0) { ctx.fillStyle = '#0b2e50'; ctx.fillRect(x + w * .48, base - h - 30, 3, 30); }
+    }
+    // Ferris wheel landmark with moving cabins.
+    const fx = 1040 + off * .16, fy = 440, r = 72, rot = elapsed * .12;
+    ctx.globalAlpha = .42; ctx.strokeStyle = stage.accent; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(fx, fy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 12; i++) {
+      const a = rot + i * Math.PI / 6, px = fx + Math.cos(a) * r, py = fy + Math.sin(a) * r;
+      ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(px, py); ctx.stroke();
+      ctx.fillStyle = i % 2 ? stage.accent2 : '#ffe15a'; ctx.fillRect(px - 4, py - 3, 8, 7);
+    }
+    ctx.fillStyle = '#08213c'; ctx.fillRect(fx - 5, fy, 10, base - fy); ctx.fillRect(fx - 52, base - 8, 104, 8);
+    // Container cranes punctuate the opposite shore.
+    ctx.strokeStyle = hexA(stage.accent2, .7); ctx.lineWidth = 5;
+    for (const gx of [120, 270, 740]) {
+      ctx.beginPath(); ctx.moveTo(gx, base); ctx.lineTo(gx, base - 105); ctx.lineTo(gx + 72, base - 105); ctx.lineTo(gx + 96, base - 70); ctx.stroke();
+      ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(gx + 62, base - 103); ctx.lineTo(gx + 62, base - 44); ctx.stroke(); ctx.lineWidth = 5;
+    }
+    ctx.restore();
   }
 
   function drawLighthouse(p) {
@@ -3074,6 +3138,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       for (let i = 0; i < 4; i++) ctx.fillRect(530, 448 + i * 20, 220, 5 + i * 3);
       ctx.restore();
       for (const c of clouds) drawCloud(c, '#ffd9a0', .13);
+      drawFactoryFlares(stage);
     });
     // Far duplicate tank row sunk into the haze behind the main refinery.
     bgLayer(.32, () => drawRefineryTanks(stage, .55, .38, -150));
@@ -3089,6 +3154,34 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const p of bgProps) if (p.kind === 'hammer') drawHammerPress(p, stage);
     drawConveyor(stage);
     drawMoltenRiver(stage);
+  }
+
+  // Monumental blast furnaces and flare stacks build a readable industrial
+  // horizon behind the smaller tanks and gantries.
+  function drawFactoryFlares(stage) {
+    ctx.save(); ctx.globalAlpha = .52;
+    for (const [x, w, h] of [[70, 118, 300], [1010, 142, 350]]) {
+      const y = 570 - h;
+      const g = ctx.createLinearGradient(x, y, x + w, y);
+      g.addColorStop(0, '#160914'); g.addColorStop(.45, '#6b2934'); g.addColorStop(1, '#10070e');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.moveTo(x + 18, 570); ctx.lineTo(x, y + 70); ctx.lineTo(x + 22, y); ctx.lineTo(x + w - 22, y); ctx.lineTo(x + w, y + 70); ctx.lineTo(x + w - 18, 570); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = hexA(stage.accent, .45); ctx.lineWidth = 3;
+      for (let yy = y + 48; yy < 548; yy += 48) { ctx.beginPath(); ctx.moveTo(x + 7, yy); ctx.lineTo(x + w - 7, yy); ctx.stroke(); }
+      ctx.fillStyle = '#10070e'; ctx.fillRect(x + w * .42, y - 82, w * .16, 88);
+      ctx.fillStyle = hexA(stage.accent2, .5); ctx.fillRect(x + w * .42, y - 78, w * .16, 4);
+    }
+    // Animated gas flares create a hot focal point above the machinery.
+    for (const [x, y, phase] of [[137, 177, 0], [1091, 135, 1.7], [845, 250, 3.1]]) {
+      const flick = 1 + Math.sin(elapsed * 7 + phase) * .18;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .72;
+      const fg = ctx.createRadialGradient(x, y, 2, x, y, 38 * flick);
+      fg.addColorStop(0, '#fff6a0'); fg.addColorStop(.35, '#ff9a32'); fg.addColorStop(1, 'rgba(255,60,20,0)');
+      ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(x, y, 38 * flick, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffd45a'; ctx.beginPath(); ctx.moveTo(x, y - 30 * flick); ctx.quadraticCurveTo(x + 18, y - 4, x, y + 8); ctx.quadraticCurveTo(x - 16, y - 5, x, y - 30 * flick); ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
   }
 
   // Refinery storage tanks: riveted cylindrical silhouettes with glowing
@@ -3228,6 +3321,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const surge = .32 + Math.min(1, lightning * 2.4) * .68;
     bgLayer(.5, () => {
       drawStars(26, '#8fffb0', '#4de3a0');
+      drawCyberVortex(stage, surge);
       drawWireRings(stage, surge);
       for (const c of clouds) drawCloud(c, '#03120f', .55);
     });
@@ -3245,6 +3339,31 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawHoloGrid(stage);
     drawStormGround(stage);
     drawLightningBolt(stage);
+  }
+
+  // A giant data cyclone provides a clear focal silhouette. Broken arcs and
+  // orbiting packets react to lightning without washing out the play field.
+  function drawCyberVortex(stage, surge) {
+    const cx = 640, cy = 292;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 7; i++) {
+      const r = 54 + i * 34, squash = .38 + i * .035;
+      ctx.globalAlpha = (.055 + surge * .045) * (1 - i * .06);
+      ctx.strokeStyle = i % 2 ? stage.accent2 : stage.accent; ctx.lineWidth = 2 + (i % 3);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + i * 12, r, r * squash, elapsed * (.045 + i * .006), .18 + i * .32, Math.PI * 1.45 + i * .28);
+      ctx.stroke();
+    }
+    for (let i = 0; i < 22; i++) {
+      const a = elapsed * (.15 + (i % 4) * .025) + i * 2.17;
+      const r = 65 + (i * 37) % 215, x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r * .42 + (i % 5) * 8;
+      ctx.globalAlpha = .12 + surge * .16; ctx.fillStyle = i % 3 ? stage.accent : '#d8fff0';
+      ctx.fillRect(x, y, 4 + i % 5, 4 + i % 5);
+    }
+    const core = ctx.createRadialGradient(cx, cy, 3, cx, cy, 92);
+    core.addColorStop(0, hexA('#eaffff', .25 + surge * .2)); core.addColorStop(.35, hexA(stage.accent, .12)); core.addColorStop(1, 'rgba(40,255,180,0)');
+    ctx.globalAlpha = .75; ctx.fillStyle = core; ctx.beginPath(); ctx.arc(cx, cy, 92, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 
   // Black obsidian data monoliths: tapered slabs with a glowing circuit seam and
@@ -3364,6 +3483,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   function drawPalaceBackdrop(stage) {
     bgLayer(.5, () => {
+      drawRoseWindow(stage);
       ctx.save(); ctx.shadowColor = stage.accent2; ctx.shadowBlur = 42; ctx.fillStyle = '#ff6fb5';
       heartPath(980, 150, 56); ctx.fill(); ctx.restore();
       drawStars(70, '#ffe15a', '#ff9ccf');
@@ -3381,6 +3501,34 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     bgLayer(.15, () => drawColonnade());
     drawPalaceFloor(stage);
     drawGroundPlane(stage, { horizonY: 652, bottom: 716, color: '#ff9ccf', alpha: .12, speed: 150, gap: 128 });
+  }
+
+  // Monumental stained-glass rose window and hanging crowns make the final
+  // stage feel like a throne room rather than another abstract neon tunnel.
+  function drawRoseWindow(stage) {
+    const cx = 640, cy = 300, r = 164;
+    ctx.save(); ctx.globalAlpha = .56; ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 5;
+    ctx.shadowColor = stage.accent2; ctx.shadowBlur = 18;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 16; i++) {
+      const a = i * Math.PI / 8;
+      ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * 38, cy + Math.sin(a) * 38); ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); ctx.stroke();
+      ctx.fillStyle = i % 2 ? hexA(stage.accent2, .16) : 'rgba(255,225,90,.1)';
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r - 8, a, a + Math.PI / 8); ctx.closePath(); ctx.fill();
+    }
+    ctx.lineWidth = 4;
+    for (const rr of [42, 92, 132]) { ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.fillStyle = '#ff5a9d'; heartPath(cx, cy + 5, 38); ctx.fill();
+    ctx.restore();
+    ctx.save(); ctx.globalAlpha = .46; ctx.strokeStyle = '#8b4770'; ctx.lineWidth = 4;
+    for (const x of [205, 1075]) {
+      ctx.beginPath(); ctx.moveTo(x, -20); ctx.lineTo(x, 168); ctx.stroke();
+      ctx.fillStyle = '#36102c'; ctx.beginPath(); ctx.moveTo(x - 42, 168); ctx.lineTo(x + 42, 168); ctx.lineTo(x + 30, 205); ctx.lineTo(x - 30, 205); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#ffe15a'; ctx.stroke();
+      for (const ox of [-24, 0, 24]) { ctx.fillStyle = '#ff9ccf'; ctx.beginPath(); ctx.arc(x + ox, 202, 7, 0, Math.PI * 2); ctx.fill(); }
+    }
+    ctx.restore();
   }
 
   function drawPalaceTowers(stage) {
@@ -3623,14 +3771,25 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // Jump / takeoff cell from the sheet.
       ctx.drawImage(jumpFrame, player.x - 10, player.y - 26 + bob, 128, 175);
     } else if (player.grounded && groundFrames.length) {
-      // Ground: she always holds the gun now — idle frame when still, walk cycle when moving
-      // or firing. Cells share the hurt strip's geometry, so sizing stays consistent.
-      const firingNow = keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire;
-      const moving = Math.abs(player.vx) > 18 || firingNow;
-      const frame = moving
-        ? groundFrames[1 + (Math.floor(Math.abs(player.frame)) % 4)]
+      // Ground: distance-synchronised frames plus a small body lift make each
+      // planted step read clearly. Shooting alone does not fake a walk cycle.
+      const walking = Math.abs(player.vx) > 24;
+      const walkLift = walking ? Math.abs(Math.sin(player.walkPhase * Math.PI / 2)) * 3 : 0;
+      const frame = walking
+        ? groundFrames[1 + (Math.floor(player.walkPhase) % 4)]
         : groundFrames[0];
-      ctx.drawImage(frame, player.x - 30, player.y - 24, 177, 183);
+      if (walking && Math.abs(player.vx) > 110) {
+        const dir = Math.sign(player.vx);
+        ctx.save();
+        ctx.globalAlpha *= .35; ctx.strokeStyle = '#8ffcff'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+        for (let i = 0; i < 2; i++) {
+          const sx = player.x + 55 - dir * (48 + i * 16);
+          const sy = player.y + 137 + i * 10;
+          ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx - dir * (18 + i * 8), sy); ctx.stroke();
+        }
+        ctx.restore();
+      }
+      ctx.drawImage(frame, player.x - 30, player.y - 24 - walkLift, 177, 183);
     } else if (spriteFrames.length) {
       const frame = spriteFrames[Math.floor(player.frame) % spriteFrames.length];
       ctx.drawImage(frame, player.x - 13, player.y - 22 + bob, 132, 167);
@@ -4968,21 +5127,25 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   resize(); initBackdrop(); setupStage(); requestAnimationFrame(frame);
 
-  // --- TEMPORARY test mode (boss tuning): open index.html?boss=N or ?mid=N
-  // (N = 1..5) to boot straight to that stage a moment before the boss /
-  // mid-boss warning, with trash spawns held back. Remove when tuning is done.
+  // --- Test modes: ?stage=N starts at the beginning of a stage; ?boss=N and
+  // ?mid=N start just before that encounter with normal trash spawns held back.
+  // N is 1..5. If multiple modes are present, boss > mid > stage takes priority.
   {
     const q = new URLSearchParams(location.search);
     const bossN = parseInt(q.get('boss'), 10);
     const midN = parseInt(q.get('mid'), 10);
-    const n = bossN || midN;
+    const directStageN = parseInt(q.get('stage'), 10);
+    const mode = bossN ? 'boss' : midN ? 'mid' : directStageN ? 'stage' : null;
+    const n = bossN || midN || directStageN;
     if (n >= 1 && n <= stages.length) {
       setTimeout(() => {
         resetGame();
-        stageIndex = n - 1; stageBanner = 0; bossState = 'waiting';
-        midBossDone = !!bossN; spawnTimer = 999; pickupTimer = 999;
+        stageIndex = n - 1; stageBanner = mode === 'stage' ? 3 : 0; bossState = 'waiting';
+        midBossDone = mode === 'boss';
+        spawnTimer = mode === 'stage' ? .7 : 999;
+        pickupTimer = mode === 'stage' ? 6 : 999;
         stageResult = null; setupStage(); musicStep = 0; musicClock = 0;
-        stageTime = (bossN ? timelineTotal() : midbossStart()) - .5;
+        stageTime = mode === 'boss' ? timelineTotal() - .5 : mode === 'mid' ? midbossStart() - .5 : 0;
         enemies = []; enemyBullets = [];
         playBgm(`stage${stageIndex}`, true);
       }, 120);
