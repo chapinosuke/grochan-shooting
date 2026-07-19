@@ -1973,11 +1973,27 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       heartPath(cx + side * 252, ly + 46, 17 * pulse); ctx.fill();
       ctx.restore();
     }
-    // Single start prompt for the title screen, blinking under the logo.
-    ctx.globalAlpha = .45 + .55 * Math.abs(Math.sin(t * 2.4));
-    ctx.fillStyle = '#fff'; ctx.font = '10px "Press Start 2P", monospace';
-    ctx.fillText('クリック / ENTER でスタート', cx, ly + 96);
-    ctx.globalAlpha = 1; ctx.textAlign = 'left';
+    // Single start prompt for the title screen: drawn as an actual button
+    // (matches .main-button's yellow-fill + hard pink drop-shadow look) so it
+    // reads as clickable rather than just decorative blinking text.
+    ctx.font = '12px "Press Start 2P", monospace';
+    const label = 'クリック / ENTER でスタート';
+    const labelW = ctx.measureText(label).width;
+    const padX = 22, padY = 15, btnW = labelW + padX * 2, btnH = padY * 2 + 12;
+    const promptCx = cx, promptCy = ly + 104;
+    const pulse = 1 + Math.sin(t * 2.4) * .035;
+    ctx.save();
+    ctx.translate(promptCx, promptCy); ctx.scale(pulse, pulse); ctx.translate(-promptCx, -promptCy);
+    const btnX = promptCx - btnW / 2, btnY = promptCy - btnH / 2;
+    ctx.fillStyle = '#ff3e9d';
+    ctx.fillRect(btnX + 5, btnY + 5, btnW, btnH);
+    ctx.fillStyle = '#ffe15a';
+    ctx.fillRect(btnX, btnY, btnW, btnH);
+    ctx.fillStyle = '#1c0a30';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, promptCx, promptCy + 1);
+    ctx.restore();
+    ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
     ctx.restore();
   }
 
