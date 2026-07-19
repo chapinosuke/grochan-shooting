@@ -109,6 +109,17 @@ canvas {
 .mission-card strong { color: white; font: 15px "Press Start 2P", monospace; }
 .mission-card small { color: #bdb5e0; font-size: 14px; }
 .opening-skip { margin: 14px 0 0; color: #837aa7; font: 7px "Press Start 2P", monospace; letter-spacing: .12em; }
+.ending-cameo {
+  display: flex; align-items: center; gap: 15px; margin: 4px 0 22px; padding: 13px 20px;
+  max-width: min(560px, 88vw);
+  border: 2px solid rgba(49,232,255,.5); border-radius: 14px;
+  background: rgba(10,7,30,.55); box-shadow: 4px 4px 0 rgba(255,62,157,.28);
+}
+.cameo-face { font-size: 40px; line-height: 1; white-space: nowrap; filter: drop-shadow(0 0 8px rgba(49,232,255,.5)); }
+.cameo-body { text-align: left; }
+.cameo-line { margin: 0 0 5px; color: #fff; font-size: clamp(14px, 1.7vw, 19px); letter-spacing: .04em; }
+.cameo-name { color: var(--cyan); font: 8px "Press Start 2P", monospace; letter-spacing: .12em; }
+@media (max-width: 640px) { .cameo-face { font-size: 30px; } .cameo-line { font-size: 13px; } }
 .opening-line { opacity: 0; transform: translateY(14px); }
 .opening-screen.is-visible .opening-line { animation: openingLine .55s ease-out both; }
 .opening-screen.is-visible .opening-line-1 { animation-delay: .25s; }

@@ -6,6 +6,8 @@
   const titleScreen = document.querySelector('#titleScreen');
   const startScreen = document.querySelector('#startScreen');
   const openingScreen = document.querySelector('#openingScreen');
+  const endingScreen = document.querySelector('#endingScreen');
+  const endingButton = document.querySelector('#endingButton');
   const gameOverScreen = document.querySelector('#gameOverScreen');
   const pauseLabel = document.querySelector('#pauseLabel');
   const startButton = document.querySelector('#startButton');
@@ -372,6 +374,7 @@
     titleScreen.classList.remove('is-visible');
     startScreen.classList.remove('is-visible');
     openingScreen.classList.remove('is-visible');
+    endingScreen.classList.remove('is-visible');
     gameOverScreen.classList.remove('is-visible');
     shopScreen.classList.remove('is-visible');
     pauseLabel.classList.remove('is-visible');
@@ -1489,7 +1492,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     finalScore.textContent = yen(score);
     menuHighScore.textContent = yen(highScore);
     newRecord.classList.toggle('is-hidden', !record);
-    setTimeout(() => gameOverScreen.classList.add('is-visible'), 450);
+    // On a full clear, roll the ending (with Elon's cameo) first; the RESULT card
+    // follows once the player continues. A game over jumps straight to RESULT.
+    if (cleared) setTimeout(() => endingScreen.classList.add('is-visible'), 450);
+    else setTimeout(() => gameOverScreen.classList.add('is-visible'), 450);
+  }
+
+  function showResultAfterEnding() {
+    endingScreen.classList.remove('is-visible');
+    gameOverScreen.classList.add('is-visible');
   }
 
   function burst(x, y, color, count, speed) {
@@ -4394,7 +4405,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (e.code === 'KeyX' && !e.repeat) useSpecial();
     if (e.code === 'Enter' && state === 'menu') { if (menuStep === 'title') showHowto(); else showOpening(); }
     else if (e.code === 'Enter' && state === 'opening') resetGame();
-    else if (e.code === 'Enter' && state === 'over') resetGame();
+    else if (e.code === 'Enter' && state === 'over') { if (endingScreen.classList.contains('is-visible')) showResultAfterEnding(); else resetGame(); }
     else if (e.code === 'Enter' && state === 'shop') leaveShop();
     if (e.code === 'Escape' && state === 'menu' && menuStep === 'howto') showTitle();
     if (state === 'menu' && menuStep === 'howto' && !e.repeat) {
@@ -4435,6 +4446,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   startButton.addEventListener('click', showOpening);
   nextStageButton.addEventListener('click', leaveShop);
   launchButton.addEventListener('click', resetGame);
+  endingButton.addEventListener('click', showResultAfterEnding);
   retryButton.addEventListener('click', resetGame);
   const difficultyOrder = ['easy', 'normal', 'hard'];
   function setDifficulty(key) {
