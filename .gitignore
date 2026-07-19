@@ -2,3 +2,4 @@
 node_modules/
 .devtools/*.png
 .devtools/crop-out.png
+tmp/

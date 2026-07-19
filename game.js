@@ -177,35 +177,35 @@
   };
   const stages = [
     {
-      name: 'TOKYO MIDNIGHT', boss: 'HEART BREAKER', midBoss: 'STELLA', theme: 'neon', subtitle: '渋谷スクランブル、眠らない東京の夜',
+      name: 'TOKYO MIDNIGHT', boss: 'MASQUERADE', midBoss: 'HEART BREAKER', theme: 'neon', subtitle: '渋谷スクランブル、眠らない東京の夜',
       sky: ['#120b3e', '#3b1878', '#f044a0'], far: '#28145e', city: '#100b34', accent: '#31e8ff', accent2: '#ff3e9d',
       spawnTable: [['drone', 5], ['bat', 4], ['spinner', 3], ['tank', 2], ['racer', 4], ['seeker', 1]],
       melody: [440, 523.25, 659.25, 523.25, 392, 493.88, 587.33, 493.88, 349.23, 440, 523.25, 659.25, 392, 493.88, 659.25, 783.99],
       bass: [110, 110, 98, 98, 87.31, 87.31, 98, 123.47]
     },
     {
-      name: 'AQUA HIGHWAY', boss: 'DEEP BLUE DIVA', midBoss: 'NAMI', theme: 'aqua', subtitle: '潮風のハイウェイを駆け抜けろ',
+      name: 'AQUA HIGHWAY', boss: 'SERVER GOLEM', midBoss: 'DEEP BLUE DIVA', theme: 'aqua', subtitle: '潮風のハイウェイを駆け抜けろ',
       sky: ['#041b3d', '#075987', '#20c5c9'], far: '#123c68', city: '#071d42', accent: '#65fff2', accent2: '#2f8cff',
       spawnTable: [['bat', 3], ['jelly', 5], ['drone', 2], ['spinner', 3], ['manta', 4], ['racer', 2]],
       melody: [392, 440, 523.25, 587.33, 659.25, 587.33, 523.25, 440, 349.23, 392, 440, 523.25, 587.33, 523.25, 440, 392],
       bass: [98, 98, 87.31, 87.31, 110, 110, 87.31, 73.42]
     },
     {
-      name: 'SUNSET FACTORY', boss: 'BLAZE EMPRESS', midBoss: 'GITTY', theme: 'factory', subtitle: '燃える夕日と鋼鉄の罠',
+      name: 'SUNSET FACTORY', boss: 'INFERNO DJINN', midBoss: 'BLAZE EMPRESS', theme: 'factory', subtitle: '燃える夕日と鋼鉄の罠',
       sky: ['#351036', '#a42f4f', '#ff9f43'], far: '#592141', city: '#28132e', accent: '#ffe15a', accent2: '#ff5a36',
       spawnTable: [['tank', 5], ['turret', 4], ['ember', 5], ['drone', 2], ['walker', 4], ['spinner', 2]],
       melody: [329.63, 329.63, 392, 329.63, 311.13, 329.63, 392, 440, 329.63, 329.63, 392, 493.88, 440, 392, 329.63, 293.66],
       bass: [82.41, 82.41, 82.41, 82.41, 77.78, 77.78, 98, 98]
     },
     {
-      name: 'CYBER STORM', boss: 'VOLT PHANTOM', midBoss: 'ECHO', theme: 'storm', subtitle: '雷鳴とどろく電脳空域',
+      name: 'CYBER STORM', boss: 'BOT GENERAL', midBoss: 'VOLT PHANTOM', theme: 'storm', subtitle: '雷鳴とどろく電脳空域',
       sky: ['#071d24', '#13554b', '#48b849'], far: '#164636', city: '#071f25', accent: '#72ff68', accent2: '#31e8ff',
       spawnTable: [['glitch', 5], ['spinner', 4], ['bat', 2], ['turret', 3], ['seeker', 4], ['racer', 2]],
       melody: [293.66, 349.23, 440, 349.23, 293.66, 369.99, 440, 587.33, 293.66, 349.23, 466.16, 440, 349.23, 293.66, 246.94, 293.66],
       bass: [73.42, 73.42, 87.31, 87.31, 73.42, 73.42, 92.5, 110]
     },
     {
-      name: 'HEART PALACE', boss: 'QUEEN OF HEARTBREAK', midBoss: 'LUNA', theme: 'palace', subtitle: '決戦、ハートの女王の宮殿',
+      name: 'HEART PALACE', boss: 'QUEEN OF HEARTBREAK', midBoss: 'LORD CENSOR', theme: 'palace', subtitle: '決戦、ハートの女王の宮殿',
       sky: ['#25051d', '#72114e', '#d82065'], far: '#4d123d', city: '#21061d', accent: '#ffe15a', accent2: '#ff3e9d',
       spawnTable: [['cupid', 5], ['drone', 2], ['bat', 3], ['spinner', 3], ['tank', 3], ['knight', 4], ['seeker', 2]],
       melody: [261.63, 311.13, 392, 523.25, 466.16, 392, 311.13, 261.63, 233.08, 293.66, 349.23, 466.16, 392, 349.23, 293.66, 261.63],
@@ -250,26 +250,49 @@
   });
   const wardenSprite = new Image();
   wardenSprite.src = 'assets/images/bosses/sprites/warden_side.png';
-  // Battle pose frames (transparent PNGs, facing left): idle / attack / hurt.
-  // Missing files just mean the side-view sprite (then procedural art) is used.
-  const loadPoses = (base) => ['idle', 'attack', 'hurt'].reduce((o, pose) => {
-    const im = new Image();
-    im.src = `assets/images/bosses/poses/${base}_${pose}.png`;
-    o[pose] = im; return o;
-  }, {});
-  const bossPoses = stages.map((_, i) => loadPoses(`stage${i + 1}`));
-  const wardenPoses = loadPoses('warden');
-  // Per-stage mid-bosses: the brainwashed academy students (mid1..mid5).
-  // Until their pose sheets exist, the WARDEN art remains the fallback.
-  const midbossPoses = stages.map((_, i) => loadPoses(`mid${i + 1}`));
-  const activeMidPoses = () => frameReady(midbossPoses[stageIndex].idle) ? midbossPoses[stageIndex] : wardenPoses;
   const frameReady = (im) => im && im.complete && im.naturalWidth > 0;
+  // Battle pose sets (transparent PNGs, facing left): arrays per pose so
+  // multi-frame sets animate (idle sways between 2 frames, attacks cycle 3).
+  // The user-made sheet bosses use {2,3,2}; the generated sets are single-frame.
+  const loadSet = (base, counts) => {
+    const load = (name) => { const im = new Image(); im.src = `assets/images/bosses/poses/${name}.png`; return im; };
+    const set = {};
+    for (const pose of ['idle', 'attack', 'hurt']) {
+      const n = counts[pose];
+      set[pose] = n === 1 ? [load(`${base}_${pose}`)] : Array.from({ length: n }, (_, i) => load(`${base}_${pose}${i + 1}`));
+    }
+    return set;
+  };
+  const GEN_COUNTS = { idle: 1, attack: 1, hurt: 1 }, SHEET_COUNTS = { idle: 2, attack: 3, hurt: 2 };
+  // Stage bosses: the four hand-made SNS villains + the queen finale.
+  const bossSets = [
+    loadSet('masquerade', SHEET_COUNTS),
+    loadSet('server-golem', SHEET_COUNTS),
+    loadSet('inferno-djinn', SHEET_COUNTS),
+    loadSet('bot-general', SHEET_COUNTS),
+    loadSet('stage5', GEN_COUNTS),
+  ];
+  // Mid-bosses: the former stage bosses demoted, plus LORD CENSOR guarding the palace.
+  const midSets = [
+    loadSet('stage1', GEN_COUNTS),
+    loadSet('stage2', GEN_COUNTS),
+    loadSet('stage3', GEN_COUNTS),
+    loadSet('stage4', GEN_COUNTS),
+    loadSet('lord-censor', SHEET_COUNTS),
+  ];
   // hurt wins over attack; attack shows through the telegraph windup too.
-  const pickPose = (poses, e, fallback) => {
-    if (e.hurtT > 0 && frameReady(poses.hurt)) return poses.hurt;
-    if ((e.attackT > 0 || e.tel > 0) && frameReady(poses.attack)) return poses.attack;
-    if (frameReady(poses.idle)) return poses.idle;
-    return frameReady(fallback) ? fallback : null;
+  const readyFrames = (arr) => arr.filter(frameReady);
+  const pickPoseFrame = (set, e) => {
+    if (e.hurtT > 0) {
+      const f = readyFrames(set.hurt);
+      if (f.length) return f[Math.floor(e.t * 5) % f.length];
+    }
+    if (e.attackT > 0 || e.tel > 0) {
+      const f = readyFrames(set.attack);
+      if (f.length) return f[(e.attackIdx || 0) % f.length];
+    }
+    const f = readyFrames(set.idle);
+    return f.length ? f[Math.floor(e.t * 2) % f.length] : null;
   };
   // Shared per-frame pose bookkeeping for bosses and mid-bosses: tick down the
   // pose timers and turn a fresh hit flash (e.hit set by the bullet collision)
@@ -280,6 +303,10 @@
     e.hurtT = Math.max(0, (e.hurtT || 0) - dt);
     e.hurtCd = Math.max(0, (e.hurtCd || 0) - dt);
     if (e.hit > .09 && e.hurtCd <= 0) { e.hurtT = .4; e.hurtCd = 1.3; }
+    // rotate through the attack frames: each newly-triggered attack (the
+    // timer jumping up) advances to the next pose in the set
+    if ((e.attackT || 0) > (e.prevAttackT || 0)) e.attackIdx = ((e.attackIdx || 0) + 1) % 3;
+    e.prevAttackT = e.attackT || 0;
   }
 
   let storySlides = null, storyStep = 0, storyDone = null;
@@ -905,10 +932,10 @@
     // fixed height, so the visual and the collision box stay in sync (tall
     // sprites no longer get an invisible wide hitbox). 460×380 is the
     // procedural-art fallback.
-    const sprite = frameReady(bossPoses[stageIndex].idle) ? bossPoses[stageIndex].idle : bossSprites[stageIndex];
+    const sprite = frameReady(bossSets[stageIndex].idle[0]) ? bossSets[stageIndex].idle[0] : bossSprites[stageIndex];
     let w = 460, h = 380;
     if (sprite && sprite.complete && sprite.naturalWidth) {
-      h = 480; w = Math.round(h * sprite.naturalWidth / sprite.naturalHeight);
+      h = 560; w = Math.round(h * sprite.naturalWidth / sprite.naturalHeight);
     }
     enemies.push({ type: 'boss', x: VW + 380, y: 90, baseY: 90, w, h, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8 });
     bossState = 'active';
@@ -922,10 +949,10 @@
   function spawnMidBoss() {
     const baseHp = difficulties[difficultyKey].midHp;
     const hp = Math.round(baseHp * (1 + stageIndex * .38));
-    const midSprite = frameReady(activeMidPoses().idle) ? activeMidPoses().idle : wardenSprite;
+    const midSprite = frameReady(midSets[stageIndex].idle[0]) ? midSets[stageIndex].idle[0] : wardenSprite;
     let w = 280, h = 230;
     if (midSprite.complete && midSprite.naturalWidth) {
-      h = 300; w = Math.round(h * midSprite.naturalWidth / midSprite.naturalHeight);
+      h = 340; w = Math.round(h * midSprite.naturalWidth / midSprite.naturalHeight);
     }
     enemies.push({ type: 'midboss', x: VW + 240, y: 140, baseY: 140, w, h, hp, maxHp: hp, vx: 0, t: 0, wave: false, points: 6200 + stageIndex * 1200, fire: .55, sp: 2.1, variant: 'standard' });
     bossState = 'midboss-active';
@@ -4062,7 +4089,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const stage = stages[stageIndex], pulse = 6 + Math.sin(e.t * 7) * 4;
     // Generated WARDEN sprite (one design recolored by each stage's glow) in
     // the 158×132 authoring box; procedural art remains the loading fallback.
-    const midSprite = pickPose(activeMidPoses(), e, wardenSprite);
+    const midSprite = pickPoseFrame(midSets[stageIndex], e) || (frameReady(wardenSprite) ? wardenSprite : null);
     if (midSprite) {
       // Hitbox carries the sprite aspect (see spawnMidBoss) → fill the box.
       const hurt = e.hurtT > 0;
@@ -4075,11 +4102,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.shadowColor = hurt ? 'rgba(255,80,80,.95)' : hexA(stage.accent, .9);
       ctx.shadowBlur = hurt ? 26 : 18 + Math.sin(e.t * 7) * 6;
       ctx.imageSmoothingEnabled = false;
-      // Same undistorted-fit math as drawBoss (local box scales non-uniformly).
+      // Same undistorted, size-stable math as drawBoss.
+      const midIdle = frameReady(midSets[stageIndex].idle[0]) ? midSets[stageIndex].idle[0] : midSprite;
+      const px = e.h / midIdle.naturalHeight;
       const kx = e.w / 158, ky = e.h / 132;
-      const sh = Math.min(e.h, e.w * midSprite.naturalHeight / midSprite.naturalWidth);
-      const sw = sh * midSprite.naturalWidth / midSprite.naturalHeight;
-      const dw = sw / kx, dh = sh / ky;
+      const dw = midSprite.naturalWidth * px / kx, dh = midSprite.naturalHeight * px / ky;
       ctx.drawImage(midSprite, (158 - dw) / 2, 132 - dh + Math.sin(e.t * 2.6) * 4, dw, dh);
       ctx.restore();
       return;
@@ -4199,7 +4226,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // into the same 230×190 authoring box the procedural art used, so the
     // caller's hitbox scaling keeps working. Procedural art is the fallback
     // until the image finishes loading.
-    const sprite = pickPose(bossPoses[stageIndex], e, bossSprites[stageIndex]);
+    const sprite = pickPoseFrame(bossSets[stageIndex], e) || (frameReady(bossSprites[stageIndex]) ? bossSprites[stageIndex] : null);
     if (sprite) {
       // The spawn hitbox already carries the art's aspect ratio, so filling the
       // whole 230×190 authoring box draws the sprite undistorted. The main
@@ -4221,14 +4248,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.shadowColor = hurt ? 'rgba(255,80,80,.95)' : hexA(stage.accent2, .85);
       ctx.shadowBlur = hurt ? 34 : 26 + Math.sin(e.t * 5) * 8;
       ctx.imageSmoothingEnabled = false;
-      // Undistorted fit: the local 230×190 box is scaled by (e.w/230, e.h/190),
-      // which is non-uniform when a frame's aspect differs from the hitbox.
-      // Compute the on-screen size that preserves the frame's aspect inside
-      // e.w×e.h, then convert back to local units per axis.
+      // Undistorted, size-stable fit: every frame is drawn at the same
+      // world-pixels-per-source-pixel scale, derived from the idle frame that
+      // sized the hitbox. Pose frames with different canvas sizes (a wide kick,
+      // a crouched hurt) then keep the character the same size instead of
+      // being re-fit — and the local box's non-uniform scale is divided out.
+      const idleF = frameReady(bossSets[stageIndex].idle[0]) ? bossSets[stageIndex].idle[0] : sprite;
+      const px = e.h / idleF.naturalHeight;
       const kx = e.w / 230, ky = e.h / 190;
-      const sh = Math.min(e.h, e.w * sprite.naturalHeight / sprite.naturalWidth);
-      const sw = sh * sprite.naturalWidth / sprite.naturalHeight;
-      const dw = sw / kx, dh = sh / ky;
+      const dw = sprite.naturalWidth * px / kx, dh = sprite.naturalHeight * px / ky;
       ctx.drawImage(sprite, (230 - dw) / 2 + (hurt ? Math.sin(e.t * 52) * 3 : 0), 190 - dh + Math.sin(e.t * 2.2) * 5, dw, dh);
       ctx.restore();
       return;
