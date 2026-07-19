@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#120b2e" />
+    <title>GRO-CHAN SKY BLASTER ✦ SOUNDTRACK</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=DotGothic16&family=Press+Start+2P&display=swap');
+
+      :root { --pink: #ff3e9d; --cyan: #31e8ff; --yellow: #ffe15a; }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0; min-height: 100%;
+        background: #09051c;
+        color: white; font-family: "DotGothic16", monospace;
+        overflow-x: hidden;
+      }
+
+      /* Animated backdrop, built from the same visual language as the game's
+         title screen: a soft moon, a tower silhouette, a drifting neon-lit
+         skyline, diagonal light rays, glow blobs and a slow starfield. */
+      .bg {
+        position: fixed; inset: 0; z-index: 0; overflow: hidden;
+        background: radial-gradient(circle at 30% 0%, #302078, #09051c 65%);
+      }
+      .bg .rays {
+        position: absolute; inset: -20% -30%;
+        background: repeating-linear-gradient(115deg, rgba(255,255,255,.05) 0 2px, transparent 2px 110px);
+        animation: raysPan 46s linear infinite;
+      }
+      @keyframes raysPan { from { transform: translateX(0); } to { transform: translateX(320px); } }
+      .bg .moon {
+        position: absolute; top: 7%; right: 11%; width: 130px; height: 130px; border-radius: 50%;
+        background: radial-gradient(circle at 35% 35%, #fffce0, #ffe9a8 42%, #d8ab5e 78%, transparent 80%);
+        box-shadow: 0 0 90px 22px rgba(255, 230, 150, .22);
+        opacity: .9;
+      }
+      .bg .tower {
+        position: absolute; left: 7%; bottom: 0; width: 70px; height: 42vh;
+        clip-path: polygon(47% 0%, 53% 0%, 100% 100%, 0% 100%);
+        background: linear-gradient(180deg, rgba(255,62,157,.5), rgba(20,10,45,.65) 60%);
+        opacity: .5;
+      }
+      .bg .tower::before {
+        content: ''; position: absolute; inset: 0;
+        background: repeating-linear-gradient(180deg, transparent 0 13%, rgba(255,255,255,.16) 13% calc(13% + 2px));
+      }
+      .bg .glow { position: absolute; border-radius: 50%; filter: blur(60px); opacity: .5; }
+      .bg .glow.a { width: 60vw; height: 60vw; left: -15vw; top: -20vw; background: #ff3e9d; animation: drift1 22s ease-in-out infinite; }
+      .bg .glow.b { width: 50vw; height: 50vw; right: -10vw; top: 10vh; background: #31e8ff; opacity: .3; animation: drift2 26s ease-in-out infinite; }
+      .bg .glow.c { width: 55vw; height: 55vw; left: 20vw; bottom: -25vw; background: #7b3fe4; opacity: .35; animation: drift3 30s ease-in-out infinite; }
+      @keyframes drift1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(6vw,8vh) scale(1.15); } }
+      @keyframes drift2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-8vw,4vh) scale(1.1); } }
+      @keyframes drift3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(5vw,-6vh) scale(1.08); } }
+      .bg .stars {
+        position: absolute; inset: -50% 0 0 0; height: 200%;
+        background-image:
+          radial-gradient(2px 2px at 10% 20%, #fff, transparent),
+          radial-gradient(2px 2px at 80% 10%, #fff, transparent),
+          radial-gradient(1.5px 1.5px at 45% 60%, #fff, transparent),
+          radial-gradient(2px 2px at 65% 80%, #ffe15a, transparent),
+          radial-gradient(1.5px 1.5px at 25% 75%, #31e8ff, transparent),
+          radial-gradient(1.5px 1.5px at 90% 45%, #fff, transparent),
+          radial-gradient(2px 2px at 15% 90%, #fff, transparent),
+          radial-gradient(1.5px 1.5px at 55% 30%, #fff, transparent);
+        background-repeat: repeat; background-size: 340px 340px;
+        opacity: .55; animation: starDrift 60s linear infinite;
+      }
+      @keyframes starDrift { from { transform: translateY(0); } to { transform: translateY(340px); } }
+
+      /* Neon skyline: generated buildings anchored to the bottom, echoing the
+         in-game city backdrop. Each gets a random height/width and a lit
+         window grid tinted pink or cyan. */
+      .bg .skyline { position: absolute; left: 0; right: 0; bottom: 0; height: 38vh; }
+      .bg .building {
+        position: absolute; bottom: 0; background-color: #140c30;
+        border-top: 2px solid var(--accent, rgba(255,255,255,.25));
+        background-image:
+          repeating-linear-gradient(0deg, rgba(255,222,140,.16) 0 3px, transparent 3px 15px),
+          repeating-linear-gradient(90deg, rgba(255,222,140,.12) 0 3px, transparent 3px 15px);
+        transform-origin: center bottom; will-change: transform;
+      }
+
+      .wrap { position: relative; max-width: 760px; margin: 0 auto; padding: 40px 20px 60px; }
+      .eyebrow { color: var(--cyan); font: 10px "Press Start 2P", monospace; letter-spacing: .2em; text-align: center; }
+      h1 {
+        margin: 14px 0 6px; text-align: center; font: 26px "Press Start 2P", monospace;
+        color: white; text-shadow: 4px 4px 0 var(--pink); letter-spacing: .02em;
+      }
+      .sub { text-align: center; color: #aaa1d1; font-size: 14px; margin: 0 0 34px; }
+
+      /* Album jacket: click to play/pause the current track. Pulses with a
+         soft glow while playing, shows a play/pause glyph on hover so it
+         reads as a button (no spin — there's a wordmark on it to keep upright). */
+      .player-panel { display: flex; gap: 24px; align-items: center; margin-bottom: 28px; flex-wrap: wrap; }
+      .jacket-frame { position: relative; width: 220px; height: 220px; flex: none; }
+      .jacket {
+        width: 100%; height: 100%; cursor: pointer; position: relative; overflow: hidden;
+        background-image: url('assets/images/ost_jacket.webp');
+        background-size: cover; background-position: center;
+        box-shadow: 0 0 34px rgba(49, 232, 255, .25), 7px 7px 0 var(--pink);
+        border: 2px solid rgba(255, 255, 255, .25);
+        transition: transform .15s, box-shadow .4s;
+      }
+      .jacket:hover { transform: translate(-2px, -2px); }
+      .jacket:active { transform: translate(1px, 1px); }
+      .jacket.is-playing { animation: jacketPulse 2.4s ease-in-out infinite; }
+      @keyframes jacketPulse {
+        0%, 100% { box-shadow: 0 0 34px rgba(49, 232, 255, .25), 7px 7px 0 var(--pink); }
+        50% { box-shadow: 0 0 52px rgba(49, 232, 255, .5), 7px 7px 0 var(--pink); }
+      }
+      .jacket .glyph {
+        position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+        background: rgba(9, 5, 28, 0); color: white; font-size: 34px; opacity: 0; transition: opacity .15s, background .15s;
+      }
+      .jacket:hover .glyph, .jacket:focus-visible .glyph { opacity: 1; background: rgba(9, 5, 28, .35); }
+
+      .now-playing { flex: 1; min-width: 220px; }
+      .now-playing .label { color: var(--cyan); font: 9px "Press Start 2P", monospace; letter-spacing: .15em; }
+      .now-playing .title { margin: 8px 0 2px; font-size: 19px; color: white; }
+      .now-playing .scene { color: #bdb5e0; font-size: 13px; margin: 0 0 14px; }
+      audio { width: 100%; filter: invert(0); }
+      #visualizer { display: block; width: 100%; height: 46px; margin-top: 10px; }
+
+      .tracklist { position: relative; list-style: none; margin: 0; padding: 0; border: 1px solid #3a3160; background: rgba(9,5,28,.55); }
+      .track {
+        display: flex; align-items: center; gap: 14px;
+        padding: 13px 16px; cursor: pointer;
+        border-bottom: 1px solid #3a3160;
+        transition: background .12s;
+      }
+      .track:last-child { border-bottom: none; }
+      .track:hover { background: rgba(255, 62, 157, .14); }
+      .track.is-active { background: rgba(49, 232, 255, .16); }
+      .track .num { color: var(--yellow); font: 11px "Press Start 2P", monospace; min-width: 22px; }
+      .track .info { flex: 1; min-width: 0; }
+      .track .name { color: white; font-size: 15px; }
+      .track .scene-tag { color: #8d84b8; font-size: 11px; margin-top: 2px; }
+      .track .playmark { color: var(--pink); font-size: 13px; width: 16px; text-align: center; }
+
+      footer { position: relative; margin-top: 30px; text-align: center; }
+      footer p { color: #756c99; font-size: 11px; line-height: 1.8; }
+      .back-link {
+        display: inline-block; margin-top: 6px; color: var(--cyan); text-decoration: none;
+        font: 10px "Press Start 2P", monospace; letter-spacing: .1em; border: 1px solid rgba(49,232,255,.5);
+        padding: 10px 16px;
+      }
+      .back-link:hover { color: white; border-color: white; }
+    </style>
+  </head>
+  <body>
+    <div class="bg">
+      <div class="rays"></div>
+      <div class="moon"></div>
+      <div class="tower"></div>
+      <div class="glow a"></div>
+      <div class="glow b"></div>
+      <div class="glow c"></div>
+      <div class="stars"></div>
+      <div class="skyline" id="skyline"></div>
+    </div>
+
+    <div class="wrap">
+      <div class="eyebrow">NEON KAWAII SHOOTER</div>
+      <h1>SKY BLASTER OST</h1>
+      <p class="sub">「ぐろちゃんスカイブラスター」オリジナルサウンドトラック(全10曲)</p>
+
+      <div class="player-panel">
+        <div class="jacket-frame">
+          <div class="jacket" id="jacket" role="button" tabindex="0" aria-label="再生・一時停止">
+            <div class="glyph" id="jacketGlyph">▶</div>
+          </div>
+        </div>
+        <div class="now-playing">
+          <div class="label">NOW PLAYING</div>
+          <div class="title" id="npTitle">ジャケットをクリックして再生</div>
+          <div class="scene" id="npScene">&nbsp;</div>
+          <audio id="player" controls></audio>
+          <canvas id="visualizer" width="600" height="92"></canvas>
+        </div>
+      </div>
+
+      <ul class="tracklist" id="tracklist"></ul>
+
+      <footer>
+        <p>全曲 Suno で作曲。<br />クリックで再生 / 曲が終わると自動でつぎの曲へ。</p>
+        <a class="back-link" href="index.html">◀ GAMEに戻る</a>
+      </footer>
+    </div>
+
+    <script>
+      const TRACKS = [
+        { file: 'Neon Pink Dreams.mp3', title: 'Neon Pink Dreams', scene: 'タイトル画面' },
+        { file: 'Neon Arcade Rush.mp3', title: 'Neon Arcade Rush', scene: 'オープニング / STAGE1 TOKYO MIDNIGHT' },
+        { file: 'Neon Arena.mp3', title: 'Neon Arena', scene: 'STAGE2 AQUA HIGHWAY' },
+        { file: 'Neon Arena (1).mp3', title: 'Neon Arena (1)', scene: 'STAGE3 SUNSET FACTORY' },
+        { file: 'Neon Demoness.mp3', title: 'Neon Demoness', scene: 'STAGE4 CYBER STORM' },
+        { file: 'Neon Bullet Heaven.mp3', title: 'Neon Bullet Heaven', scene: 'STAGE5 HEART PALACE / 通常ボス戦' },
+        { file: 'The Crimson Labyrinth.mp3', title: 'The Crimson Labyrinth', scene: '中ボス戦(全ステージ共通)' },
+        { file: 'Red Planet Showdown.mp3', title: 'Red Planet Showdown', scene: '最終ボス戦 QUEEN OF HEARTBREAK' },
+        { file: 'Game Over, Again.mp3', title: 'Game Over, Again', scene: 'ゲームオーバー' },
+        { file: '静かに睨め.mp3', title: '静かに睨め', scene: 'エンディング' },
+      ];
+
+      const player = document.querySelector('#player');
+      const npTitle = document.querySelector('#npTitle');
+      const npScene = document.querySelector('#npScene');
+      const list = document.querySelector('#tracklist');
+      const jacket = document.querySelector('#jacket');
+      const jacketGlyph = document.querySelector('#jacketGlyph');
+      let current = -1;
+
+      // Neon skyline: random-height buildings anchored to the bottom of the
+      // viewport, echoing the game's procedural city backdrop. Kept in
+      // `buildings` so the audio loop below can grow/shrink them like a
+      // giant equalizer synced to the currently playing track.
+      const buildings = [];
+      (function buildSkyline() {
+        const skyline = document.querySelector('#skyline');
+        const count = 24;
+        for (let i = 0; i < count; i++) {
+          const b = document.createElement('div');
+          b.className = 'building';
+          const w = 32 + Math.random() * 46;
+          const h = 70 + Math.random() * 210;
+          b.style.width = w + 'px';
+          b.style.height = h + 'px';
+          b.style.left = ((i / count) * 100 + (Math.random() * 2 - 1)) + '%';
+          b.style.setProperty('--accent', Math.random() < .5 ? 'rgba(49,232,255,.5)' : 'rgba(255,62,157,.5)');
+          skyline.appendChild(b);
+          buildings.push({ el: b, scale: 1 });
+        }
+      })();
+
+      // Audio-reactive equalizer bars, drawn from a Web Audio AnalyserNode
+      // tapped off the <audio> element. Idles as a flat line when nothing
+      // is playing.
+      const viz = document.querySelector('#visualizer');
+      const vctx = viz.getContext('2d');
+      let audioCtx, analyser, freqData;
+      const BAR_COUNT = 40;
+
+      function ensureAudioGraph() {
+        if (audioCtx) { if (audioCtx.state === 'suspended') audioCtx.resume(); return; }
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaElementSource(player);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 128;
+        analyser.smoothingTimeConstant = .82;
+        freqData = new Uint8Array(analyser.frequencyBinCount);
+        source.connect(analyser);
+        analyser.connect(audioCtx.destination);
+      }
+
+      function drawViz() {
+        requestAnimationFrame(drawViz);
+        const w = viz.width, h = viz.height, mid = h / 2;
+        const barW = w / BAR_COUNT;
+        vctx.clearRect(0, 0, w, h);
+        const playing = analyser && !player.paused;
+        if (playing) analyser.getByteFrequencyData(freqData);
+        const step = analyser ? Math.floor(freqData.length / BAR_COUNT) : 0;
+        for (let i = 0; i < BAR_COUNT; i++) {
+          const v = playing ? freqData[i * step] / 255 : 0;
+          const barH = Math.max(2, v * (mid - 4));
+          const x = i * barW + 1;
+          const grad = vctx.createLinearGradient(0, mid - barH, 0, mid + barH);
+          grad.addColorStop(0, '#31e8ff');
+          grad.addColorStop(1, '#ff3e9d');
+          vctx.fillStyle = playing ? grad : 'rgba(255,255,255,.14)';
+          vctx.fillRect(x, mid - barH, barW - 2, barH * 2);
+        }
+        updateSkyline(playing);
+      }
+      drawViz();
+
+      // The city skyline doubles as a second, ambient equalizer: each
+      // building's height pulses with its own slice of the spectrum, easing
+      // back to its base height when nothing is playing.
+      function updateSkyline(playing) {
+        const bStep = analyser ? Math.floor(freqData.length / buildings.length) : 0;
+        buildings.forEach((b, i) => {
+          const v = playing ? freqData[i * bStep] / 255 : 0;
+          const target = 1 + v * .6;
+          b.scale += (target - b.scale) * .18;
+          b.el.style.transform = `scaleY(${b.scale})`;
+        });
+      }
+
+      TRACKS.forEach((t, i) => {
+        const li = document.createElement('li');
+        li.className = 'track';
+        li.innerHTML = `<span class="playmark"></span><span class="num">${String(i + 1).padStart(2, '0')}</span>` +
+          `<span class="info"><div class="name">${t.title}</div><div class="scene-tag">${t.scene}</div></span>`;
+        li.addEventListener('click', () => playTrack(i));
+        list.appendChild(li);
+      });
+
+      function playTrack(i) {
+        current = i;
+        const t = TRACKS[i];
+        player.src = 'assets/bgm/' + encodeURIComponent(t.file);
+        ensureAudioGraph();
+        player.play().catch(() => {});
+        npTitle.textContent = t.title;
+        npScene.textContent = t.scene;
+        [...list.children].forEach((li, idx) => {
+          li.classList.toggle('is-active', idx === i);
+          li.querySelector('.playmark').textContent = idx === i ? '▶' : '';
+        });
+      }
+
+      // The jacket doubles as the play/pause button: first click starts track 1,
+      // afterwards it toggles whichever track is currently loaded.
+      function toggleFromJacket() {
+        if (current === -1) { playTrack(0); return; }
+        if (player.paused) { ensureAudioGraph(); player.play().catch(() => {}); } else player.pause();
+      }
+      jacket.addEventListener('click', toggleFromJacket);
+      jacket.addEventListener('keydown', e => { if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); toggleFromJacket(); } });
+
+      player.addEventListener('play', () => { jacket.classList.add('is-playing'); jacketGlyph.textContent = '❚❚'; });
+      player.addEventListener('pause', () => { jacket.classList.remove('is-playing'); jacketGlyph.textContent = '▶'; });
+      player.addEventListener('ended', () => playTrack((current + 1) % TRACKS.length));
+    </script>
+  </body>
+</html>
