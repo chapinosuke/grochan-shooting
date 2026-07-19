@@ -218,6 +218,29 @@ canvas {
 .opening-progress i { display: block; width: 0; height: 100%; background: linear-gradient(90deg, var(--cyan), var(--pink), var(--yellow)); box-shadow: 0 0 12px var(--pink); }
 .opening-screen.is-visible .opening-progress i { animation: openingProgress 9s linear both; }
 
+/* Staff roll: classic bottom-to-top scrolling credits over a plain starfield-
+   black backdrop. Click / ENTER at any time skips straight to RESULT; the
+   scroll also finishes on its own once the track clears the top. */
+.staffroll-screen {
+  overflow: hidden; cursor: pointer;
+  background: radial-gradient(circle at 50% 20%, rgba(49,232,255,.1), transparent 55%), #05030f;
+}
+.staffroll-viewport { position: relative; width: min(640px, 88vw); height: 100%; overflow: hidden; }
+.staffroll-track {
+  position: absolute; left: 0; right: 0; top: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.staffroll-screen.is-rolling .staffroll-track { animation: staffRollScroll 37s linear forwards; }
+@keyframes staffRollScroll { to { transform: translateY(-100%); } }
+.staffroll-game { margin: 0 0 6px; color: var(--cyan); font: 13px "Press Start 2P", monospace; letter-spacing: .1em; text-shadow: 2px 2px #5b2f9e; }
+.staffroll-role { margin: 34px 0 14px; color: var(--yellow); font: 11px "Press Start 2P", monospace; letter-spacing: .18em; }
+.staffroll-name { margin: 0; color: #fff; font-size: 20px; letter-spacing: .06em; }
+.staffroll-name small { margin-left: 8px; color: #837aa7; font-size: 13px; letter-spacing: .04em; }
+.staffroll-job { margin: 3px 0 16px; color: #bdb5e0; font-size: 14px; letter-spacing: .05em; }
+.staffroll-heart { margin: 30px 0 6px; color: var(--pink); font-size: 30px; text-shadow: 0 0 14px var(--pink); }
+.staffroll-end { margin: 0 0 50vh; color: #fff; font: 14px "Press Start 2P", monospace; letter-spacing: .2em; }
+.staffroll-skip { position: absolute; left: 0; right: 0; bottom: 20px; z-index: 2; }
+
 .eyebrow {
   margin-bottom: 20px;
   color: var(--cyan);

@@ -10,6 +10,8 @@
   const openingScreen = document.querySelector('#openingScreen');
   const endingScreen = document.querySelector('#endingScreen');
   const endingButton = document.querySelector('#endingButton');
+  const staffRollScreen = document.querySelector('#staffRollScreen');
+  const staffRollTrack = document.querySelector('#staffRollTrack');
   const storyScreen = document.querySelector('#storyScreen');
   const storyImage = document.querySelector('#storyImage');
   const storyText = document.querySelector('#storyText');
@@ -1811,8 +1813,18 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     else setTimeout(() => showStory(STORY.gameover, () => gameOverScreen.classList.add('is-visible')), 450);
   }
 
-  function showResultAfterEnding() {
+  // On a full clear, the ending cameo hands off to a scrolling staff roll
+  // (creditting the AI tools behind the game, aliased to their in-game
+  // counterparts) before the RESULT card. It finishes on its own once the
+  // scroll clears the top, or instantly on a click / ENTER skip.
+  function showStaffRoll() {
     endingScreen.classList.remove('is-visible');
+    staffRollScreen.classList.add('is-visible', 'is-rolling');
+    playBgm('title');
+  }
+  function finishStaffRoll() {
+    if (!staffRollScreen.classList.contains('is-visible')) return;
+    staffRollScreen.classList.remove('is-visible', 'is-rolling');
     gameOverScreen.classList.add('is-visible');
   }
 
@@ -5193,7 +5205,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if ((e.code === 'Enter' || e.code === 'Space') && storySlides) { if (!e.repeat) advanceStory(); return; }
     if (e.code === 'Enter' && state === 'menu') { if (menuStep === 'title') showHowto(); else showOpening(); }
     else if (e.code === 'Enter' && state === 'opening') resetGame();
-    else if (e.code === 'Enter' && state === 'over') { if (endingScreen.classList.contains('is-visible')) showResultAfterEnding(); else resetGame(); }
+    else if (e.code === 'Enter' && state === 'over') {
+      if (endingScreen.classList.contains('is-visible')) showStaffRoll();
+      else if (staffRollScreen.classList.contains('is-visible')) finishStaffRoll();
+      else resetGame();
+    }
     else if (e.code === 'Enter' && state === 'shop') leaveShop();
     if (e.code === 'Escape' && state === 'menu' && menuStep === 'howto') showTitle();
     if (state === 'menu' && menuStep === 'howto' && !e.repeat) {
@@ -5234,7 +5250,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   startButton.addEventListener('click', showOpening);
   nextStageButton.addEventListener('click', leaveShop);
   launchButton.addEventListener('click', resetGame);
-  endingButton.addEventListener('click', showResultAfterEnding);
+  endingButton.addEventListener('click', showStaffRoll);
+  staffRollScreen.addEventListener('click', finishStaffRoll);
+  staffRollTrack.addEventListener('animationend', finishStaffRoll);
   storyScreen.addEventListener('click', advanceStory);
   retryButton.addEventListener('click', resetGame);
   const difficultyOrder = ['easy', 'normal', 'hard'];
@@ -5285,6 +5303,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // --- Test modes: ?stage=N starts at the beginning of a stage; ?boss=N and
   // ?mid=N start just before that encounter with normal trash spawns held back.
   // N is 1..5. If multiple modes are present, boss > mid > stage takes priority.
+  // ?ending=1 skips straight to the full-clear ending -> staff roll -> RESULT
+  // sequence, bypassing gameplay entirely.
   {
     const q = new URLSearchParams(location.search);
     const bossN = parseInt(q.get('boss'), 10);
@@ -5304,6 +5324,17 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         enemies = []; enemyBullets = [];
         playBgm(`stage${stageIndex}`, true);
       }, 120);
+    } else if (q.get('staffroll')) {
+      // Jumps straight past the ending cutscene + cameo card into the staff
+      // roll itself, for a one-click check of just the credits. finishGame()
+      // schedules the ending cutscene 450ms out, so wait for that to actually
+      // start before cancelling it in favor of the roll.
+      setTimeout(() => {
+        resetGame(); stageIndex = stages.length - 1; finishGame(true);
+        setTimeout(() => { cancelStory(); showStaffRoll(); }, 600);
+      }, 120);
+    } else if (q.get('ending')) {
+      setTimeout(() => { resetGame(); stageIndex = stages.length - 1; finishGame(true); }, 120);
     }
   }
 })();
