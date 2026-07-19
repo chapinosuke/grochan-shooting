@@ -177,35 +177,35 @@
   };
   const stages = [
     {
-      name: 'TOKYO MIDNIGHT', boss: 'HEART BREAKER', midBoss: 'NEON WARDEN', theme: 'neon', subtitle: '渋谷スクランブル、眠らない東京の夜',
+      name: 'TOKYO MIDNIGHT', boss: 'HEART BREAKER', midBoss: 'STELLA', theme: 'neon', subtitle: '渋谷スクランブル、眠らない東京の夜',
       sky: ['#120b3e', '#3b1878', '#f044a0'], far: '#28145e', city: '#100b34', accent: '#31e8ff', accent2: '#ff3e9d',
       spawnTable: [['drone', 5], ['bat', 4], ['spinner', 3], ['tank', 2], ['racer', 4], ['seeker', 1]],
       melody: [440, 523.25, 659.25, 523.25, 392, 493.88, 587.33, 493.88, 349.23, 440, 523.25, 659.25, 392, 493.88, 659.25, 783.99],
       bass: [110, 110, 98, 98, 87.31, 87.31, 98, 123.47]
     },
     {
-      name: 'AQUA HIGHWAY', boss: 'DEEP BLUE DIVA', midBoss: 'TIDAL WARDEN', theme: 'aqua', subtitle: '潮風のハイウェイを駆け抜けろ',
+      name: 'AQUA HIGHWAY', boss: 'DEEP BLUE DIVA', midBoss: 'NAMI', theme: 'aqua', subtitle: '潮風のハイウェイを駆け抜けろ',
       sky: ['#041b3d', '#075987', '#20c5c9'], far: '#123c68', city: '#071d42', accent: '#65fff2', accent2: '#2f8cff',
       spawnTable: [['bat', 3], ['jelly', 5], ['drone', 2], ['spinner', 3], ['manta', 4], ['racer', 2]],
       melody: [392, 440, 523.25, 587.33, 659.25, 587.33, 523.25, 440, 349.23, 392, 440, 523.25, 587.33, 523.25, 440, 392],
       bass: [98, 98, 87.31, 87.31, 110, 110, 87.31, 73.42]
     },
     {
-      name: 'SUNSET FACTORY', boss: 'BLAZE EMPRESS', midBoss: 'CINDER WARDEN', theme: 'factory', subtitle: '燃える夕日と鋼鉄の罠',
+      name: 'SUNSET FACTORY', boss: 'BLAZE EMPRESS', midBoss: 'GITTY', theme: 'factory', subtitle: '燃える夕日と鋼鉄の罠',
       sky: ['#351036', '#a42f4f', '#ff9f43'], far: '#592141', city: '#28132e', accent: '#ffe15a', accent2: '#ff5a36',
       spawnTable: [['tank', 5], ['turret', 4], ['ember', 5], ['drone', 2], ['walker', 4], ['spinner', 2]],
       melody: [329.63, 329.63, 392, 329.63, 311.13, 329.63, 392, 440, 329.63, 329.63, 392, 493.88, 440, 392, 329.63, 293.66],
       bass: [82.41, 82.41, 82.41, 82.41, 77.78, 77.78, 98, 98]
     },
     {
-      name: 'CYBER STORM', boss: 'VOLT PHANTOM', midBoss: 'GLITCH WARDEN', theme: 'storm', subtitle: '雷鳴とどろく電脳空域',
+      name: 'CYBER STORM', boss: 'VOLT PHANTOM', midBoss: 'ECHO', theme: 'storm', subtitle: '雷鳴とどろく電脳空域',
       sky: ['#071d24', '#13554b', '#48b849'], far: '#164636', city: '#071f25', accent: '#72ff68', accent2: '#31e8ff',
       spawnTable: [['glitch', 5], ['spinner', 4], ['bat', 2], ['turret', 3], ['seeker', 4], ['racer', 2]],
       melody: [293.66, 349.23, 440, 349.23, 293.66, 369.99, 440, 587.33, 293.66, 349.23, 466.16, 440, 349.23, 293.66, 246.94, 293.66],
       bass: [73.42, 73.42, 87.31, 87.31, 73.42, 73.42, 92.5, 110]
     },
     {
-      name: 'HEART PALACE', boss: 'QUEEN OF HEARTBREAK', midBoss: 'VELVET WARDEN', theme: 'palace', subtitle: '決戦、ハートの女王の宮殿',
+      name: 'HEART PALACE', boss: 'QUEEN OF HEARTBREAK', midBoss: 'LUNA', theme: 'palace', subtitle: '決戦、ハートの女王の宮殿',
       sky: ['#25051d', '#72114e', '#d82065'], far: '#4d123d', city: '#21061d', accent: '#ffe15a', accent2: '#ff3e9d',
       spawnTable: [['cupid', 5], ['drone', 2], ['bat', 3], ['spinner', 3], ['tank', 3], ['knight', 4], ['seeker', 2]],
       melody: [261.63, 311.13, 392, 523.25, 466.16, 392, 311.13, 261.63, 233.08, 293.66, 349.23, 466.16, 392, 349.23, 293.66, 261.63],
@@ -259,6 +259,10 @@
   }, {});
   const bossPoses = stages.map((_, i) => loadPoses(`stage${i + 1}`));
   const wardenPoses = loadPoses('warden');
+  // Per-stage mid-bosses: the brainwashed academy students (mid1..mid5).
+  // Until their pose sheets exist, the WARDEN art remains the fallback.
+  const midbossPoses = stages.map((_, i) => loadPoses(`mid${i + 1}`));
+  const activeMidPoses = () => frameReady(midbossPoses[stageIndex].idle) ? midbossPoses[stageIndex] : wardenPoses;
   const frameReady = (im) => im && im.complete && im.naturalWidth > 0;
   // hurt wins over attack; attack shows through the telegraph windup too.
   const pickPose = (poses, e, fallback) => {
@@ -918,7 +922,7 @@
   function spawnMidBoss() {
     const baseHp = difficulties[difficultyKey].midHp;
     const hp = Math.round(baseHp * (1 + stageIndex * .38));
-    const midSprite = frameReady(wardenPoses.idle) ? wardenPoses.idle : wardenSprite;
+    const midSprite = frameReady(activeMidPoses().idle) ? activeMidPoses().idle : wardenSprite;
     let w = 280, h = 230;
     if (midSprite.complete && midSprite.naturalWidth) {
       h = 300; w = Math.round(h * midSprite.naturalWidth / midSprite.naturalHeight);
@@ -2000,6 +2004,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.restore();
     });
     drawVolumeFloor(stage, { horizon: 557, bottom: 735, color: stage.accent, alpha: .11, speed: .4 });
+    drawAquaGround(stage);
   }
 
   function drawFactoryVolume(stage) {
@@ -2028,6 +2033,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }
     });
     drawVolumeFloor(stage, { horizon: 650, bottom: 742, color: '#ffb347', alpha: .17, speed: .7 });
+    drawFactoryGround(stage);
   }
 
   function drawStormVolume(stage) {
@@ -2054,6 +2060,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.restore();
     });
     drawVolumeFloor(stage, { horizon: 566, bottom: 736, color: stage.accent, alpha: .22 + surge * .04, speed: .62 });
+    drawStormGround(stage);
   }
 
   function drawPalaceVolume(stage) {
@@ -2073,6 +2080,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }
     });
     drawVolumeFloor(stage, { horizon: 506, bottom: 744, color: '#ffd27a', alpha: .17, speed: .34 });
+    drawPalaceGround(stage);
   }
 
   // Foreground occlusion band drawn over gameplay: fast, dark, translucent
@@ -2715,6 +2723,121 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = '#100927'; ctx.fillRect(x, 548, 12, 102); ctx.fillRect(x - 22, 548, 56, 8);
       ctx.shadowColor = stage.accent; ctx.shadowBlur = 18; ctx.fillStyle = stage.accent; ctx.fillRect(x - 17, 552, 46, 7); ctx.shadowBlur = 0;
     }
+  }
+
+  // Per-theme walk surfaces. Stage 1's neon street has its own drawGroundLayer;
+  // these give the other stages an equally distinct ground band (y=650 down),
+  // matching where the player lands and ground enemies stand.
+  function drawAquaGround(stage) {
+    const ground = 650;
+    // open sea filling the band, foam lines rolling under the deck
+    const sea = ctx.createLinearGradient(0, ground, 0, VH);
+    sea.addColorStop(0, '#0b3f66'); sea.addColorStop(1, '#031225');
+    ctx.fillStyle = sea; ctx.fillRect(0, ground, VW, VH - ground);
+    ctx.save();
+    for (let i = 0; i < 3; i++) {
+      const y = 676 + i * 16;
+      ctx.globalAlpha = .3 - i * .08; ctx.strokeStyle = '#bdf3ff'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let x = -20; x <= VW + 20; x += 16) {
+        const yy = y + Math.sin(x * .045 + elapsed * (2.2 - i * .5) + i * 2) * 4;
+        if (x === -20) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+    // the highway deck the player actually walks on
+    const deck = ctx.createLinearGradient(0, ground - 26, 0, ground + 16);
+    deck.addColorStop(0, '#41586e'); deck.addColorStop(.55, '#22384c'); deck.addColorStop(1, '#0d1c2c');
+    ctx.fillStyle = deck; ctx.fillRect(0, ground - 26, VW, 42);
+    ctx.fillStyle = hexA(stage.accent, .9); ctx.fillRect(0, ground - 26, VW, 3);
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    const dashOff = (elapsed * 240) % 84;
+    for (let x = -dashOff; x < VW + 90; x += 84) ctx.fillRect(x, ground - 7, 40, 4);
+    // guardrail on the sea side
+    ctx.fillStyle = 'rgba(190,235,248,.8)'; ctx.fillRect(0, ground - 48, VW, 4);
+    const railOff = (elapsed * 240) % 120;
+    ctx.fillStyle = '#9fd9e8';
+    for (let x = -railOff; x < VW + 130; x += 120) ctx.fillRect(x, ground - 46, 5, 22);
+  }
+
+  function drawFactoryGround(stage) {
+    const ground = 650;
+    const base = ctx.createLinearGradient(0, ground, 0, VH);
+    base.addColorStop(0, '#2a1520'); base.addColorStop(1, '#0c060d');
+    ctx.fillStyle = base; ctx.fillRect(0, ground, VW, VH - ground);
+    // riveted steel plates with furnace glow leaking between them
+    const off = (elapsed * 150) % 150;
+    for (let x = -off - 150; x < VW + 150; x += 150) {
+      const glow = .5 + Math.sin(elapsed * 3 + x * .02) * .3;
+      ctx.fillStyle = hexA('#ff7a2d', .3 + glow * .3); ctx.fillRect(x - 9, ground + 16, 11, 40);
+      ctx.fillStyle = '#3a2030'; ctx.fillRect(x + 2, ground + 14, 146, 46);
+      ctx.fillStyle = 'rgba(255,255,255,.09)'; ctx.fillRect(x + 2, ground + 14, 146, 5);
+      ctx.fillStyle = '#61374a';
+      for (const rx of [10, 136]) { ctx.fillRect(x + rx, ground + 22, 4, 4); ctx.fillRect(x + rx, ground + 50, 4, 4); }
+    }
+    // hazard-striped lip along the walk edge
+    ctx.fillStyle = '#1b0d15'; ctx.fillRect(0, ground, VW, 12);
+    const hz = (elapsed * 150) % 48;
+    ctx.fillStyle = '#ffcf4d';
+    for (let x = -hz; x < VW + 48; x += 48) {
+      ctx.beginPath(); ctx.moveTo(x, ground + 12); ctx.lineTo(x + 18, ground); ctx.lineTo(x + 30, ground); ctx.lineTo(x + 12, ground + 12); ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = hexA(stage.accent2, .8); ctx.fillRect(0, ground, VW, 2);
+  }
+
+  function drawStormGround(stage) {
+    const ground = 650;
+    const base = ctx.createLinearGradient(0, ground, 0, VH);
+    base.addColorStop(0, '#07231d'); base.addColorStop(1, '#020a09');
+    ctx.fillStyle = base; ctx.fillRect(0, ground, VW, VH - ground);
+    // scrolling circuit traces with nodes
+    const off = (elapsed * 180) % 160;
+    ctx.save();
+    for (let i = 0; i < 3; i++) {
+      const y = ground + 18 + i * 20, jog = i % 2 ? 8 : -8;
+      ctx.globalAlpha = .5 - i * .12; ctx.strokeStyle = stage.accent; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let x = -off + i * 40 - 160; x < VW + 160; x += 160) {
+        ctx.moveTo(x, y); ctx.lineTo(x + 90, y); ctx.lineTo(x + 104, y + jog); ctx.lineTo(x + 150, y + jog);
+      }
+      ctx.stroke();
+      ctx.fillStyle = hexA(stage.accent2, .7);
+      for (let x = -off + i * 40 - 160; x < VW + 160; x += 160) ctx.fillRect(x + 88, y - 3, 6, 6);
+    }
+    ctx.restore();
+    // flickering glitch tiles
+    const tick = Math.floor(elapsed * 6);
+    for (let k = 0; k < 4; k++) {
+      if ((tick + k) % 3) continue;
+      const gx = (k * 397 + tick * 131) % (VW + 80) - 40;
+      ctx.fillStyle = hexA(stage.accent, .16); ctx.fillRect(gx, ground + 8 + (k % 2) * 30, 46, 18);
+    }
+    ctx.fillStyle = hexA(stage.accent, .85); ctx.fillRect(0, ground, VW, 3);
+  }
+
+  function drawPalaceGround(stage) {
+    const ground = 650;
+    const base = ctx.createLinearGradient(0, ground, 0, VH);
+    base.addColorStop(0, '#3a0f2e'); base.addColorStop(1, '#12030f');
+    ctx.fillStyle = base; ctx.fillRect(0, ground, VW, VH - ground);
+    // marble tiles with gold seams
+    const off = (elapsed * 100) % 110;
+    ctx.save(); ctx.globalAlpha = .55;
+    for (let x = -off - 110; x < VW + 110; x += 110) {
+      ctx.strokeStyle = 'rgba(255,225,90,.5)'; ctx.lineWidth = 2; ctx.strokeRect(x, ground + 8, 104, 58);
+      ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(x + 4, ground + 12, 44, 20);
+    }
+    ctx.restore();
+    // heart-emblem red carpet runner
+    const cy = ground + 32;
+    ctx.fillStyle = '#8e1440'; ctx.fillRect(0, cy - 14, VW, 34);
+    ctx.fillStyle = '#c92460'; ctx.fillRect(0, cy - 10, VW, 26);
+    ctx.fillStyle = '#ffe15a'; ctx.fillRect(0, cy - 14, VW, 3); ctx.fillRect(0, cy + 17, VW, 3);
+    const hoff = (elapsed * 100) % 170;
+    ctx.fillStyle = '#ffd7ea';
+    for (let x = -hoff; x < VW + 170; x += 170) { heartPath(x, cy + 3, 7); ctx.fill(); }
+    ctx.fillStyle = hexA(stage.accent2, .8); ctx.fillRect(0, ground, VW, 3);
   }
 
   function drawCloud(c, color = '#d7ddff', alpha = .11) {
@@ -3939,7 +4062,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const stage = stages[stageIndex], pulse = 6 + Math.sin(e.t * 7) * 4;
     // Generated WARDEN sprite (one design recolored by each stage's glow) in
     // the 158×132 authoring box; procedural art remains the loading fallback.
-    const midSprite = pickPose(wardenPoses, e, wardenSprite);
+    const midSprite = pickPose(activeMidPoses(), e, wardenSprite);
     if (midSprite) {
       // Hitbox carries the sprite aspect (see spawnMidBoss) → fill the box.
       const hurt = e.hurtT > 0;
@@ -3952,8 +4075,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.shadowColor = hurt ? 'rgba(255,80,80,.95)' : hexA(stage.accent, .9);
       ctx.shadowBlur = hurt ? 26 : 18 + Math.sin(e.t * 7) * 6;
       ctx.imageSmoothingEnabled = false;
-      const fit = Math.min(158 / midSprite.naturalWidth, 132 / midSprite.naturalHeight);
-      const dw = midSprite.naturalWidth * fit, dh = midSprite.naturalHeight * fit;
+      // Same undistorted-fit math as drawBoss (local box scales non-uniformly).
+      const kx = e.w / 158, ky = e.h / 132;
+      const sh = Math.min(e.h, e.w * midSprite.naturalHeight / midSprite.naturalWidth);
+      const sw = sh * midSprite.naturalWidth / midSprite.naturalHeight;
+      const dw = sw / kx, dh = sh / ky;
       ctx.drawImage(midSprite, (158 - dw) / 2, 132 - dh + Math.sin(e.t * 2.6) * 4, dw, dh);
       ctx.restore();
       return;
@@ -4095,11 +4221,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.shadowColor = hurt ? 'rgba(255,80,80,.95)' : hexA(stage.accent2, .85);
       ctx.shadowBlur = hurt ? 34 : 26 + Math.sin(e.t * 5) * 8;
       ctx.imageSmoothingEnabled = false;
-      // Contain-fit per frame: the hitbox takes the idle frame's aspect, but
-      // attack/hurt frames can be wider — fit them without distortion,
-      // anchored to the bottom center.
-      const fit = Math.min(230 / sprite.naturalWidth, 190 / sprite.naturalHeight);
-      const dw = sprite.naturalWidth * fit, dh = sprite.naturalHeight * fit;
+      // Undistorted fit: the local 230×190 box is scaled by (e.w/230, e.h/190),
+      // which is non-uniform when a frame's aspect differs from the hitbox.
+      // Compute the on-screen size that preserves the frame's aspect inside
+      // e.w×e.h, then convert back to local units per axis.
+      const kx = e.w / 230, ky = e.h / 190;
+      const sh = Math.min(e.h, e.w * sprite.naturalHeight / sprite.naturalWidth);
+      const sw = sh * sprite.naturalWidth / sprite.naturalHeight;
+      const dw = sw / kx, dh = sh / ky;
       ctx.drawImage(sprite, (230 - dw) / 2 + (hurt ? Math.sin(e.t * 52) * 3 : 0), 190 - dh + Math.sin(e.t * 2.2) * 5, dw, dh);
       ctx.restore();
       return;
