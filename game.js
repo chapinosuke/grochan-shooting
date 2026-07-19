@@ -2125,6 +2125,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     });
     drawVolumeFloor(stage, { horizon: 557, bottom: 735, color: stage.accent, alpha: .11, speed: .4 });
     drawAquaGround(stage);
+    drawAquaTraffic(stage);
   }
 
   function drawFactoryVolume(stage) {
@@ -2154,6 +2155,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     });
     drawVolumeFloor(stage, { horizon: 650, bottom: 742, color: '#ffb347', alpha: .17, speed: .7 });
     drawFactoryGround(stage);
+    drawFactoryPipeworks(stage);
   }
 
   function drawStormVolume(stage) {
@@ -2374,6 +2376,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       for (const p of bgProps) if (p.kind === 'car') drawFlyingCar(p, stage);
       drawCity((elapsed * -20) % 120, 600, stage.city, 54, .78, 18);
       drawTokyoExpressway(stage);
+      drawNeonRail(stage);
       drawStorefronts(stage);
       drawShibuyaScreen(stage);
     });
@@ -2382,6 +2385,40 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawGroundPlane(stage, { horizonY: 606, bottom: 704, alpha: .1, speed: 90, gap: 110 });
     drawTokyoRoadLights(stage);
     drawShoppers();
+  }
+
+  // A compact neon commuter train threads between the high-rises. The repeating
+  // lit windows and reflected rail glow add life without entering the main flight
+  // lane; it sits behind the storefront row and moves slower than nearby traffic.
+  function drawNeonRail(stage) {
+    const railY = 420;
+    const trainX = VW + 300 - (elapsed * 78) % 2200;
+    ctx.save();
+    ctx.globalAlpha = .58;
+    ctx.fillStyle = '#08051c'; ctx.fillRect(-40, railY + 31, VW + 80, 13);
+    ctx.fillStyle = hexA(stage.accent2, .5); ctx.fillRect(-40, railY + 31, VW + 80, 2);
+    for (let x = -80; x < VW + 100; x += 184) {
+      ctx.fillStyle = '#0c0820'; ctx.fillRect(x, railY + 40, 12, 74);
+      ctx.fillStyle = hexA(stage.accent, .18); ctx.fillRect(x + 3, railY + 44, 3, 68);
+    }
+    ctx.translate(trainX, railY);
+    const cars = 3;
+    for (let i = 0; i < cars; i++) {
+      const x = -i * 154;
+      const body = ctx.createLinearGradient(x, 0, x, 31);
+      body.addColorStop(0, '#755b9d'); body.addColorStop(.28, '#2c244d'); body.addColorStop(1, '#0a081b');
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      ctx.roundRect(x - 146, 0, 144, 31, i === 0 ? [15, 4, 4, 15] : 4); ctx.fill();
+      ctx.fillStyle = hexA(stage.accent, .85); ctx.fillRect(x - 137, 6, 24, 13);
+      ctx.fillStyle = hexA(stage.accent2, .7);
+      for (let w = 0; w < 4; w++) ctx.fillRect(x - 104 + w * 23, 6, 16, 13);
+      ctx.fillStyle = 'rgba(255,255,255,.32)'; ctx.fillRect(x - 137, 5, 116, 2);
+      ctx.fillStyle = '#090619'; ctx.fillRect(x - 126, 27, 20, 5); ctx.fillRect(x - 43, 27, 20, 5);
+    }
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .3;
+    ctx.fillStyle = stage.accent2; ctx.fillRect(-cars * 154 + 8, 32, cars * 154 - 16, 4);
+    ctx.restore();
   }
 
   // A distant, unmistakably Tokyo red-and-white lattice tower. The tapered
@@ -3028,6 +3065,30 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawHighway(stage);
   }
 
+  // Tiny autonomous cars make the vast bridge feel inhabited. Two lanes move at
+  // different speeds, with soft headlight pools sliding over the wet deck.
+  function drawAquaTraffic(stage) {
+    ctx.save(); ctx.globalAlpha = .72;
+    const lanes = [[620, -1, 631], [430, 1, 642]];
+    for (let lane = 0; lane < lanes.length; lane++) {
+      const [speed, dir, y] = lanes[lane];
+      const phase = (elapsed * speed) % 430;
+      for (let i = -1; i < 5; i++) {
+        const x = dir > 0 ? i * 430 + phase - 180 : VW - (i * 430 + phase) + 180;
+        const c = (i + lane) % 2 ? stage.accent : stage.accent2;
+        ctx.fillStyle = '#07162b';
+        ctx.beginPath(); ctx.roundRect(x - 25, y - 10, 50, 14, 7); ctx.fill();
+        ctx.fillStyle = hexA(c, .65); ctx.fillRect(x - 10, y - 8, 23, 6);
+        ctx.fillStyle = dir > 0 ? '#fff1a8' : '#ff5a70';
+        ctx.fillRect(x + dir * 22 - 3, y - 5, 6, 4);
+        const beam = ctx.createLinearGradient(x, y, x + dir * 64, y);
+        beam.addColorStop(0, hexA(c, .16)); beam.addColorStop(1, hexA(c, 0));
+        ctx.fillStyle = beam; ctx.fillRect(dir > 0 ? x + 25 : x - 89, y - 7, 64, 10);
+      }
+    }
+    ctx.restore();
+  }
+
   // Dense Tokyo-bay silhouette: lit towers, a rotating ferris wheel and port
   // cranes give the open water a recognizable destination instead of empty sky.
   function drawAquaCoastline(stage) {
@@ -3163,6 +3224,38 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const p of bgProps) if (p.kind === 'hammer') drawHammerPress(p, stage);
     drawConveyor(stage);
     drawMoltenRiver(stage);
+  }
+
+  // Foreground pressure manifold: layered pipes, animated gauges and brief steam
+  // releases make the machinery feel connected instead of a collection of props.
+  function drawFactoryPipeworks(stage) {
+    const y = 622, drift = (elapsed * 54) % 460;
+    ctx.save(); ctx.globalAlpha = .62;
+    const pipe = ctx.createLinearGradient(0, y - 16, 0, y + 19);
+    pipe.addColorStop(0, '#8b4850'); pipe.addColorStop(.32, '#3c2130'); pipe.addColorStop(1, '#130a12');
+    ctx.fillStyle = pipe; ctx.fillRect(-30, y - 16, VW + 60, 35);
+    ctx.fillStyle = hexA(stage.accent2, .38); ctx.fillRect(-30, y - 15, VW + 60, 3);
+    for (let i = -1; i < 5; i++) {
+      const x = i * 460 - drift;
+      ctx.fillStyle = '#130a12'; ctx.fillRect(x - 8, y - 22, 16, 47);
+      ctx.strokeStyle = '#743b47'; ctx.lineWidth = 3; ctx.strokeRect(x - 8, y - 22, 16, 47);
+      ctx.fillStyle = '#251323'; ctx.beginPath(); ctx.arc(x + 68, y, 24, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = hexA(stage.accent, .62); ctx.lineWidth = 3; ctx.stroke();
+      ctx.save(); ctx.translate(x + 68, y); ctx.rotate(-1.9 + Math.sin(elapsed * 1.7 + i) * .8);
+      ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(15, 0); ctx.stroke(); ctx.restore();
+      ctx.fillStyle = hexA(stage.accent, .7); ctx.beginPath(); ctx.arc(x + 68, y, 3, 0, Math.PI * 2); ctx.fill();
+      // short periodic steam puff, confined below the combat lane
+      const vent = (elapsed * .55 + i * .27) % 1;
+      if (vent < .18) {
+        ctx.globalAlpha = (.18 - vent) * 2.5;
+        ctx.fillStyle = '#ffe7d6';
+        for (let p = 0; p < 3; p++) {
+          ctx.beginPath(); ctx.arc(x + 130 + p * 7, y - 18 - vent * 95 - p * 6, 9 + p * 4, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.globalAlpha = .62;
+      }
+    }
+    ctx.restore();
   }
 
   // Monumental blast furnaces and flare stacks build a readable industrial
@@ -3332,6 +3425,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawStars(26, '#8fffb0', '#4de3a0');
       drawCyberVortex(stage, surge);
       drawWireRings(stage, surge);
+      drawDataRoutes(stage, surge);
       for (const c of clouds) drawCloud(c, '#03120f', .55);
     });
     bgLayer(.32, () => {
@@ -3348,6 +3442,28 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawHoloGrid(stage);
     drawStormGround(stage);
     drawLightningBolt(stage);
+  }
+
+  // Long packet routes arc through the storm like luminous air lanes. Packets
+  // chase one another along the curves and brighten with the lightning surge.
+  function drawDataRoutes(stage, surge) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const routes = [[-80, 220, 420, 80, 760, 300, stage.accent], [350, 80, 820, 180, 1360, 90, stage.accent2], [-120, 410, 520, 190, 1320, 360, '#d6ffd0']];
+    for (let r = 0; r < routes.length; r++) {
+      const [x0, y0, cx, cy, x1, y1, col] = routes[r];
+      ctx.globalAlpha = .08 + surge * .11; ctx.strokeStyle = col; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.quadraticCurveTo(cx, cy, x1, y1); ctx.stroke();
+      for (let i = 0; i < 5; i++) {
+        const t = (elapsed * (.08 + r * .018) + i / 5 + r * .21) % 1;
+        const u = 1 - t;
+        const x = u * u * x0 + 2 * u * t * cx + t * t * x1;
+        const y = u * u * y0 + 2 * u * t * cy + t * t * y1;
+        ctx.globalAlpha = .22 + surge * .42; ctx.fillStyle = col;
+        ctx.fillRect(x - 3, y - 3, 7, 7);
+        ctx.globalAlpha = .1 + surge * .18; ctx.fillRect(x - 20, y - 1, 17, 2);
+      }
+    }
+    ctx.restore();
   }
 
   // A giant data cyclone provides a clear focal silhouette. Broken arcs and
@@ -3507,9 +3623,39 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawColonnade(.6, .4, 34);
     });
     drawDepthHaze(stage, .45);
-    bgLayer(.15, () => drawColonnade());
+    bgLayer(.15, () => {
+      drawPalaceThrone(stage);
+      drawColonnade();
+    });
     drawPalaceFloor(stage);
     drawGroundPlane(stage, { horizonY: 652, bottom: 716, color: '#ff9ccf', alpha: .12, speed: 150, gap: 128 });
+  }
+
+  // A distant heart-backed throne closes the central perspective and gives the
+  // final arena an unmistakable destination. Candle rows flicker independently
+  // while the silhouette stays dark enough to preserve bullet contrast.
+  function drawPalaceThrone(stage) {
+    const x = 640, y = 568, pulse = .72 + Math.sin(elapsed * 1.6) * .12;
+    ctx.save(); ctx.globalAlpha = .72;
+    const halo = ctx.createRadialGradient(x, y - 92, 10, x, y - 92, 126);
+    halo.addColorStop(0, hexA(stage.accent2, .24 * pulse)); halo.addColorStop(1, hexA(stage.accent2, 0));
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(x, y - 92, 126, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2a0823'; heartPath(x, y - 112, 70); ctx.fill();
+    ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 4; ctx.stroke();
+    const velvet = ctx.createLinearGradient(x - 62, y - 160, x + 62, y);
+    velvet.addColorStop(0, '#a51c58'); velvet.addColorStop(.5, '#5b123d'); velvet.addColorStop(1, '#20071d');
+    ctx.fillStyle = velvet;
+    ctx.beginPath(); ctx.roundRect(x - 54, y - 158, 108, 146, [48, 48, 10, 10]); ctx.fill();
+    ctx.fillStyle = '#160414'; ctx.fillRect(x - 72, y - 34, 144, 23); ctx.fillRect(x - 63, y - 12, 126, 18);
+    ctx.fillStyle = '#ffe15a';
+    for (const ox of [-48, -24, 0, 24, 48]) {
+      const flick = Math.sin(elapsed * 5.3 + ox) * 3;
+      ctx.fillRect(x + ox - 2, y - 2, 4, 24);
+      ctx.fillStyle = ox % 48 ? '#ff9ccf' : '#ffe15a';
+      ctx.beginPath(); ctx.ellipse(x + ox, y - 7 + flick, 4, 8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffe15a';
+    }
+    ctx.restore();
   }
 
   // Monumental stained-glass rose window and hanging crowns make the final
