@@ -1949,10 +1949,17 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     });
     ctx.globalAlpha = .9;
     ctx.fillStyle = '#31e8ff'; ctx.font = '12px "Press Start 2P", monospace';
-    ctx.fillText('NEON KAWAII SHOOTER', cx, ly - 84);
+    ctx.fillText('NEON KAWAII SHOOTER', cx, ly - 100);
     ctx.globalAlpha = 1;
-    ctx.font = '62px "Press Start 2P", monospace';
-    ctx.fillStyle = '#411c73'; ctx.fillText('GRO-CHAN', cx + 6, ly + 7);
+    // Character-name tag: small, above the main logo (GRO-CHAN is the mascot,
+    // SKY BLASTER is the game's actual title and gets the big glow treatment).
+    ctx.font = '16px "Press Start 2P", monospace';
+    ctx.fillStyle = '#ffd7ea';
+    ctx.save(); ctx.shadowColor = '#ff3e9d'; ctx.shadowBlur = 10;
+    ctx.fillText('GRO-CHAN', cx, ly - 64);
+    ctx.restore();
+    ctx.font = '48px "Press Start 2P", monospace';
+    ctx.fillStyle = '#411c73'; ctx.fillText('SKY BLASTER', cx + 5, ly + 6);
     ctx.save();
     ctx.shadowColor = '#ff3e9d'; ctx.shadowBlur = 30;
     ctx.fillStyle = cachedGrad('titleLogo', () => {
@@ -1960,17 +1967,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       g.addColorStop(0, '#ffffff'); g.addColorStop(.45, '#ffd7ea'); g.addColorStop(1, '#ff3e9d');
       return g;
     });
-    ctx.fillText('GRO-CHAN', cx, ly);
+    ctx.fillText('SKY BLASTER', cx, ly);
     ctx.restore();
-    ctx.font = '27px "Press Start 2P", monospace';
-    ctx.fillStyle = '#0b3f56'; ctx.fillText('SKY BLASTER', cx + 4, ly + 58);
-    ctx.save(); ctx.shadowColor = '#31e8ff'; ctx.shadowBlur = 20; ctx.fillStyle = '#9ff2ff';
-    ctx.fillText('SKY BLASTER', cx, ly + 54); ctx.restore();
     for (const side of [-1, 1]) {
       const pulse = 1 + Math.sin(t * 3 + side) * .12;
       ctx.save(); ctx.globalAlpha = .9; ctx.shadowColor = '#ff3e9d'; ctx.shadowBlur = 16;
       ctx.fillStyle = '#ff3e9d';
-      heartPath(cx + side * 252, ly + 46, 17 * pulse); ctx.fill();
+      heartPath(cx + side * 300, ly - 14, 17 * pulse); ctx.fill();
       ctx.restore();
     }
     // Single start prompt for the title screen: drawn as an actual button
@@ -1980,7 +1983,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const label = 'クリック / ENTER でスタート';
     const labelW = ctx.measureText(label).width;
     const padX = 22, padY = 15, btnW = labelW + padX * 2, btnH = padY * 2 + 12;
-    const promptCx = cx, promptCy = ly + 104;
+    const promptCx = cx, promptCy = ly + 55;
     const pulse = 1 + Math.sin(t * 2.4) * .035;
     ctx.save();
     ctx.translate(promptCx, promptCy); ctx.scale(pulse, pulse); ctx.translate(-promptCx, -promptCy);
