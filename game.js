@@ -34,7 +34,9 @@
   const keys = new Set();
   const pointer = { active: false, x: 0, y: 0 };
   const spriteSheet = new Image();
-  spriteSheet.src = 'assets/images/player-spritesheet.png';
+  const hurtSheet = new Image();   // 4-frame damage/hurt animation (holds the gun)
+  const groundSheet = new Image(); // 5 ground frames holding the gun: idle + walk×4
+  spriteSheet.src = 'assets/images/player-spritesheet.png?v=hq';
   // opening/stage0 share one Audio element so the title theme flows seamlessly
   // into stage 1 instead of restarting from the top when the run begins.
   const neonArcadeRush = new Audio('assets/bgm/Neon Arcade Rush.mp3');
@@ -74,6 +76,8 @@
 
   let spriteFrames = [];
   let walkFrames = [];
+  let hurtFrames = [];
+  let groundFrames = []; // [0]=idle(gun), [1..4]=walk(gun)
   let idleFrame = null;
   let jumpFrame = null;
   let state = 'menu';
@@ -224,7 +228,7 @@
   const GROUND_Y = 500;
   const CHIMNEYS = [[120, 60, 210], [196, 44, 160], [880, 70, 230], [1010, 50, 180], [430, 40, 140]];
   const REFINERY_TANKS = [[240, 46, 250], [730, 38, 210], [1080, 52, 268]];
-  const player = { x: 170, y: 360, w: 118, h: 102, vx: 0, vy: 0, fire: 0, missileFire: 0, inv: 0, frame: 0, grounded: false, power: 1, spread: 1, speed: 1, takeoff: 0 };
+  const player = { x: 170, y: 360, w: 118, h: 102, vx: 0, vy: 0, fire: 0, missileFire: 0, inv: 0, hit: 0, frame: 0, grounded: false, power: 1, spread: 1, speed: 1, takeoff: 0 };
   let bullets = [];
   let enemyBullets = [];
   let enemies = [];
@@ -310,25 +314,45 @@
 
   function buildPlayerFrames() {
     if (!spriteSheet.naturalWidth) return;
-    // Sheet 1672x941: idle + walk×4 (top, walk holds gun), jump + fly-shoot×4 (bottom).
+    // HQ sheet 1672x941: idle + walk×4 (top), jump + flying-shoot×4 (bottom).
+    // Only jump / flight / title-idle come from here; grounded idle+walk use the gun
+    // frames in player-ground.png (buildGroundFrames), so the sheet's walk row is unused.
     spriteFrames = [
-      makeFrame(378, 535, 248, 305),
-      makeFrame(684, 535, 248, 305),
-      makeFrame(972, 535, 248, 305),
-      makeFrame(1260, 535, 248, 305)
+      makeFrame(371, 533, 248, 305),
+      makeFrame(673, 533, 248, 305),
+      makeFrame(971, 533, 248, 305),
+      makeFrame(1264, 533, 248, 305)
     ];
-    idleFrame = makeFrame(92, 72, 225, 350);
-    // Walk crops include the pink blaster tip (gun is part of the walk asset).
-    walkFrames = [
-      makeFrame(398, 72, 232, 350),
-      makeFrame(684, 72, 232, 350),
-      makeFrame(970, 72, 232, 350),
-      makeFrame(1260, 72, 232, 350)
-    ];
-    jumpFrame = makeFrame(70, 500, 250, 340);
+    idleFrame = makeFrame(104, 90, 190, 327);
+    jumpFrame = makeFrame(72, 530, 250, 325);
   }
   spriteSheet.onload = buildPlayerFrames;
   if (spriteSheet.complete) buildPlayerFrames();
+
+  // Slice an N-cell horizontal strip (uniform, bottom-aligned) into per-frame canvases.
+  function sliceStrip(img, n) {
+    const cw = img.naturalWidth / n, ch = img.naturalHeight, frames = [];
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement('canvas');
+      c.width = cw; c.height = ch;
+      c.getContext('2d').drawImage(img, i * cw, 0, cw, ch, 0, 0, cw, ch);
+      frames.push(c);
+    }
+    return frames;
+  }
+  // Damage: 4 uniform 298x308 cells. Ground: 5 cells (idle + walk×4), same geometry.
+  function buildHurtFrames() { if (hurtSheet.naturalWidth) hurtFrames = sliceStrip(hurtSheet, 4); }
+  function buildGroundFrames() {
+    if (!groundSheet.naturalWidth) return;
+    groundFrames = sliceStrip(groundSheet, 5);
+    walkFrames = groundFrames.slice(1);
+  }
+  hurtSheet.onload = buildHurtFrames;
+  hurtSheet.src = 'assets/images/player-hurt.png?v=1';
+  if (hurtSheet.complete) buildHurtFrames();
+  groundSheet.onload = buildGroundFrames;
+  groundSheet.src = 'assets/images/player-ground.png?v=1';
+  if (groundSheet.complete) buildGroundFrames();
 
   function resetGame() {
     clearTimeout(openingTimeout); openingTimeout = 0;
@@ -343,7 +367,7 @@
     bullets = []; enemyBullets = []; enemies = []; particles = []; pickups = []; shockwaves = [];
     setupStage();
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
-    player.fire = 0; player.missileFire = .8; player.inv = 1.2; player.frame = 0; player.grounded = false; player.takeoff = 0; player.power = 1; player.spread = 1; player.speed = 1;
+    player.fire = 0; player.missileFire = .8; player.inv = 1.2; player.hit = 0; player.frame = 0; player.grounded = false; player.takeoff = 0; player.power = 1; player.spread = 1; player.speed = 1;
     state = 'playing'; paused = false;
     titleScreen.classList.remove('is-visible');
     startScreen.classList.remove('is-visible');
@@ -996,6 +1020,7 @@
     shake = Math.max(0, shake - dt * 25); flash = Math.max(0, flash - dt * 3);
     specialFlash = Math.max(0, specialFlash - dt);
     player.inv = Math.max(0, player.inv - dt);
+    player.hit = Math.max(0, player.hit - dt);
     bgCam += (((player.y - 360) / 360) * 14 - bgCam) * Math.min(1, dt * 3);
     bgCamX += ((clamp(-(player.x - 560) / 560, -1, 1) * 16 - bgCamX)) * Math.min(1, dt * 3);
     // Drift the front bokeh orbs; recycle off the left edge with a fresh lane.
@@ -1360,7 +1385,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
 
   function hurt(damage) {
-    health = Math.max(0, health - damage * difficulties[difficultyKey].damage); player.inv = 1.4; combo = 0; shake = 18; flash = .7; hitStop = Math.max(hitStop, .07);
+    health = Math.max(0, health - damage * difficulties[difficultyKey].damage); player.inv = 1.4; player.hit = .45; combo = 0; shake = 18; flash = .7; hitStop = Math.max(hitStop, .07);
     stageDamaged = true;
     // Getting hit knocks the shot power down one level (Gradius-style risk/reward).
     if (player.power > 1) { player.power--; powerDownBanner = 1.4; }
@@ -3148,23 +3173,29 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.restore();
     }
     ctx.fillStyle = 'rgba(49,232,255,.18)'; ctx.beginPath(); ctx.ellipse(player.x + 56, player.y + (player.grounded ? 155 : 96), 54, 11, 0, 0, Math.PI * 2); ctx.fill();
-    if (player.takeoff > 0 && jumpFrame) {
+    if (player.hit > 0 && hurtFrames.length) {
+      // Damage/hurt: play the 4-frame knock-around animation once over HURT_DUR. Cells are
+      // uniform and ground-aligned, so drawn size is constant (never pops bigger); feet sit
+      // on the floor when grounded, tucked up a touch while airborne.
+      const HURT_DUR = .45;
+      const idx = Math.max(0, Math.min(hurtFrames.length - 1,
+        Math.floor((1 - player.hit / HURT_DUR) * hurtFrames.length)));
+      const hy = player.grounded ? player.y - 24 : player.y - 23 + bob;
+      const hx = player.grounded ? player.x - 30 : player.x - 22;
+      const hh = player.grounded ? 183 : 152;
+      ctx.drawImage(hurtFrames[idx], hx, hy, hh * (298 / 308), hh);
+    } else if (player.takeoff > 0 && jumpFrame) {
       // Jump / takeoff cell from the sheet.
       ctx.drawImage(jumpFrame, player.x - 10, player.y - 26 + bob, 128, 175);
-    } else if (player.grounded && (idleFrame || walkFrames.length)) {
-      // Idle has no gun; walk frames hold the gun — use walk while moving or firing.
+    } else if (player.grounded && groundFrames.length) {
+      // Ground: she always holds the gun now — idle frame when still, walk cycle when moving
+      // or firing. Cells share the hurt strip's geometry, so sizing stays consistent.
       const firingNow = keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire;
-      const useWalk = walkFrames.length && (Math.abs(player.vx) > 18 || firingNow);
-      const frame = useWalk
-        ? walkFrames[Math.floor(Math.abs(player.frame)) % walkFrames.length]
-        : (idleFrame || walkFrames[0]);
-      if (frame) ctx.drawImage(frame, player.x - 8, player.y - 28, 130, 190);
-      if (firingNow && Math.floor(elapsed * 18) % 2 === 0) {
-        ctx.save(); ctx.globalCompositeOperation = 'lighter';
-        ctx.fillStyle = 'rgba(255,225,90,.85)';
-        ctx.beginPath(); ctx.arc(player.x + 114, player.y + 80, 5 + Math.random() * 3, 0, Math.PI * 2); ctx.fill();
-        ctx.restore();
-      }
+      const moving = Math.abs(player.vx) > 18 || firingNow;
+      const frame = moving
+        ? groundFrames[1 + (Math.floor(Math.abs(player.frame)) % 4)]
+        : groundFrames[0];
+      ctx.drawImage(frame, player.x - 30, player.y - 24, 177, 183);
     } else if (spriteFrames.length) {
       const frame = spriteFrames[Math.floor(player.frame) % spriteFrames.length];
       ctx.drawImage(frame, player.x - 13, player.y - 22 + bob, 132, 167);
