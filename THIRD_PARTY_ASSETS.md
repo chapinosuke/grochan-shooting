@@ -20,3 +20,22 @@
 | `assets/sfx/power-up.mp3` | パワーアップ1 |
 | `assets/sfx/shield.mp3` | シールド1 |
 | `assets/sfx/heavy-hit.mp3` | 硬いものに衝突3 |
+
+## ボイス（ぐろちゃん）
+
+効果音ラボ「ゲームの戦闘」女性ボイス（真面目な女剣士）を2026-07-19に取得。フリー・商用利用無料・クレジット表記不要。
+
+- 使用ページ: https://soundeffect-lab.info/sound/voice/game.html
+
+| ゲーム内ファイル | セリフ | 再生場面 |
+| --- | --- | --- |
+| `assets/voice/swordwoman-start1.mp3` | 覚悟しなさい！ | ゲーム開始 |
+| `assets/voice/swordwoman-start2.mp3` | 負けられないわ！ | ボス出現 |
+| `assets/voice/swordwoman-special1.mp3` | はあーっ！ | スペシャル |
+| `assets/voice/swordwoman-special2.mp3` | 紫電一閃！ | スペシャル |
+| `assets/voice/swordwoman-damage1.mp3` | きゃっ！ | 被弾 |
+| `assets/voice/swordwoman-damage2.mp3` | いやっ！ | 被弾 |
+| `assets/voice/swordwoman-win1.mp3` | 先を急ぎましょう | ステージクリア／全クリア |
+| `assets/voice/swordwoman-death1.mp3` | きゃああーー！ | ゲームオーバー |
+
+※ 上記以外の女剣士ボイス（attack/guard/faint/lose/greeting/special3）も `assets/voice/` に取得済み（未使用・差し替え用）。

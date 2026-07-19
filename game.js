@@ -76,6 +76,33 @@
     }) };
   });
 
+  // Gro-chan's voice (効果音ラボ「真面目な女剣士」, free / commercial OK / no credit required).
+  // One line at a time — a new line cuts off the previous so they never overlap.
+  const VOICE_VOL = .74;
+  const voiceLines = {
+    start: ['swordwoman-start1'],       // 「覚悟しなさい！」launch
+    bossAppear: ['swordwoman-start2'],  // 「負けられないわ！」boss warning
+    special: ['swordwoman-special1'], // 「はあーっ！」
+    heal: ['swordwoman-start2'],      // 「負けられないわ！」回復して立て直し
+    hurt: ['swordwoman-damage1', 'swordwoman-damage2'],      // 「きゃっ！」「いやっ！」
+    clear: ['swordwoman-win1'],         // 「先を急ぎましょう」stage clear
+    gameover: ['swordwoman-death1']     // 「きゃああーー！」game over
+  };
+  const voiceClips = {};
+  [...new Set(Object.values(voiceLines).flat())].forEach(name => {
+    const a = new Audio(`assets/voice/${name}.mp3`); a.preload = 'auto'; a.volume = VOICE_VOL; voiceClips[name] = a;
+  });
+  let currentVoice = null;
+  function voice(event) {
+    if (!soundOn) return;
+    const list = voiceLines[event]; if (!list || !list.length) return;
+    const clip = voiceClips[list[Math.floor(Math.random() * list.length)]];
+    if (!clip) return;
+    if (currentVoice && currentVoice !== clip) { currentVoice.pause(); currentVoice.currentTime = 0; }
+    currentVoice = clip;
+    try { clip.currentTime = 0; clip.volume = VOICE_VOL; clip.play().catch(() => {}); } catch (_) { /* optional */ }
+  }
+
   let spriteFrames = [];
   let walkFrames = [];
   let hurtFrames = [];
@@ -139,9 +166,11 @@
   let padActionWasDown = false;
   let padSpecialWasDown = false;
   const difficulties = {
-    easy: { spawn: .92, speed: .88, damage: .72, timeScale: 1.06, bossHp: 340, score: .8, midHp: 100 },
-    normal: { spawn: .72, speed: 1.05, damage: 1.05, timeScale: 1, bossHp: 560, score: 1, midHp: 170 },
-    hard: { spawn: .55, speed: 1.28, damage: 1.35, timeScale: .92, bossHp: 800, score: 1.45, midHp: 240 }
+    // bulletSpeed scales how fast enemy shots travel; fireGap stretches the time between
+    // volleys (>1 = fewer bullets, wider gaps). Easy is tuned to be comfortably dodgeable.
+    easy: { spawn: 1.08, speed: .8, damage: .55, timeScale: 1.06, bossHp: 300, score: .8, midHp: 90, bulletSpeed: .68, fireGap: 2.2 },
+    normal: { spawn: .72, speed: 1.05, damage: 1.05, timeScale: 1, bossHp: 560, score: 1, midHp: 170, bulletSpeed: 1, fireGap: 1 },
+    hard: { spawn: .55, speed: 1.28, damage: 1.35, timeScale: .92, bossHp: 800, score: 1.45, midHp: 240, bulletSpeed: 1.08, fireGap: .9 }
   };
   const stages = [
     {
@@ -386,6 +415,7 @@
     lastTime = performance.now();
     ensureAudio();
     playBgm('stage0', true);
+    voice('start');
   }
 
   // Menu flow: title (canvas logo + attract demo) -> how-to-play -> opening.
@@ -416,7 +446,7 @@
     openingScreen.classList.add('is-visible');
     pauseButton.classList.remove('is-visible'); specialButton.classList.remove('is-visible');
     playBgm('title'); ensureAudio(); sfx('power');
-    openingTimeout = setTimeout(resetGame, 9000);
+    // Stay on the opening until the player launches (button / ENTER / click) — no auto-advance.
   }
 
   function playBgm(key, restart = false) {
@@ -621,7 +651,7 @@
       e.hp -= damage; e.hit = .3;
       if (e.hp <= 0) destroyEnemy(e);
     }
-    burst(cx, cy, '#ffe15a', 70, 620); sfx('special'); updateSpecialButton();
+    burst(cx, cy, '#ffe15a', 70, 620); sfx('special'); voice('special'); updateSpecialButton();
   }
 
   function updateSpecialButton() {
@@ -759,7 +789,8 @@
     const midPark = VW - e.w - 50;
     if (e.x > midPark) e.x -= 300 * dt;
     e.y = clamp(e.baseY + Math.sin(e.t * (1.25 + stageIndex * .1)) * (70 + stageIndex * 6), 20, VH - e.h - 30);
-    e.fire -= dt; e.sp -= dt;
+    const fg = difficulties[difficultyKey].fireGap;
+    e.fire -= dt / fg; e.sp -= dt / fg;
     const engaged = e.x <= midPark + 20;
     const rage = e.hp < e.maxHp * .45;
     if (engaged && e.fire <= 0) {
@@ -830,7 +861,7 @@
     const engaged = e.x < parkX + 30;
     // Final rage tier below 25% HP: every attack cadence ticks 35% faster,
     // on top of the existing phase2 pattern upgrades at 50%.
-    const rageMul = e.hp < e.maxHp * .25 ? 1.35 : 1;
+    const rageMul = (e.hp < e.maxHp * .25 ? 1.35 : 1) / difficulties[difficultyKey].fireGap;
     e.fire -= dt * rageMul;
     e.sp = e.sp === undefined ? 3.5 : e.sp - dt * rageMul;
     if (e.tel > 0) {
@@ -916,9 +947,10 @@
   }
 
   function bossBubbleWall(e) {
-    const gap = 1 + Math.floor(Math.random() * 5);
+    const wide = difficulties[difficultyKey].fireGap > 1.2; // easy: bigger opening
+    const gap = 1 + Math.floor(Math.random() * (wide ? 4 : 5));
     for (let i = 0; i < 8; i++) {
-      if (i === gap || i === gap + 1) continue;
+      if (i === gap || i === gap + 1 || (wide && i === gap + 2)) continue;
       enemyBullets.push({ x: e.x - 30, y: 60 + i * 85, vx: -235, vy: 0, r: 13, life: 8, damage: 15, bubble: true });
     }
     sfx('boss');
@@ -977,9 +1009,10 @@
   }
 
   function bossHeartWall(e) {
-    const gap = 1 + Math.floor(Math.random() * 5);
+    const wide = difficulties[difficultyKey].fireGap > 1.2; // easy: bigger opening
+    const gap = 1 + Math.floor(Math.random() * (wide ? 4 : 5));
     for (let i = 0; i < 8; i++) {
-      if (i === gap || i === gap + 1) continue;
+      if (i === gap || i === gap + 1 || (wide && i === gap + 2)) continue;
       enemyBullets.push({ x: e.x - 30, y: 60 + i * 85, vx: -245, vy: 0, r: 11, life: 8, damage: 15, heart: true });
     }
     sfx('boss');
@@ -1047,7 +1080,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       bossWarning -= dt;
       if (bossWarning <= 0) spawnMidBoss();
     } else if (bossState === 'waiting' && midBossDone && stageTime >= bossAt) {
-      bossState = 'warning'; bossWarning = 3.6; enemies = []; enemyBullets = []; bullets = []; sfx('warning');
+      bossState = 'warning'; bossWarning = 3.6; enemies = []; enemyBullets = []; bullets = []; sfx('warning'); voice('bossAppear');
     } else if (bossState === 'waiting' && !midBossDone && stageTime >= bossAt) {
       // Safety: if mid was skipped somehow, force mid first
       bossState = 'midboss-warning'; bossWarning = 2.5; enemies = []; enemyBullets = []; sfx('warning');
@@ -1231,7 +1264,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }
       if (b.gravity) b.vy += b.gravity * dt;
       if (b.drift) { b.vx += Math.sin(elapsed * 3 + b.y * .05) * b.drift * dt; b.vy += Math.cos(elapsed * 2.6 + b.x * .04) * b.drift * dt; }
-      b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+      // Slow incoming fire on easier settings so gaps are readable and dodgeable.
+      const eb = difficulty.bulletSpeed;
+      b.x += b.vx * dt * eb; b.y += b.vy * dt * eb; b.life -= dt;
       if (!b.grazed && player.inv <= 0) {
         const dx = b.x - (player.x + 56), dy = b.y - (player.y + 55);
         const grazeRange = b.r + 48;
@@ -1266,7 +1301,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         const freq = e.type === 'jelly' ? 1.5 : e.type === 'manta' ? 1.2 : e.type === 'cupid' ? 2.2 : e.type === 'knight' ? 1.7 : 3.2;
         e.y = e.baseY + Math.sin(e.t * freq) * amp;
       }
-      e.fire -= dt;
+      e.fire -= dt / difficulty.fireGap;
       if (e.fire <= 0 && e.x < VW - 90) {
         enemyShoot(e);
         const cadence = e.type === 'tank' ? 1.1 : e.type === 'turret' ? 1.4 : e.type === 'spinner' ? 1.8 : e.type === 'glitch' ? 1.9 : e.type === 'cupid' ? 2 : e.type === 'racer' ? 1.5 : e.type === 'manta' ? 1.9 : e.type === 'walker' ? 1.25 : e.type === 'seeker' ? 1.45 : e.type === 'knight' ? 1.7 : 2.1 + Math.random();
@@ -1330,7 +1365,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         if (p.type === 'power') player.power = Math.min(3, player.power + 1);
         else if (p.type === 'spread') player.spread = Math.min(3, player.spread + 1);
         else if (p.type === 'speed') player.speed = Math.min(3, player.speed + 1);
-        else health = Math.min(maxHealth, health + 32);
+        else { health = Math.min(maxHealth, health + 32); voice('heal'); }
         burst(p.x, p.y, p.type === 'power' ? '#ff8a35' : p.type === 'spread' ? '#31e8ff' : p.type === 'speed' ? '#72ff68' : '#ffe15a', 22, 260); sfx('power');
       }
     }
@@ -1403,6 +1438,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (health <= 0) {
       if (continuesLeft > 0) doContinue();
       else finishGame(false);
+    } else {
+      voice('hurt');
     }
   }
 
@@ -1440,6 +1477,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       score -= item.price;
       item.apply();
       sfx('power');
+      if (item.id === 'buyHeal') voice('heal');
       updateShop();
     });
   });
@@ -1455,6 +1493,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   function openShop() {
     state = 'shop';
+    voice('clear');
     shopNext.textContent = `STAGE ${stageIndex + 2}  ${stages[stageIndex + 1].name}`;
     updateShop();
     shopScreen.classList.add('is-visible');
@@ -1479,6 +1518,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   function finishGame(cleared) {
     state = 'over';
+    voice(cleared ? 'clear' : 'gameover');
     pauseButton.classList.remove('is-visible', 'is-paused');
     specialButton.classList.remove('is-visible', 'is-ready');
     pauseLabel.classList.remove('is-visible');
@@ -4097,10 +4137,6 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const [x, y] of [[-7, -10], [-2, -12], [3, -11], [8, -9], [0, -8], [-5, -7]]) {
       ctx.beginPath(); ctx.ellipse(x, y, 1.4, .9, .4, 0, Math.PI * 2); ctx.fill();
     }
-    // steam
-    ctx.globalAlpha = .35 + Math.sin(t * 5) * .15; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(-4, -18); ctx.quadraticCurveTo(-6, -24, -2, -28); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(5, -17); ctx.quadraticCurveTo(8, -23, 4, -27); ctx.stroke();
     ctx.restore();
   }
 

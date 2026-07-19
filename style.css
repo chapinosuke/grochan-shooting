@@ -140,7 +140,7 @@ canvas {
 .opening-skyline i:nth-child(7) { left: 90%; height: 42%; }
 .opening-scan { position: absolute; z-index: 3; left: 0; right: 0; top: -4px; height: 2px; opacity: 0; background: var(--cyan); box-shadow: 0 0 18px var(--cyan); pointer-events: none; }
 .opening-screen.is-visible .opening-scan { animation: openingScan 2.5s linear .3s both; }
-.opening-progress { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,.08); }
+.opening-progress { display: none; position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,.08); }
 .opening-progress i { display: block; width: 0; height: 100%; background: linear-gradient(90deg, var(--cyan), var(--pink), var(--yellow)); box-shadow: 0 0 12px var(--pink); }
 .opening-screen.is-visible .opening-progress i { animation: openingProgress 9s linear both; }
 
