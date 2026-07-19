@@ -3,6 +3,8 @@
 
   const canvas = document.querySelector('#game');
   const ctx = canvas.getContext('2d');
+  const gameShell = document.querySelector('.game-shell');
+  const gameOverBlackout = document.querySelector('#gameOverBlackout');
   const titleScreen = document.querySelector('#titleScreen');
   const startScreen = document.querySelector('#startScreen');
   const openingScreen = document.querySelector('#openingScreen');
@@ -55,9 +57,10 @@
     stage4: new Audio('assets/bgm/Neon Bullet Heaven.mp3'),
     midBoss: new Audio('assets/bgm/The Crimson Labyrinth.mp3'),
     bossBattle: new Audio('assets/bgm/Neon Bullet Heaven.mp3'),
-    finalBoss: new Audio('assets/bgm/Red Planet Showdown.mp3')
+    finalBoss: new Audio('assets/bgm/Red Planet Showdown.mp3'),
+    gameOver: new Audio('assets/bgm/Game Over, Again.mp3')
   };
-  const bgmVolumes = { title: .3, opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32 };
+  const bgmVolumes = { title: .3, opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32, gameOver: .28 };
   Object.entries(bgmTracks).forEach(([key, track]) => { track.loop = true; track.preload = 'auto'; track.volume = bgmVolumes[key]; });
   const sampledSfx = {
     shoot: { src: 'assets/sfx/player-shot.mp3', volume: .2, pool: 7, max: .42 },
@@ -617,6 +620,8 @@
     openingScreen.classList.remove('is-visible');
     endingScreen.classList.remove('is-visible');
     gameOverScreen.classList.remove('is-visible');
+    gameShell.classList.remove('is-game-over');
+    gameOverBlackout.classList.remove('is-visible');
     shopScreen.classList.remove('is-visible');
     pauseLabel.classList.remove('is-visible');
     pauseButton.classList.add('is-visible');
@@ -705,6 +710,7 @@
 
   function desiredBgmKey() {
     if (state === 'opening' || state === 'menu') return 'title';
+    if (state === 'over' && gameShell.classList.contains('is-game-over')) return 'gameOver';
     if (bossState === 'midboss-active' || bossState === 'midboss-warning') return 'midBoss';
     if (bossState === 'active') return stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle';
     return `stage${stageIndex}`;
@@ -1781,6 +1787,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   function finishGame(cleared) {
     state = 'over';
+    gameShell.classList.toggle('is-game-over', !cleared);
+    gameOverBlackout.classList.toggle('is-visible', !cleared);
+    if (!cleared) playBgm('gameOver', true);
     voice(cleared ? 'clear' : 'gameover');
     pauseButton.classList.remove('is-visible', 'is-paused');
     specialButton.classList.remove('is-visible', 'is-ready');

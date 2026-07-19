@@ -35,6 +35,21 @@ canvas {
   image-rendering: pixelated;
 }
 
+/* Final defeat fades the live battlefield fully to black before the story and
+   result layers appear. Kept below .screen so the crash illustration remains. */
+.gameover-blackout {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: #000;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .45s ease, visibility .45s;
+}
+.gameover-blackout.is-visible { opacity: 1; visibility: visible; }
+.game-shell.is-game-over .result-screen { background: #000; }
+
 .screen {
   position: absolute;
   inset: 0;
