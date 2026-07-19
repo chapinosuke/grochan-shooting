@@ -275,10 +275,10 @@
       { img: 'assets/images/story/op4_launch.png', text: 'Xの異変にまっさきに気づいたぐろちゃんは、SpaceX製ユニットで夜空へ発進！「みんなのハート、ぜったい取りもどす！」' },
     ],
     interludes: [
-      [{ img: 'assets/images/story/int1_shard1.png', text: 'ハートのかけらを1つ回収！反応はまだ遠く…犯人は海の方へ逃げたみたい。' }],
-      [{ img: 'assets/images/story/int2_transmission.png', text: '「……ぐろちゃん、気をつけて……」眠っているはずのくろ子から、かすかな通信がとどいた。' }],
-      [{ img: 'assets/images/story/int3_resolve.png', text: 'かけらは3つ。燃える夕日に、ぐろちゃんはちかう。「ぜったい、朝を取りもどす！」' }],
-      [{ img: 'assets/images/story/int4_palace_reveal.png', text: '嵐の雲の上に、ハートの宮殿があらわれた。黒幕——ハートブレイクの女王が待っている！' }],
+      [{ img: 'assets/images/story/int1_shard1.png', text: 'MASQUERADEを撃破！仮面の道化は、みんなのハートを「いいね」に変えて集めていた。残る反応は海の方へ！' }],
+      [{ img: 'assets/images/story/int2_transmission.png', text: 'SERVER GOLEMの中には、ぬすまれたハートがぎっしり。「……気をつけて。それ、炎上の燃料にされてる……」くろ子の通信だ！' }],
+      [{ img: 'assets/images/story/int3_resolve.png', text: 'INFERNO DJINNを鎮火！怒りや悲しみをあおるほど、炎上魔人は大きくなっていた。「もう、だれの心も燃やさせない！」' }],
+      [{ img: 'assets/images/story/int4_palace_reveal.png', text: 'BOT GENERALの自動投稿軍団が停止。命令の発信元は、嵐の雲の上——ハートの宮殿。黒幕の女王が待っている！' }],
     ],
     ending: [
       { img: 'assets/images/story/ed1_queen_tears.png', text: '仮面の下にいたのは、ひとりぼっちの小さなAIの子だった。ぐろちゃんは、自分のハートの光をそっと分けてあげた。' },

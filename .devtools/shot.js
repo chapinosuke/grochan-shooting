@@ -34,9 +34,21 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   await page.goto(GAME, { waitUntil: 'load' });
   await new Promise(r => setTimeout(r, 400));
 
-  const click = async sel => { const el = await page.$(sel); if (el) await el.click(); };
-  await click('#titleEnter'); await new Promise(r => setTimeout(r, 200));   // title -> how-to
-  await click('#startButton'); await new Promise(r => setTimeout(r, 200));  // how-to -> opening
+  // Dispatch DOM clicks so delayed CSS entrance animations do not make the
+  // deterministic harness wait on an otherwise-ready control.
+  const click = sel => page.evaluate(selector => document.querySelector(selector)?.click(), sel);
+  // A story slide needs one action to finish its typewriter text and another
+  // to advance. Keep waits short: the harness wants the final layout, not the
+  // typing animation itself.
+  const advanceStory = async (slideCount) => {
+    for (let i = 0; i < slideCount; i++) {
+      await click('#storyScreen'); await new Promise(r => setTimeout(r, 60));
+      await click('#storyScreen'); await new Promise(r => setTimeout(r, 120));
+    }
+  };
+  await click('#titleScreen'); await new Promise(r => setTimeout(r, 200));  // title -> how-to
+  await click('#startButton'); await new Promise(r => setTimeout(r, 200));  // how-to -> opening story
+  await advanceStory(4);                                                    // opening story -> mission card
   await click('#launchButton');   // opening -> resetGame -> playing
 
   const press = (code, shift = false) => page.evaluate(({ code, shift }) => {
@@ -54,10 +66,14 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   // leave it via its button (or Enter) before the next skip.
   for (let i = 0; i < stageSkips; i++) {
     await press('KeyN', true); await new Promise(r => setTimeout(r, 2600));
+    await advanceStory(1);  // cleared-stage interlude -> shop
     await click('#nextStageButton'); await new Promise(r => setTimeout(r, 400));
   }
   if (arg === 'play' && stageSkips > 0) await pollEnemies();
-  if (arg === 'shop') { await press('KeyN', true); await new Promise(r => setTimeout(r, 2900)); }  // clear transition -> shop overlay
+  if (arg === 'shop') {
+    await press('KeyN', true); await new Promise(r => setTimeout(r, 2900));
+    await advanceStory(1);  // clear transition -> interlude -> shop overlay
+  }
   if (arg === 'boss') { await press('KeyB', true); await new Promise(r => setTimeout(r, 7000)); }
   if (arg === 'mid') { await press('KeyM', true); await new Promise(r => setTimeout(r, 7000)); }
 
