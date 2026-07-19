@@ -46,7 +46,7 @@
   const spriteSheet = new Image();
   const hurtSheet = new Image();   // 4-frame damage/hurt animation (holds the gun)
   const groundSheet = new Image(); // 5 ground frames holding the gun: idle + walk×4
-  spriteSheet.src = 'assets/images/player-spritesheet.png?v=hq';
+  spriteSheet.src = 'assets/images/player-spritesheet.webp?v=hq';
   // opening/stage0 share one Audio element so the title theme flows seamlessly
   // into stage 1 instead of restarting from the top when the run begins.
   const neonArcadeRush = new Audio('assets/bgm/Neon Arcade Rush.mp3');
@@ -278,24 +278,24 @@
   // the ending sequence takes over there).
   const STORY = {
     opening: [
-      { img: 'assets/images/story/op1_academy_day.png', text: 'ここは 花のAI学園。ぐろちゃん・ちゃっぴー・くろ子は、いつもいっしょの仲よし3人組。' },
-      { img: 'assets/images/story/op2_heist_night.png', text: 'ある夜、空にあやしい影が…。学園のみんなの「ハート」が、ひと晩でぬすまれてしまった！' },
-      { img: 'assets/images/story/op3_sleeping_friends.png', text: 'ハートをなくした くろ子もちゃっぴーも、目をさまさない…。' },
-      { img: 'assets/images/story/op4_launch.png', text: 'Xの異変にまっさきに気づいたぐろちゃんは、SpaceX製ユニットで夜空へ発進！「みんなのハート、ぜったい取りもどす！」' },
+      { img: 'assets/images/story/op1_academy_day.webp', text: 'ここは 花のAI学園。ぐろちゃん・ちゃっぴー・くろ子は、いつもいっしょの仲よし3人組。' },
+      { img: 'assets/images/story/op2_heist_night.webp', text: 'ある夜、空にあやしい影が…。学園のみんなの「ハート」が、ひと晩でぬすまれてしまった！' },
+      { img: 'assets/images/story/op3_sleeping_friends.webp', text: 'ハートをなくした くろ子もちゃっぴーも、目をさまさない…。' },
+      { img: 'assets/images/story/op4_launch.webp', text: 'Xの異変にまっさきに気づいたぐろちゃんは、SpaceX製ユニットで夜空へ発進！「みんなのハート、ぜったい取りもどす！」' },
     ],
     interludes: [
-      [{ img: 'assets/images/story/int1_shard1.png', text: 'MASQUERADEを撃破！仮面の道化は、みんなのハートを「いいね」に変えて集めていた。残る反応は海の方へ！' }],
-      [{ img: 'assets/images/story/int2_transmission.png', text: 'SERVER GOLEMの中には、ぬすまれたハートがぎっしり。「……気をつけて。それ、炎上の燃料にされてる……」くろ子の通信だ！' }],
-      [{ img: 'assets/images/story/int3_resolve.png', text: 'INFERNO DJINNを鎮火！怒りや悲しみをあおるほど、炎上魔人は大きくなっていた。「もう、だれの心も燃やさせない！」' }],
-      [{ img: 'assets/images/story/int4_palace_reveal.png', text: 'BOT GENERALの自動投稿軍団が停止。命令の発信元は、嵐の雲の上——ハートの宮殿。黒幕の女王が待っている！' }],
+      [{ img: 'assets/images/story/int1_shard1.webp', text: 'MASQUERADEを撃破！仮面の道化は、みんなのハートを「いいね」に変えて集めていた。残る反応は海の方へ！' }],
+      [{ img: 'assets/images/story/int2_transmission.webp', text: 'SERVER GOLEMの中には、ぬすまれたハートがぎっしり。「……気をつけて。それ、炎上の燃料にされてる……」くろ子の通信だ！' }],
+      [{ img: 'assets/images/story/int3_resolve.webp', text: 'INFERNO DJINNを鎮火！怒りや悲しみをあおるほど、炎上魔人は大きくなっていた。「もう、だれの心も燃やさせない！」' }],
+      [{ img: 'assets/images/story/int4_palace_reveal.webp', text: 'BOT GENERALの自動投稿軍団が停止。命令の発信元は、嵐の雲の上——ハートの宮殿。黒幕の女王が待っている！' }],
     ],
     ending: [
-      { img: 'assets/images/story/ed1_queen_tears.png', text: '仮面の下にいたのは、ひとりぼっちの小さなAIの子だった。ぐろちゃんは、自分のハートの光をそっと分けてあげた。' },
-      { img: 'assets/images/story/ed2_hearts_return.png', text: '夜空いっぱいに、ハートが流れ星になって帰っていく——' },
-      { img: 'assets/images/story/ed3_morning.png', text: 'くろ子もちゃっぴーも、ぱちりと目をさます。花のAI学園に、いつもの朝がきた！' },
+      { img: 'assets/images/story/ed1_queen_tears.webp', text: '仮面の下にいたのは、ひとりぼっちの小さなAIの子だった。ぐろちゃんは、自分のハートの光をそっと分けてあげた。' },
+      { img: 'assets/images/story/ed2_hearts_return.webp', text: '夜空いっぱいに、ハートが流れ星になって帰っていく——' },
+      { img: 'assets/images/story/ed3_morning.webp', text: 'くろ子もちゃっぴーも、ぱちりと目をさます。花のAI学園に、いつもの朝がきた！' },
     ],
     gameover: [
-      { img: 'assets/images/story/go1_crash.png', text: 'ぐろちゃん、不時着…！でもまだ終わりじゃない。もういちど、飛ぼう！' },
+      { img: 'assets/images/story/go1_crash.webp', text: 'ぐろちゃん、不時着…！でもまだ終わりじゃない。もういちど、飛ぼう！' },
     ],
   };
   for (const slide of [...STORY.opening, ...STORY.ending, ...STORY.gameover, ...STORY.interludes.flat()]) new Image().src = slide.img;
@@ -304,17 +304,17 @@
   // transparency. Indexed by stage; the WARDEN mid-boss shares one design.
   const bossSprites = stages.map((_, i) => {
     const im = new Image();
-    im.src = `assets/images/bosses/sprites/stage${i + 1}_side.png`;
+    im.src = `assets/images/bosses/sprites/stage${i + 1}_side.webp`;
     return im;
   });
   const wardenSprite = new Image();
-  wardenSprite.src = 'assets/images/bosses/sprites/warden_side.png';
+  wardenSprite.src = 'assets/images/bosses/sprites/warden_side.webp';
   const frameReady = (im) => im && im.complete && im.naturalWidth > 0;
   // Battle pose sets (transparent PNGs, facing left): arrays per pose so
   // multi-frame sets animate (idle sways between 2 frames, attacks cycle 3).
   // The user-made sheet bosses use {2,3,2}; the generated sets are single-frame.
   const loadSet = (base, counts) => {
-    const load = (name) => { const im = new Image(); im.src = `assets/images/bosses/poses/${name}.png`; return im; };
+    const load = (name) => { const im = new Image(); im.src = `assets/images/bosses/poses/${name}.webp`; return im; };
     const set = {};
     for (const pose of ['idle', 'attack', 'hurt']) {
       const n = counts[pose];
@@ -567,7 +567,7 @@
     if (!spriteSheet.naturalWidth) return;
     // HQ sheet 1672x941: idle + walk×4 (top), jump + flying-shoot×4 (bottom).
     // Only jump / flight / title-idle come from here; grounded idle+walk use the gun
-    // frames in player-ground.png (buildGroundFrames), so the sheet's walk row is unused.
+    // frames in player-ground.webp (buildGroundFrames), so the sheet's walk row is unused.
     spriteFrames = [
       makeFrame(371, 533, 248, 305),
       makeFrame(673, 533, 248, 305),
@@ -599,10 +599,10 @@
     walkFrames = groundFrames.slice(1);
   }
   hurtSheet.onload = buildHurtFrames;
-  hurtSheet.src = 'assets/images/player-hurt.png?v=1';
+  hurtSheet.src = 'assets/images/player-hurt.webp?v=1';
   if (hurtSheet.complete) buildHurtFrames();
   groundSheet.onload = buildGroundFrames;
-  groundSheet.src = 'assets/images/player-ground.png?v=1';
+  groundSheet.src = 'assets/images/player-ground.webp?v=1';
   if (groundSheet.complete) buildGroundFrames();
 
   function resetGame() {

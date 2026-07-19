@@ -50,7 +50,12 @@ python3 -m http.server 8123      # プロジェクト直下で起動
 - ヘルパー: `hexA`/`shade`/`heartPath`/`starPath`/`drawBox3D`/`drawCylinder3D`/`drawKawaiiEyes`/`clamp`。`ctx.roundRect` 使用可。光源は左上で統一。
 
 ## 5. アセットパイプライン
-- **ボススプライト**: ユーザー自作/生成シート（`assets/images/bosses/sheets/*.png`、構え2/攻撃3/被弾2）→ 分割 → `assets/images/bosses/poses/<name>_<idle|attack|hurt>N.png`。`loadSet` が読み、`drawBoss`/`drawMidBoss` が `pickPoseFrame` で切替。未ロード時はプロシージャル描画にフォールバック。
+- **ボススプライト**: ユーザー自作/生成シート（`assets/images/bosses/sheets/*.webp`、構え2/攻撃3/被弾2）→ 分割 → `assets/images/bosses/poses/<name>_<idle|attack|hurt>N.webp`。`loadSet` が読み、`drawBoss`/`drawMidBoss` が `pickPoseFrame` で切替。未ロード時はプロシージャル描画にフォールバック。
+- **画像は全て WebP（near-lossless）**。ドット絵なので通常の非可逆圧縮（`-q 85` 等）はドットの粒立ちを潰すため使わない。新規画像を追加するときは必ず次のコマンドで変換すること（`-exact` を付けると near-lossless 前処理が無効化され、逆に肥大化するので付けない）:
+  ```
+  cwebp -near_lossless 40 -m 6 -alpha_q 100 in.png -o out.webp
+  ```
+- **音声は 96kbps mp3 に統一**。追加時は `ffmpeg -nostdin -i in.mp3 -codec:a libmp3lame -b:a 96k -ar 44100 out.mp3`（`-nostdin` を省くとシェルのループで標準入力を食い、数曲が黙ってスキップされる）。
 - **三面図アンカー**: `assets/images/chibi/` の3人ちびドットが全生成の絵柄アンカー。生成は codex CLI 経由（`codex exec -m gpt-5.6-sol`、参照画像を毎回添付）。
 - **音声（効果音ラボ）**: フリー・商用可・クレジット不要。mp3直リンクは **403 になるので Referer 付き curl** で取得:
   ```
