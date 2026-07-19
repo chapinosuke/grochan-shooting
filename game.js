@@ -200,7 +200,7 @@
   let difficultyKey = 'normal';
   let musicClock = 0;
   let musicStep = 0;
-  let soundOn = true;
+  let soundOn = false;
   let currentBgmKey = null;
   let bgmFadeToken = 0;
   let openingTimeout = 0;
