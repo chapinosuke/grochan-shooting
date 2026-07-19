@@ -70,7 +70,14 @@
     warning: { src: 'assets/sfx/boss-warning.mp3', volume: .2, pool: 1, max: 3.15 },
     power: { src: 'assets/sfx/power-up.mp3', volume: .3, pool: 2, max: .9 },
     shield: { src: 'assets/sfx/shield.mp3', volume: .28, pool: 3, max: .75 },
-    hurt: { src: 'assets/sfx/heavy-hit.mp3', volume: .28, pool: 2, max: 1.25 }
+    hurt: { src: 'assets/sfx/heavy-hit.mp3', volume: .28, pool: 2, max: 1.25 },
+    // Weighty boss-battle layer (効果音ラボ「戦闘」, free / commercial OK / no credit):
+    // a beast roar + ground tremor on entrance, a super-arts impact on phase 2,
+    // a building collapse on defeat.
+    bossRoar: { src: 'assets/sfx/boss-roar.mp3', volume: .42, pool: 1, max: 2.6 },
+    bossQuake: { src: 'assets/sfx/boss-quake.mp3', volume: .34, pool: 1, max: 3.5 },
+    bossSuperHit: { src: 'assets/sfx/boss-superhit.mp3', volume: .4, pool: 2, max: 1.1 },
+    bossCollapse: { src: 'assets/sfx/boss-collapse.mp3', volume: .46, pool: 1, max: 3.5 }
   };
   const sfxPools = {};
   Object.entries(sampledSfx).forEach(([key, def]) => {
@@ -104,6 +111,49 @@
     if (currentVoice && currentVoice !== clip) { currentVoice.pause(); currentVoice.currentTime = 0; }
     currentVoice = clip;
     try { clip.currentTime = 0; clip.volume = VOICE_VOL; clip.play().catch(() => {}); } catch (_) { /* optional */ }
+  }
+
+  // Per-boss villain voices (効果音ラボ「ゲームキャラクターボイス」, free / commercial OK /
+  // no credit). The free roster is small, so each stage boss gets a distinct
+  // source character *plus* a playbackRate tint — five villains from five voices.
+  // Boss lines ride their own channel so a taunt never cuts Gro-chan's voice.
+  const BOSS_VOICE_VOL = .8;
+  const bossVoiceCfg = [
+    { char: 'thief-boy', rate: 1.05 },            // st1 MASQUERADE 仮面の道化
+    { char: 'swordman', rate: 0.72 },             // st2 SERVER GOLEM 鋼鉄巨人
+    { char: 'necromancer-oldwoman', rate: 0.88 }, // st3 INFERNO DJINN 炎上魔人
+    { char: 'wizard', rate: 0.85 },               // st4 BOT GENERAL ロボ将軍
+    { char: 'witch', rate: 1.0 }                  // st5 QUEEN 女王
+  ];
+  // event -> candidate line files. Only files every character actually has are
+  // listed (necromancer lacks attack3), so nothing ever 404s.
+  const bossVoiceLines = {
+    appear: ['greeting1', 'start1'],
+    serious: ['start2', 'special2'], // phase 2 (<=50% HP)
+    attack: ['attack1', 'attack2', 'special1'],
+    hurt: ['damage1', 'damage2'],
+    death: ['death1', 'lose1']
+  };
+  const bossVoiceClips = {};
+  bossVoiceCfg.forEach(cfg => {
+    [...new Set(Object.values(bossVoiceLines).flat())].forEach(line => {
+      const key = `${cfg.char}-${line}`;
+      const a = new Audio(`assets/voice/boss/${key}.mp3`); a.preload = 'auto'; a.volume = BOSS_VOICE_VOL;
+      bossVoiceClips[key] = a;
+    });
+  });
+  let bossCurrentVoice = null;
+  let bossVoiceCd = 0; // throttles chatty events (attacks) so taunts stay punchy
+  function bossVoice(stageIdx, event, { throttle = 0 } = {}) {
+    if (!soundOn) return;
+    const cfg = bossVoiceCfg[stageIdx]; if (!cfg) return;
+    if (throttle) { if (bossVoiceCd > 0) return; bossVoiceCd = throttle; }
+    const list = bossVoiceLines[event]; if (!list || !list.length) return;
+    const clip = bossVoiceClips[`${cfg.char}-${list[Math.floor(Math.random() * list.length)]}`];
+    if (!clip) return;
+    if (bossCurrentVoice && bossCurrentVoice !== clip) { bossCurrentVoice.pause(); bossCurrentVoice.currentTime = 0; }
+    bossCurrentVoice = clip;
+    try { clip.currentTime = 0; clip.volume = BOSS_VOICE_VOL; clip.playbackRate = cfg.rate; clip.play().catch(() => {}); } catch (_) { /* optional */ }
   }
 
   let spriteFrames = [];
@@ -302,7 +352,10 @@
     e.attackT = Math.max(0, (e.attackT || 0) - dt);
     e.hurtT = Math.max(0, (e.hurtT || 0) - dt);
     e.hurtCd = Math.max(0, (e.hurtCd || 0) - dt);
-    if (e.hit > .09 && e.hurtCd <= 0) { e.hurtT = .4; e.hurtCd = 1.3; }
+    if (e.hit > .09 && e.hurtCd <= 0) {
+      e.hurtT = .4; e.hurtCd = 1.3;
+      if (e.type === 'boss' && Math.random() < .35) bossVoice(stageIndex, 'hurt', { throttle: 3 });
+    }
     // rotate through the attack frames: each newly-triggered attack (the
     // timer jumping up) advances to the next pose in the set
     if ((e.attackT || 0) > (e.prevAttackT || 0)) e.attackIdx = ((e.attackIdx || 0) + 1) % 3;
@@ -943,7 +996,8 @@
     enemyBullets = [];
     shake = 18; flash = .55;
     playBgm(stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle', true);
-    sfx('boss'); sfx('warning');
+    sfx('boss'); sfx('warning'); sfx('bossRoar'); sfx('bossQuake');
+    bossVoice(stageIndex, 'appear');
   }
 
   function spawnMidBoss() {
@@ -1035,7 +1089,8 @@
     if (!e.phase2 && e.hp <= e.maxHp / 2) {
       e.phase2 = true; shake = 14; flash = .5;
       burst(e.x + e.w / 2, e.y + e.h / 2, stages[idx].accent2, 40, 420);
-      enemyBullets = []; sfx('boss');
+      enemyBullets = []; sfx('boss'); sfx('bossSuperHit');
+      bossVoice(idx, 'serious');
     }
     const engaged = e.x < parkX + 30;
     // Final rage tier below 25% HP: every attack cadence ticks 35% faster,
@@ -1097,6 +1152,8 @@
 
   function executeBossSpecial(e) {
     e.attackT = .6;
+    // A battle cry on some attacks — throttled so it punctuates rather than spams.
+    if (Math.random() < .6) bossVoice(stageIndex, 'attack', { throttle: 5.5 });
     const type = e.telType; e.telType = null;
     if (type === 'dash') { e.mode = 'dash'; e.y = e.telY; sfx('boss'); }
     else if (type === 'wave') { stageIndex === 4 ? bossHeartWall(e) : bossBubbleWall(e); }
@@ -1242,6 +1299,7 @@
     gameSpeed += (targetSpeed - gameSpeed) * Math.min(1, dt * 1.2);
     shake = Math.max(0, shake - dt * 25); flash = Math.max(0, flash - dt * 3);
     specialFlash = Math.max(0, specialFlash - dt);
+    bossVoiceCd = Math.max(0, bossVoiceCd - dt);
     player.inv = Math.max(0, player.inv - dt);
     player.hit = Math.max(0, player.hit - dt);
     bgCam += (((player.y - 360) / 360) * 14 - bgCam) * Math.min(1, dt * 3);
@@ -1610,6 +1668,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (isBoss) {
       bossState = stageIndex === stages.length - 1 ? 'final' : 'transition'; stageTransition = 4.6;
       enemyBullets = []; bullets = []; musicStep = 0; musicClock = 0;
+      sfx('bossCollapse'); bossVoice(stageIndex, 'death');
       const stage = stages[stageIndex];
       for (let i = 0; i < 14; i++) {
         delayedBursts.push({ x: e.x + Math.random() * e.w, y: e.y + Math.random() * e.h, t: .08 + i * .11, color: i % 3 ? '#ffe15a' : stage.accent2, boom: i % 2 === 0 });
