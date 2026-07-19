@@ -25,6 +25,8 @@
   const nextStageButton = document.querySelector('#nextStageButton');
   const launchButton = document.querySelector('#launchButton');
   const retryButton = document.querySelector('#retryButton');
+  const titleButton = document.querySelector('#titleButton');
+  const pauseTitleButton = document.querySelector('#pauseTitleButton');
   const finalScore = document.querySelector('#finalScore');
   const newRecord = document.querySelector('#newRecord');
   const resultTitle = document.querySelector('#resultTitle');
@@ -656,6 +658,30 @@
     menuStep = 'title';
     startScreen.classList.remove('is-visible');
     titleScreen.classList.add('is-visible');
+  }
+
+  // Bail out to the title screen, either from the pause menu (mid-run, so
+  // confirm first since the run is lost) or from the result screen (run
+  // already ended, nothing left to lose).
+  function returnToTitle() {
+    if (state === 'playing' && !confirm('タイトルに戻りますか？ここまでのプレイは失われます。')) return;
+    clearTimeout(openingTimeout); openingTimeout = 0;
+    cancelStory();
+    state = 'menu'; paused = false;
+    gameShell.classList.remove('is-game-over');
+    gameOverBlackout.classList.remove('is-visible');
+    shopScreen.classList.remove('is-visible');
+    startScreen.classList.remove('is-visible');
+    openingScreen.classList.remove('is-visible');
+    endingScreen.classList.remove('is-visible');
+    staffRollScreen.classList.remove('is-visible', 'is-rolling');
+    gameOverScreen.classList.remove('is-visible');
+    pauseLabel.classList.remove('is-visible');
+    pauseButton.classList.remove('is-visible', 'is-paused');
+    specialButton.classList.remove('is-visible', 'is-ready');
+    pauseButton.textContent = '❚❚';
+    playBgm('title', true);
+    showTitle();
   }
 
   function showOpening() {
@@ -5281,6 +5307,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   staffRollTrack.addEventListener('animationend', landOnFin);
   storyScreen.addEventListener('click', advanceStory);
   retryButton.addEventListener('click', resetGame);
+  titleButton.addEventListener('click', returnToTitle);
   const difficultyOrder = ['easy', 'normal', 'hard'];
   function setDifficulty(key) {
     if (!difficulties[key] || key === difficultyKey) return;
@@ -5307,6 +5334,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   pauseButton.addEventListener('click', togglePause);
   specialButton.addEventListener('click', useSpecial);
   resumeButton.addEventListener('click', () => setPaused(false));
+  pauseTitleButton.addEventListener('click', returnToTitle);
   addEventListener('gamepadconnected', event => {
     controllerStatus.textContent = `🎮 ${event.gamepad.id.includes('Xbox') ? 'XBOX' : 'CONTROLLER'} READY`;
     controllerStatus.classList.add('is-visible');
