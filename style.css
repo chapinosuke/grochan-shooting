@@ -116,6 +116,65 @@ canvas {
   background: rgba(10,7,30,.55); box-shadow: 4px 4px 0 rgba(255,62,157,.28);
 }
 .cameo-face { font-size: 40px; line-height: 1; white-space: nowrap; filter: drop-shadow(0 0 8px rgba(49,232,255,.5)); }
+.cameo-face img { width: 84px; height: 84px; object-fit: cover; border-radius: 8px; image-rendering: pixelated; border: 2px solid rgba(255,255,255,.7); }
+
+/* Story cutscenes: a framed illustration window over a black backdrop with a
+   text box below — like an old JRPG event scene. Click / ENTER to advance. */
+.story-screen {
+  padding: 24px; cursor: pointer; justify-content: center; overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 12%, rgba(49, 232, 255, .14), transparent 55%),
+    radial-gradient(circle at 18% 80%, rgba(255, 62, 157, .12), transparent 45%),
+    #05030f;
+}
+/* Cyber backdrop: a neon wireframe floor scrolling toward the viewer... */
+.story-screen::before {
+  content: ""; position: absolute; left: -40%; right: -40%; bottom: -12%; height: 58%;
+  background:
+    repeating-linear-gradient(90deg, rgba(49, 232, 255, .3) 0 2px, transparent 2px 90px),
+    repeating-linear-gradient(0deg, rgba(255, 62, 157, .28) 0 2px, transparent 2px 46px);
+  transform: perspective(430px) rotateX(62deg);
+  animation: storyGrid 2.6s linear infinite;
+  mask-image: linear-gradient(180deg, transparent, black 45%);
+}
+@keyframes storyGrid { to { background-position: 0 0, 0 46px; } }
+/* ...plus drifting data streaks + CRT scanlines over the whole backdrop. */
+.story-screen::after {
+  content: ""; position: absolute; inset: -60% -10% 0; pointer-events: none;
+  background:
+    linear-gradient(105deg, transparent 12%, rgba(49, 232, 255, .09) 13%, transparent 15%,
+      transparent 38%, rgba(255, 62, 157, .08) 39%, transparent 41%,
+      transparent 70%, rgba(114, 255, 104, .07) 71%, transparent 73%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, .035) 0 2px, transparent 2px 5px);
+  animation: storyStreaks 7s linear infinite;
+}
+@keyframes storyStreaks { to { transform: translateX(-18%); } }
+.story-frame {
+  position: relative; z-index: 2;
+  display: flex; flex-direction: column; gap: 18px;
+  /* Wide enough to feel like the main event, but the 16:9 art + text box must
+     always fit the window height. */
+  width: min(880px, 92vw, calc((100vh - 250px) * 16 / 9));
+}
+.story-image {
+  display: block; width: 100%; aspect-ratio: 16 / 9;
+  object-fit: cover; image-rendering: pixelated; background: #000;
+  border: 2px solid #fff; outline: 2px solid #fff; outline-offset: 4px;
+}
+.story-caption {
+  padding: 16px 22px 12px; text-align: left;
+  background: rgba(8, 4, 27, .92); border: 2px solid #fff; outline: 2px solid #fff; outline-offset: 4px;
+}
+.story-caption p { min-height: 3.8em; }
+.story-caption p { margin: 0; color: #fff; font-size: 17px; line-height: 1.9; text-shadow: 0 2px 0 rgba(0,0,0,.6); }
+.story-advance { display: block; margin-top: 8px; text-align: right; color: #837aa7; font: 7px "Press Start 2P", monospace; letter-spacing: .12em; animation: storyBlink 1.2s steps(2) infinite; }
+@keyframes storyBlink { 50% { opacity: .25; } }
+/* While a line is typing out: hide the page-turn hint, show a blinking cursor.
+   The untyped tail stays in the layout (just invisible) so the box never grows. */
+.story-screen.is-typing .story-advance { visibility: hidden; }
+.story-untyped { visibility: hidden; }
+.story-screen.is-typing .story-caption p span:first-child::after { content: "▌"; display: inline-block; width: 0; animation: storyBlink .7s steps(2) infinite; }
+@media (max-width: 640px) { .story-caption p { font-size: 14px; } }
 .cameo-body { text-align: left; }
 .cameo-line { margin: 0 0 5px; color: #fff; font-size: clamp(14px, 1.7vw, 19px); letter-spacing: .04em; }
 .cameo-name { color: var(--cyan); font: 8px "Press Start 2P", monospace; letter-spacing: .12em; }

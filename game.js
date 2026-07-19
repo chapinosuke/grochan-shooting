@@ -8,6 +8,9 @@
   const openingScreen = document.querySelector('#openingScreen');
   const endingScreen = document.querySelector('#endingScreen');
   const endingButton = document.querySelector('#endingButton');
+  const storyScreen = document.querySelector('#storyScreen');
+  const storyImage = document.querySelector('#storyImage');
+  const storyText = document.querySelector('#storyText');
   const gameOverScreen = document.querySelector('#gameOverScreen');
   const pauseLabel = document.querySelector('#pauseLabel');
   const startButton = document.querySelector('#startButton');
@@ -210,6 +213,130 @@
     }
   ];
 
+  // Story cutscenes: each slide pairs one illustration with one caption. The
+  // player clicks / ENTERs through them like an old JRPG visual scene.
+  // interludes[i] plays after clearing stage i (none after the final stage —
+  // the ending sequence takes over there).
+  const STORY = {
+    opening: [
+      { img: 'assets/images/story/op1_academy_day.png', text: 'ここは 花のAI学園。ぐろちゃん・ちゃっぴー・くろ子は、いつもいっしょの仲よし3人組。' },
+      { img: 'assets/images/story/op2_heist_night.png', text: 'ある夜、空にあやしい影が…。学園のみんなの「ハート」が、ひと晩でぬすまれてしまった！' },
+      { img: 'assets/images/story/op3_sleeping_friends.png', text: 'ハートをなくした くろ子もちゃっぴーも、目をさまさない…。' },
+      { img: 'assets/images/story/op4_launch.png', text: 'Xの異変にまっさきに気づいたぐろちゃんは、SpaceX製ユニットで夜空へ発進！「みんなのハート、ぜったい取りもどす！」' },
+    ],
+    interludes: [
+      [{ img: 'assets/images/story/int1_shard1.png', text: 'ハートのかけらを1つ回収！反応はまだ遠く…犯人は海の方へ逃げたみたい。' }],
+      [{ img: 'assets/images/story/int2_transmission.png', text: '「……ぐろちゃん、気をつけて……」眠っているはずのくろ子から、かすかな通信がとどいた。' }],
+      [{ img: 'assets/images/story/int3_resolve.png', text: 'かけらは3つ。燃える夕日に、ぐろちゃんはちかう。「ぜったい、朝を取りもどす！」' }],
+      [{ img: 'assets/images/story/int4_palace_reveal.png', text: '嵐の雲の上に、ハートの宮殿があらわれた。黒幕——ハートブレイクの女王が待っている！' }],
+    ],
+    ending: [
+      { img: 'assets/images/story/ed1_queen_tears.png', text: '仮面の下にいたのは、ひとりぼっちの小さなAIの子だった。ぐろちゃんは、自分のハートの光をそっと分けてあげた。' },
+      { img: 'assets/images/story/ed2_hearts_return.png', text: '夜空いっぱいに、ハートが流れ星になって帰っていく——' },
+      { img: 'assets/images/story/ed3_morning.png', text: 'くろ子もちゃっぴーも、ぱちりと目をさます。花のAI学園に、いつもの朝がきた！' },
+    ],
+    gameover: [
+      { img: 'assets/images/story/go1_crash.png', text: 'ぐろちゃん、不時着…！でもまだ終わりじゃない。もういちど、飛ぼう！' },
+    ],
+  };
+  for (const slide of [...STORY.opening, ...STORY.ending, ...STORY.gameover, ...STORY.interludes.flat()]) new Image().src = slide.img;
+
+  // Generated boss art: side views cut from the turnaround sheets, keyed to
+  // transparency. Indexed by stage; the WARDEN mid-boss shares one design.
+  const bossSprites = stages.map((_, i) => {
+    const im = new Image();
+    im.src = `assets/images/bosses/sprites/stage${i + 1}_side.png`;
+    return im;
+  });
+  const wardenSprite = new Image();
+  wardenSprite.src = 'assets/images/bosses/sprites/warden_side.png';
+  // Battle pose frames (transparent PNGs, facing left): idle / attack / hurt.
+  // Missing files just mean the side-view sprite (then procedural art) is used.
+  const loadPoses = (base) => ['idle', 'attack', 'hurt'].reduce((o, pose) => {
+    const im = new Image();
+    im.src = `assets/images/bosses/poses/${base}_${pose}.png`;
+    o[pose] = im; return o;
+  }, {});
+  const bossPoses = stages.map((_, i) => loadPoses(`stage${i + 1}`));
+  const wardenPoses = loadPoses('warden');
+  const frameReady = (im) => im && im.complete && im.naturalWidth > 0;
+  // hurt wins over attack; attack shows through the telegraph windup too.
+  const pickPose = (poses, e, fallback) => {
+    if (e.hurtT > 0 && frameReady(poses.hurt)) return poses.hurt;
+    if ((e.attackT > 0 || e.tel > 0) && frameReady(poses.attack)) return poses.attack;
+    if (frameReady(poses.idle)) return poses.idle;
+    return frameReady(fallback) ? fallback : null;
+  };
+  // Shared per-frame pose bookkeeping for bosses and mid-bosses: tick down the
+  // pose timers and turn a fresh hit flash (e.hit set by the bullet collision)
+  // into a short pained reaction with a cooldown so constant fire doesn't
+  // freeze the boss in the hurt pose.
+  function stepPoseTimers(e, dt) {
+    e.attackT = Math.max(0, (e.attackT || 0) - dt);
+    e.hurtT = Math.max(0, (e.hurtT || 0) - dt);
+    e.hurtCd = Math.max(0, (e.hurtCd || 0) - dt);
+    if (e.hit > .09 && e.hurtCd <= 0) { e.hurtT = .4; e.hurtCd = 1.3; }
+  }
+
+  let storySlides = null, storyStep = 0, storyDone = null;
+  let storyTyping = null, storyFullText = '';
+  function showStory(slides, done) {
+    if (!slides || !slides.length) { if (done) done(); return; }
+    storySlides = slides; storyStep = -1; storyDone = done;
+    storyScreen.classList.add('is-visible');
+    advanceStory();
+  }
+  // Captions type out one character at a time like an old JRPG text box; the
+  // first click completes the line instantly, the next one turns the page.
+  // The full line is always present (hidden) so the caption box keeps its
+  // final size from the start — only the characters are revealed one by one.
+  function renderTyped(shown) {
+    storyText.textContent = '';
+    const typed = document.createElement('span');
+    typed.textContent = storyFullText.slice(0, shown);
+    const rest = document.createElement('span');
+    rest.className = 'story-untyped';
+    rest.textContent = storyFullText.slice(shown);
+    storyText.append(typed, rest);
+  }
+  function typeSlide(text) {
+    clearInterval(storyTyping);
+    storyFullText = text;
+    storyScreen.classList.add('is-typing');
+    renderTyped(0);
+    let shown = 0;
+    storyTyping = setInterval(() => {
+      shown++;
+      renderTyped(shown);
+      if (shown >= text.length) finishTyping();
+    }, 55);
+  }
+  function finishTyping() {
+    clearInterval(storyTyping); storyTyping = null;
+    storyText.textContent = storyFullText;
+    storyScreen.classList.remove('is-typing');
+  }
+  function advanceStory() {
+    if (!storySlides) return;
+    if (storyTyping) { finishTyping(); return; }
+    storyStep++;
+    if (storyStep >= storySlides.length) {
+      const done = storyDone;
+      storySlides = null; storyDone = null;
+      storyScreen.classList.remove('is-visible');
+      if (done) done();
+      return;
+    }
+    storyImage.src = storySlides[storyStep].img;
+    typeSlide(storySlides[storyStep].text);
+    if (storyStep > 0) sfx('power');
+  }
+  function cancelStory() {
+    clearInterval(storyTyping); storyTyping = null;
+    storySlides = null; storyDone = null;
+    storyScreen.classList.remove('is-visible', 'is-typing');
+  }
+
   // Scripted stage timeline. Normal difficulty budgets 136s for the route;
   // warnings + mid-boss + main boss bring a typical clear to about 3m30s.
   // Durations are scaled by difficulties[..].timeScale so harder boss HP is
@@ -400,6 +527,7 @@
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
     player.fire = 0; player.missileFire = .8; player.inv = 1.2; player.hit = 0; player.frame = 0; player.grounded = false; player.takeoff = 0; player.power = 1; player.spread = 1; player.speed = 1; player.facing = 1;
     state = 'playing'; paused = false;
+    cancelStory();
     titleScreen.classList.remove('is-visible');
     startScreen.classList.remove('is-visible');
     openingScreen.classList.remove('is-visible');
@@ -441,12 +569,15 @@
     titleScreen.classList.remove('is-visible');
     startScreen.classList.remove('is-visible'); gameOverScreen.classList.remove('is-visible');
     openingScreen.classList.remove('is-visible');
-    // Restart the CSS timeline even when the intro is replayed after returning to the menu.
-    void openingScreen.offsetWidth;
-    openingScreen.classList.add('is-visible');
     pauseButton.classList.remove('is-visible'); specialButton.classList.remove('is-visible');
     playBgm('title'); ensureAudio(); sfx('power');
+    // Story slides first, then the mission-card screen with the LAUNCH button.
     // Stay on the opening until the player launches (button / ENTER / click) — no auto-advance.
+    showStory(STORY.opening, () => {
+      // Restart the CSS timeline even when the intro is replayed after returning to the menu.
+      void openingScreen.offsetWidth;
+      openingScreen.classList.add('is-visible');
+    });
   }
 
   function playBgm(key, restart = false) {
@@ -766,8 +897,16 @@
 
   function spawnBoss() {
     const bossHp = Math.round(difficulties[difficultyKey].bossHp * (1 + stageIndex * .55));
-    // Design art is 230×190; scale way up so the boss fills a large chunk of the arena.
-    enemies.push({ type: 'boss', x: VW + 380, y: 90, baseY: 90, w: 460, h: 380, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8 });
+    // With a loaded sprite the hitbox takes the art's aspect ratio at a large
+    // fixed height, so the visual and the collision box stay in sync (tall
+    // sprites no longer get an invisible wide hitbox). 460×380 is the
+    // procedural-art fallback.
+    const sprite = frameReady(bossPoses[stageIndex].idle) ? bossPoses[stageIndex].idle : bossSprites[stageIndex];
+    let w = 460, h = 380;
+    if (sprite && sprite.complete && sprite.naturalWidth) {
+      h = 480; w = Math.round(h * sprite.naturalWidth / sprite.naturalHeight);
+    }
+    enemies.push({ type: 'boss', x: VW + 380, y: 90, baseY: 90, w, h, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8 });
     bossState = 'active';
     musicStep = 0; musicClock = 0;
     enemyBullets = [];
@@ -779,13 +918,19 @@
   function spawnMidBoss() {
     const baseHp = difficulties[difficultyKey].midHp;
     const hp = Math.round(baseHp * (1 + stageIndex * .38));
-    enemies.push({ type: 'midboss', x: VW + 240, y: 140, baseY: 140, w: 280, h: 230, hp, maxHp: hp, vx: 0, t: 0, wave: false, points: 6200 + stageIndex * 1200, fire: .55, sp: 2.1, variant: 'standard' });
+    const midSprite = frameReady(wardenPoses.idle) ? wardenPoses.idle : wardenSprite;
+    let w = 280, h = 230;
+    if (midSprite.complete && midSprite.naturalWidth) {
+      h = 300; w = Math.round(h * midSprite.naturalWidth / midSprite.naturalHeight);
+    }
+    enemies.push({ type: 'midboss', x: VW + 240, y: 140, baseY: 140, w, h, hp, maxHp: hp, vx: 0, t: 0, wave: false, points: 6200 + stageIndex * 1200, fire: .55, sp: 2.1, variant: 'standard' });
     bossState = 'midboss-active';
     enemyBullets = []; shake = 14; flash = .45;
     playBgm('midBoss', true); sfx('boss'); sfx('warning');
   }
 
   function updateMidBoss(e, dt) {
+    stepPoseTimers(e, dt);
     const midPark = VW - e.w - 50;
     if (e.x > midPark) e.x -= 300 * dt;
     e.y = clamp(e.baseY + Math.sin(e.t * (1.25 + stageIndex * .1)) * (70 + stageIndex * 6), 20, VH - e.h - 30);
@@ -802,8 +947,10 @@
         enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * (270 + stageIndex * 22), vy: Math.sin(a) * (270 + stageIndex * 22), r: 10, life: 6.5, damage: 16 + stageIndex, boss: true, volt: stageIndex === 3, fire: stageIndex === 2, heart: stageIndex === 4, bubble: stageIndex === 1 });
       }
       burst(ox, oy, stages[stageIndex].accent2, 10, 190); e.fire = rage ? .42 : .58;
+      e.attackT = .45;
     }
     if (engaged && e.sp <= 0) {
+      e.attackT = .55;
       const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
       const count = rage ? 16 : 12;
       for (let i = 0; i < count; i++) {
@@ -851,6 +998,7 @@
 
   function updateBoss(e, dt) {
     const idx = stageIndex;
+    stepPoseTimers(e, dt);
     const parkX = VW - e.w - 40;
     if (e.x > parkX && e.mode !== 'dash' && e.mode !== 'return') e.x -= 250 * dt;
     if (!e.phase2 && e.hp <= e.maxHp / 2) {
@@ -917,6 +1065,7 @@
   }
 
   function executeBossSpecial(e) {
+    e.attackT = .6;
     const type = e.telType; e.telType = null;
     if (type === 'dash') { e.mode = 'dash'; e.y = e.telY; sfx('boss'); }
     else if (type === 'wave') { stageIndex === 4 ? bossHeartWall(e) : bossBubbleWall(e); }
@@ -927,6 +1076,7 @@
   }
 
   function bossFan(e, n) {
+    e.attackT = .45;
     const ox = e.x + 18, oy = e.y + e.h / 2;
     const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
     for (let i = 0; i < n; i++) {
@@ -937,6 +1087,7 @@
   }
 
   function bossBubbles(e) {
+    e.attackT = .45;
     const ox = e.x + 20, oy = e.y + e.h / 2;
     const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
     for (let i = -1; i <= 1; i++) {
@@ -957,6 +1108,7 @@
   }
 
   function bossFireball(e) {
+    e.attackT = .45;
     const ox = e.x + 20, oy = e.y + e.h / 2;
     for (const lead of [0, 90]) {
       enemyBullets.push({ x: ox, y: oy, vx: (player.x + lead - ox) / 1.3, vy: -300 - Math.random() * 110, gravity: 430, r: 12, life: 6, damage: 17, fire: true });
@@ -965,6 +1117,7 @@
   }
 
   function bossFlameSweep(e) {
+    e.attackT = .45;
     e.sweep = (e.sweep || 2.6) + .13;
     const a = Math.PI - Math.sin(e.sweep) * .85;
     const ox = e.x + 20, oy = e.y + e.h / 2;
@@ -979,6 +1132,7 @@
   }
 
   function bossVoltShot(e) {
+    e.attackT = .45;
     const ox = e.x + 20, oy = e.y + e.h / 2;
     const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
     for (let i = -1; i <= 1; i++) {
@@ -993,6 +1147,7 @@
   }
 
   function bossVoltRing(e) {
+    e.attackT = .45;
     const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
     for (let i = 0; i < 12; i++) {
       const a = i / 12 * Math.PI * 2;
@@ -1001,6 +1156,7 @@
   }
 
   function bossHeartSpiral(e) {
+    e.attackT = .45;
     const cx = e.x + 40, cy = e.y + e.h / 2;
     for (const off of [0, Math.PI]) {
       const a = e.spiral + off;
@@ -1092,7 +1248,12 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       stageTransition -= dt;
       if (stageTransition <= 0) {
         if (bossState === 'final') finishGame(true);
-        else openShop();   // rest stop between stages: heal up / buy upgrades with earned yen
+        else {
+          // Interlude slide first ('story' freezes update()), then the rest
+          // stop between stages: heal up / buy upgrades with earned yen.
+          state = 'story';
+          showStory(STORY.interludes[stageIndex], openShop);
+        }
       }
     }
 
@@ -1468,7 +1629,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     { id: 'buyPower', price: 1500, can: () => player.power < 3, apply: () => player.power++, status: () => `Lv ${player.power}/3` },
     { id: 'buyWide', price: 1500, can: () => player.spread < 3, apply: () => player.spread++, status: () => `Lv ${player.spread}/3` },
     { id: 'buySpeed', price: 1000, can: () => player.speed < 3, apply: () => player.speed++, status: () => `Lv ${player.speed}/3` },
-    { id: 'buyHeart', price: 2500, can: () => continuesLeft < 3, apply: () => continuesLeft++, status: () => `のこり ${continuesLeft}/3` }
+    // Continues start at 3 and can be stocked up to 5 — the shop must be able
+    // to raise the count above the starting value, not just refill losses.
+    { id: 'buyHeart', price: 2500, can: () => continuesLeft < 5, apply: () => continuesLeft++, status: () => `のこり ${continuesLeft}/5` }
   ];
   shopItems.forEach(item => {
     item.btn = document.querySelector('#' + item.id);
@@ -1532,10 +1695,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     finalScore.textContent = yen(score);
     menuHighScore.textContent = yen(highScore);
     newRecord.classList.toggle('is-hidden', !record);
-    // On a full clear, roll the ending (with Elon's cameo) first; the RESULT card
-    // follows once the player continues. A game over jumps straight to RESULT.
-    if (cleared) setTimeout(() => endingScreen.classList.add('is-visible'), 450);
-    else setTimeout(() => gameOverScreen.classList.add('is-visible'), 450);
+    // On a full clear, roll the ending slides then the cameo screen; the RESULT
+    // card follows once the player continues. A game over shows its own slide
+    // before RESULT.
+    if (cleared) setTimeout(() => showStory(STORY.ending, () => endingScreen.classList.add('is-visible')), 450);
+    else setTimeout(() => showStory(STORY.gameover, () => gameOverScreen.classList.add('is-visible')), 450);
   }
 
   function showResultAfterEnding() {
@@ -3773,6 +3937,27 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   function drawMidBoss(e) {
     const stage = stages[stageIndex], pulse = 6 + Math.sin(e.t * 7) * 4;
+    // Generated WARDEN sprite (one design recolored by each stage's glow) in
+    // the 158×132 authoring box; procedural art remains the loading fallback.
+    const midSprite = pickPose(wardenPoses, e, wardenSprite);
+    if (midSprite) {
+      // Hitbox carries the sprite aspect (see spawnMidBoss) → fill the box.
+      const hurt = e.hurtT > 0;
+      const breath = Math.sin(e.t * 3.2) * .03;
+      ctx.save();
+      ctx.translate(79, 132);
+      ctx.rotate(Math.sin(e.t * 1.8) * .05 + (hurt ? Math.sin(e.t * 48) * .05 : 0));
+      ctx.scale(1 - breath, 1 + breath);
+      ctx.translate(-79, -132);
+      ctx.shadowColor = hurt ? 'rgba(255,80,80,.95)' : hexA(stage.accent, .9);
+      ctx.shadowBlur = hurt ? 26 : 18 + Math.sin(e.t * 7) * 6;
+      ctx.imageSmoothingEnabled = false;
+      const fit = Math.min(158 / midSprite.naturalWidth, 132 / midSprite.naturalHeight);
+      const dw = midSprite.naturalWidth * fit, dh = midSprite.naturalHeight * fit;
+      ctx.drawImage(midSprite, (158 - dw) / 2, 132 - dh + Math.sin(e.t * 2.6) * 4, dw, dh);
+      ctx.restore();
+      return;
+    }
     const acc = stage.accent2, TAU = Math.PI * 2;
     // Rounded 3D side thruster pods (drawn behind the shell).
     for (const [gx, gw] of [[-2 - pulse * .6, 30 + pulse], [130, 30 + pulse]]) {
@@ -3884,6 +4069,41 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
   function drawBoss(e) {
     const stage = stages[stageIndex];
+    // Generated pixel-art boss sprite (side view, facing the player). Drawn
+    // into the same 230×190 authoring box the procedural art used, so the
+    // caller's hitbox scaling keeps working. Procedural art is the fallback
+    // until the image finishes loading.
+    const sprite = pickPose(bossPoses[stageIndex], e, bossSprites[stageIndex]);
+    if (sprite) {
+      // The spawn hitbox already carries the art's aspect ratio, so filling the
+      // whole 230×190 authoring box draws the sprite undistorted. The main
+      // animation is the pose switch (idle / attack windup+strike / pained
+      // hurt); body language on top: breathing, a hard forward lean while
+      // dashing, a pain jitter while hurt, a strobe while teleporting.
+      const hurt = e.hurtT > 0;
+      const breath = Math.sin(e.t * 2.6) * .022;
+      let lean = Math.sin(e.t * 1.4) * .02;
+      if (e.mode === 'dash') lean = -.18;
+      else if (e.mode === 'return') lean = .09;
+      if (hurt) lean += .06 + Math.sin(e.t * 46) * .035;
+      ctx.save();
+      if (e.blink > 0) ctx.globalAlpha = .3 + Math.abs(Math.sin(e.t * 34)) * .6;
+      ctx.translate(115, 190);
+      ctx.rotate(lean);
+      ctx.scale(1 - breath, 1 + breath);
+      ctx.translate(-115, -190);
+      ctx.shadowColor = hurt ? 'rgba(255,80,80,.95)' : hexA(stage.accent2, .85);
+      ctx.shadowBlur = hurt ? 34 : 26 + Math.sin(e.t * 5) * 8;
+      ctx.imageSmoothingEnabled = false;
+      // Contain-fit per frame: the hitbox takes the idle frame's aspect, but
+      // attack/hurt frames can be wider — fit them without distortion,
+      // anchored to the bottom center.
+      const fit = Math.min(230 / sprite.naturalWidth, 190 / sprite.naturalHeight);
+      const dw = sprite.naturalWidth * fit, dh = sprite.naturalHeight * fit;
+      ctx.drawImage(sprite, (230 - dw) / 2 + (hurt ? Math.sin(e.t * 52) * 3 : 0), 190 - dh + Math.sin(e.t * 2.2) * 5, dw, dh);
+      ctx.restore();
+      return;
+    }
     const pulse = 4 + Math.sin(e.t * 5) * 3;
     // shared soft, rounded drop shadow (no hard rectangular corners behind the body)
     ctx.save(); ctx.globalAlpha = .32; ctx.fillStyle = '#05030c';
@@ -4229,10 +4449,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.font = '7px "Press Start 2P", monospace'; ctx.fillText(`POWER ${player.power}`, VW - 336, 88);
     ctx.fillStyle = '#31e8ff'; ctx.fillText(`WIDE ${player.spread}`, VW - 220, 88);
     ctx.fillStyle = '#72ff68'; ctx.fillText(`SPEED ${player.speed}`, VW - 126, 88);
-    // Remaining continues: three hearts just under the HP panel, spent ones dimmed.
-    for (let i = 0; i < 3; i++) {
+    // Remaining continues: up to five hearts just under the HP panel (3 to
+    // start, expandable via the shop), spent/empty slots dimmed.
+    for (let i = 0; i < 5; i++) {
       ctx.fillStyle = i < continuesLeft ? '#ff3e9d' : 'rgba(255,255,255,.18)';
-      heartPath(VW - 46 - (2 - i) * 24, 110, 9);
+      heartPath(VW - 46 - (4 - i) * 24, 110, 9);
       ctx.fill();
     }
     if (combo > 1 && comboTimer > 0) {
@@ -4439,6 +4660,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (e.code === 'F1') { e.preventDefault(); fpsShow = !fpsShow; }
     if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'playing') togglePause();
     if (e.code === 'KeyX' && !e.repeat) useSpecial();
+    if ((e.code === 'Enter' || e.code === 'Space') && storySlides) { if (!e.repeat) advanceStory(); return; }
     if (e.code === 'Enter' && state === 'menu') { if (menuStep === 'title') showHowto(); else showOpening(); }
     else if (e.code === 'Enter' && state === 'opening') resetGame();
     else if (e.code === 'Enter' && state === 'over') { if (endingScreen.classList.contains('is-visible')) showResultAfterEnding(); else resetGame(); }
@@ -4483,6 +4705,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   nextStageButton.addEventListener('click', leaveShop);
   launchButton.addEventListener('click', resetGame);
   endingButton.addEventListener('click', showResultAfterEnding);
+  storyScreen.addEventListener('click', advanceStory);
   retryButton.addEventListener('click', resetGame);
   const difficultyOrder = ['easy', 'normal', 'hard'];
   function setDifficulty(key) {
@@ -4528,4 +4751,25 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   ['pointerdown', 'keydown', 'touchstart'].forEach(ev => addEventListener(ev, startMenuBgm, { once: true }));
 
   resize(); initBackdrop(); setupStage(); requestAnimationFrame(frame);
+
+  // --- TEMPORARY test mode (boss tuning): open index.html?boss=N or ?mid=N
+  // (N = 1..5) to boot straight to that stage a moment before the boss /
+  // mid-boss warning, with trash spawns held back. Remove when tuning is done.
+  {
+    const q = new URLSearchParams(location.search);
+    const bossN = parseInt(q.get('boss'), 10);
+    const midN = parseInt(q.get('mid'), 10);
+    const n = bossN || midN;
+    if (n >= 1 && n <= stages.length) {
+      setTimeout(() => {
+        resetGame();
+        stageIndex = n - 1; stageBanner = 0; bossState = 'waiting';
+        midBossDone = !!bossN; spawnTimer = 999; pickupTimer = 999;
+        stageResult = null; setupStage(); musicStep = 0; musicClock = 0;
+        stageTime = (bossN ? timelineTotal() : midbossStart()) - .5;
+        enemies = []; enemyBullets = [];
+        playBgm(`stage${stageIndex}`, true);
+      }, 120);
+    }
+  }
 })();

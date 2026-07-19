@@ -66,3 +66,13 @@
 
 ## 次アクションの推奨
 factory背景 → 着弾FX/ヒットストップ → ボス2〜5磨き → 中ボス5差別化、の順。各項目ごとに `.devtools/shot.js` で検証しコミット。方向性・カワイイ度は前セッションでユーザーOK。
+
+## 2026-07-19 セッション: ストーリーシステム＋AI生成アート一式(codex経由)
+- **アセット生成パイプライン**: 3人の三面図(Grok_3view.png等、プロジェクト直下)を元に、codex CLI(`codex exec -m gpt-5.6-sol -c model_reasoning_effort=medium`、プロンプトはstdin渡し必須)で画像生成。絵柄統一のため`assets/images/chibi/grochan_chibi.png`を毎回参照画像に添付。生成スクリプト群はセッションscratchpadに(使い捨て)。
+- **ちびドット三面図**: `assets/images/chibi/`に3人分(grochan/chappy/kuroko)。全生成の絵柄アンカー。
+- **ストーリー挿絵13枚**: `assets/images/story/`(op1-4/int1-4/ed1-4/go1)。op4/int1/int2は「機首必ず右向き+白いSpaceX風ユニット搭乗」で作り直し済(右スクロールと向きを一致させる)。ed4はイーロン後ろ姿シルエット(顔NG)。
+- **ボス三面図6体**: `assets/images/bosses/`(stage1-5+warden)。ふざけデザイン(テープ補修/頭にタコ/たい焼き/グリッチ吹き出し/輪ゴム仮面+ハートいれ段ボール)。stage3(真紅ショート)とstage5(銀白縦ロール)は「主人公と顔が似すぎ」FBで髪色変更再生成済。
+- **ストーリーUI**(`#storyScreen`): 額縁スタイル=黒背景+二重枠の挿絵ウィンドウ+下にテキストボックス(DotGothic16)。背景はCSSアニメのサイバー演出(ネオングリッド床スクロール+光ストリーク+走査線)。タイプライター表示(55ms/字、枠は全文サイズで固定=不可視の残り文字を敷く方式、打鍵中▌点滅、1クリック目で全文表示/2クリック目でページ送り)。`STORY`定数(game.js、stages直後)にスライド定義。フロー: オープニング4枚→ミッションカード / 各ステージクリア後に幕間1枚(`state='story'`でupdate停止)→ショップ / 全クリアでed1-3→カメオ画面(顔グラはed4画像) / ゲームオーバーでgo1→リザルト。ENTER/Space/クリックで進行、`cancelStory()`をresetGameで呼ぶ。
+- **ボススプライト組み込み**: 三面図の中央1/3(側面ビュー、左向き)をpuppeteer+canvasで切り出し→エッジflood-fillで白背景透過→トリム→`assets/images/bosses/sprites/stageN_side.png`+`warden_side.png`。`drawBoss`/`drawMidBoss`冒頭でスプライト描画(230×190/158×132の作画ボックスにcontainフィット、ステージaccentグロー+浮遊ボブ)、未ロード時は旧プロシージャル描画にフォールバック。抽出スクリプトはscratchpad/extract.js(再利用可)。
+- 検証: puppeteer-core+システムChromeでtitle→story→launch→Shift+N×4→Shift+Bの通し確認、全ステージボス表示OK・JSエラーなし。
+- 未着手: ボス戦闘挙動は旧来のまま(見た目のみ差し替え)。WARDENの色替え5兄弟化、ボス2形態(女王)、幕間の会話劇化(顔グラ会話)など。
