@@ -228,7 +228,7 @@
   const GROUND_Y = 500;
   const CHIMNEYS = [[120, 60, 210], [196, 44, 160], [880, 70, 230], [1010, 50, 180], [430, 40, 140]];
   const REFINERY_TANKS = [[240, 46, 250], [730, 38, 210], [1080, 52, 268]];
-  const player = { x: 170, y: 360, w: 118, h: 102, vx: 0, vy: 0, fire: 0, missileFire: 0, inv: 0, hit: 0, frame: 0, grounded: false, power: 1, spread: 1, speed: 1, takeoff: 0 };
+  const player = { x: 170, y: 360, w: 118, h: 102, vx: 0, vy: 0, fire: 0, missileFire: 0, inv: 0, hit: 0, frame: 0, grounded: false, power: 1, spread: 1, speed: 1, takeoff: 0, facing: 1 };
   let bullets = [];
   let enemyBullets = [];
   let enemies = [];
@@ -367,7 +367,7 @@
     bullets = []; enemyBullets = []; enemies = []; particles = []; pickups = []; shockwaves = [];
     setupStage();
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
-    player.fire = 0; player.missileFire = .8; player.inv = 1.2; player.hit = 0; player.frame = 0; player.grounded = false; player.takeoff = 0; player.power = 1; player.spread = 1; player.speed = 1;
+    player.fire = 0; player.missileFire = .8; player.inv = 1.2; player.hit = 0; player.frame = 0; player.grounded = false; player.takeoff = 0; player.power = 1; player.spread = 1; player.speed = 1; player.facing = 1;
     state = 'playing'; paused = false;
     titleScreen.classList.remove('is-visible');
     startScreen.classList.remove('is-visible');
@@ -1102,6 +1102,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const speed = Math.hypot(player.vx, player.vy);
     const maxMoveSpeed = (player.grounded ? 380 : 420) * (1 + (player.speed - 1) * .28);
     if (speed > maxMoveSpeed) { player.vx *= maxMoveSpeed / speed; player.vy *= maxMoveSpeed / speed; }
+    // Face the direction of travel: flip to look back while retreating (moving left).
+    // Hysteresis on vx so a near-still drift doesn't cause the sprite to jitter.
+    if (player.vx < -60) player.facing = -1;
+    else if (player.vx > 60) player.facing = 1;
     player.x = clamp(player.x + player.vx * dt, 28, VW * .62);
     if (player.grounded) {
       player.y = GROUND_Y;
@@ -1117,6 +1121,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     }
     // Manual fire only: Space / Z / hold pointer / pad fire.
     const firing = keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire;
+    // While shooting, always face forward (right) even when moving left — this is the
+    // retreat-and-fire pose. The backward flip only applies when she isn't shooting.
+    if (firing) player.facing = 1;
     const canShoot = firing && !['transition', 'final', 'warning', 'midboss-warning'].includes(bossState);
     const groundAnim = player.grounded && (Math.abs(player.vx) > 18 || firing);
     player.frame += dt * (player.grounded ? (groundAnim ? 11 : 0) : 10);
@@ -3173,6 +3180,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.restore();
     }
     ctx.fillStyle = 'rgba(49,232,255,.18)'; ctx.beginPath(); ctx.ellipse(player.x + 56, player.y + (player.grounded ? 155 : 96), 54, 11, 0, 0, Math.PI * 2); ctx.fill();
+    // Mirror the sprite horizontally when retreating (facing left). Pivot on the
+    // visual center so the flip stays put; shadow/thruster above are left un-mirrored.
+    ctx.save();
+    if (player.facing === -1) { const pivot = player.x + 56; ctx.translate(pivot, 0); ctx.scale(-1, 1); ctx.translate(-pivot, 0); }
     if (player.hit > 0 && hurtFrames.length) {
       // Damage/hurt: play the 4-frame knock-around animation once over HURT_DUR. Cells are
       // uniform and ground-aligned, so drawn size is constant (never pops bigger); feet sit
@@ -3202,6 +3213,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     } else {
       ctx.fillStyle = '#ff3e9d'; ctx.fillRect(player.x + 20, player.y + 20, 70, 65);
     }
+    ctx.restore();
     ctx.restore();
   }
 
@@ -4385,6 +4397,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     else if (e.code === 'Enter' && state === 'over') resetGame();
     else if (e.code === 'Enter' && state === 'shop') leaveShop();
     if (e.code === 'Escape' && state === 'menu' && menuStep === 'howto') showTitle();
+    if (state === 'menu' && menuStep === 'howto' && !e.repeat) {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') stepDifficulty(-1);
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') stepDifficulty(1);
+    }
     // Hidden debug keys: Shift+N skips a stage, Shift+M summons its mid boss, Shift+B summons its boss.
     if (e.shiftKey && e.code === 'KeyN' && state === 'playing' && !paused) {
       enemies = []; enemyBullets = []; bullets = [];
@@ -4420,11 +4436,19 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   nextStageButton.addEventListener('click', leaveShop);
   launchButton.addEventListener('click', resetGame);
   retryButton.addEventListener('click', resetGame);
-  difficultyButtons.forEach(button => button.addEventListener('click', () => {
-    difficultyKey = button.dataset.difficulty;
-    difficultyButtons.forEach(item => item.classList.toggle('is-active', item === button));
+  const difficultyOrder = ['easy', 'normal', 'hard'];
+  function setDifficulty(key) {
+    if (!difficulties[key] || key === difficultyKey) return;
+    difficultyKey = key;
+    difficultyButtons.forEach(item => item.classList.toggle('is-active', item.dataset.difficulty === key));
     sfx('power');
-  }));
+  }
+  function stepDifficulty(dir) {
+    const i = difficultyOrder.indexOf(difficultyKey);
+    const next = difficultyOrder[Math.min(difficultyOrder.length - 1, Math.max(0, i + dir))];
+    setDifficulty(next);
+  }
+  difficultyButtons.forEach(button => button.addEventListener('click', () => setDifficulty(button.dataset.difficulty)));
   soundButton.addEventListener('click', () => {
     soundOn = !soundOn;
     soundButton.textContent = soundOn ? '♪ ON' : '♪ OFF';
