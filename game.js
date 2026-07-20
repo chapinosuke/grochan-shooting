@@ -206,6 +206,7 @@
   let currentBgmKey = null;
   let bgmFadeToken = 0;
   let openingTimeout = 0;
+  let resultTimeout = 0;
   let totalKills = 0;
   let stageKills = 0;
   let stageStart = 0;
@@ -609,6 +610,7 @@
 
   function resetGame() {
     clearTimeout(openingTimeout); openingTimeout = 0;
+    clearTimeout(resultTimeout); resultTimeout = 0;
     score = 0; combo = 0; comboTimer = 0; health = maxHealth; elapsed = 0;
     spawnTimer = .7; pickupTimer = 6; shake = 0; flash = 0; hitStop = 0; gameSpeed = 1;
     bossState = 'waiting'; bossWarning = 0; midBossDone = false;
@@ -666,6 +668,7 @@
   function returnToTitle() {
     if (state === 'playing' && !confirm('タイトルに戻りますか？ここまでのプレイは失われます。')) return;
     clearTimeout(openingTimeout); openingTimeout = 0;
+    clearTimeout(resultTimeout); resultTimeout = 0;
     cancelStory();
     state = 'menu'; paused = false;
     gameShell.classList.remove('is-game-over');
@@ -763,7 +766,7 @@
     if (state === 'opening' || state === 'menu') return 'title';
     if (state === 'over') return gameShell.classList.contains('is-game-over') ? 'gameOver' : 'ending';
     if (bossState === 'midboss-active' || bossState === 'midboss-warning') return 'midBoss';
-    if (bossState === 'active') return stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle';
+    if (bossState === 'active' || bossState === 'transition' || bossState === 'final') return stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle';
     return `stage${stageIndex}`;
   }
 
@@ -1637,7 +1640,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
     collisions();
     bullets = bullets.filter(b => b.life > 0 && b.x < VW + 80 && b.y > -30 && b.y < VH + 30);
-    enemyBullets = enemyBullets.filter(b => b.life > 0 && b.x > -40 && b.x < VW + 240 && b.y > -80 && b.y < VH + 80);
+    enemyBullets = enemyBullets.filter(b => b.life > 0 && b.x > -40 && b.x < VW + 240 && b.y > -400 && b.y < VH + 400);
     enemies = enemies.filter(e => e.hp > 0 && e.x > -130 && (!e.flank || e.x < VW + 170));
     particles = particles.filter(p => p.life > 0);
     shockwaves = shockwaves.filter(r => r.life > 0);
@@ -1859,8 +1862,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // card follows once the player continues. A game over shows its own slide
     // before RESULT. The ending theme starts exactly when the cameo screen
     // appears, not underneath the preceding cutscene slides.
-    if (cleared) setTimeout(() => showStory(STORY.ending, () => { endingScreen.classList.add('is-visible'); playBgm('ending', true); }), 450);
-    else setTimeout(() => showStory(STORY.gameover, () => gameOverScreen.classList.add('is-visible')), 450);
+    clearTimeout(resultTimeout);
+    if (cleared) resultTimeout = setTimeout(() => showStory(STORY.ending, () => { endingScreen.classList.add('is-visible'); playBgm('ending', true); }), 450);
+    else resultTimeout = setTimeout(() => showStory(STORY.gameover, () => gameOverScreen.classList.add('is-visible')), 450);
   }
 
   // On a full clear, the ending cameo hands off to a scrolling staff roll
@@ -5194,9 +5198,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const actionDown = Boolean(pad.buttons[0]?.pressed);
     if (startDown && !padStartWasDown && state === 'playing') togglePause();
     if (actionDown && !padActionWasDown && state !== 'playing') {
-      if (state === 'menu') { if (menuStep === 'title') showHowto(); else showOpening(); }
+      if (storySlides) advanceStory();
+      else if (state === 'menu') { if (menuStep === 'title') showHowto(); else showOpening(); }
+      else if (state === 'opening') resetGame();
+      else if (state === 'over') {
+        if (endingScreen.classList.contains('is-visible')) showStaffRoll();
+        else if (staffRollScreen.classList.contains('is-visible')) finishStaffRoll();
+        else resetGame();
+      }
       else if (state === 'shop') leaveShop();
-      else resetGame();
     }
     if (padInput.special && !padSpecialWasDown && state === 'playing') useSpecial();
     padStartWasDown = startDown; padActionWasDown = actionDown;
@@ -5313,7 +5323,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     }
   });
   addEventListener('keyup', e => keys.delete(e.code));
-  canvas.addEventListener('pointerdown', e => { if (state !== 'playing') return; pointer.active = true; const p = screenToWorld(e.clientX, e.clientY); pointer.x=p.x; pointer.y=p.y; canvas.setPointerCapture(e.pointerId); });
+  addEventListener('blur', () => keys.clear());
+  canvas.addEventListener('pointerdown', e => { if (state !== 'playing' || paused) return; pointer.active = true; const p = screenToWorld(e.clientX, e.clientY); pointer.x=p.x; pointer.y=p.y; canvas.setPointerCapture(e.pointerId); });
   canvas.addEventListener('pointermove', e => { if (!pointer.active) return; const p=screenToWorld(e.clientX,e.clientY); pointer.x=p.x; pointer.y=p.y; });
   canvas.addEventListener('pointerup', () => pointer.active = false);
   canvas.addEventListener('pointercancel', () => pointer.active = false);
@@ -5346,9 +5357,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     soundButton.classList.toggle('is-muted', !soundOn);
     if (soundOn) {
       ensureAudio();
-      playBgm(desiredBgmKey());
+      if (!paused) playBgm(desiredBgmKey());
       sfx('power');
-    } else { pauseBgm(); pauseSampledSfx(); }
+    } else {
+      pauseBgm(); pauseSampledSfx();
+      if (currentVoice) currentVoice.pause();
+      if (bossCurrentVoice) bossCurrentVoice.pause();
+    }
   });
   pauseButton.addEventListener('click', togglePause);
   specialButton.addEventListener('click', useSpecial);
