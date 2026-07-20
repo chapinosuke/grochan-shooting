@@ -219,6 +219,7 @@
   let continuesLeft = 3;
   let continueBanner = 0;
   let powerDownBanner = 0;
+  let bossCrit = 0;      // 0..1 fade of the palace's blood-red sky in the queen's last act
   let bgCam = 0;
   let bgCamX = 0;        // horizontal camera yaw, eased from player.x (parallax)
   let bokeh = [];        // front-of-camera defocused light orbs
@@ -233,9 +234,13 @@
   const difficulties = {
     // bulletSpeed scales how fast enemy shots travel; fireGap stretches the time between
     // volleys (>1 = fewer bullets, wider gaps). Easy is tuned to be comfortably dodgeable.
-    easy: { spawn: 1.08, speed: .8, damage: .55, timeScale: 1.06, bossHp: 300, score: .8, midHp: 90, bulletSpeed: .68, fireGap: 2.2 },
-    normal: { spawn: .72, speed: 1.05, damage: 1.05, timeScale: 1, bossHp: 560, score: 1, midHp: 170, bulletSpeed: 1, fireGap: 1 },
-    hard: { spawn: .55, speed: 1.28, damage: 1.35, timeScale: .92, bossHp: 800, score: 1.45, midHp: 240, bulletSpeed: 1.08, fireGap: .9 }
+    // The boss-pattern knobs: barrage scales bullet counts, gapW scales the width of the
+    // safe corridor in px (beams use it inversely for thickness), telMul stretches every
+    // telegraph, hazardDmg scales beam damage. hard keeps gapW at .85 rather than .8 so
+    // the corridor stays wider than the player's 148px-tall grounded hitbox.
+    easy: { spawn: 1.08, speed: .8, damage: .55, timeScale: 1.06, bossHp: 300, score: .8, midHp: 90, bulletSpeed: .68, fireGap: 2.2, barrage: .72, gapW: 1.5, telMul: 1.3, hazardDmg: .6 },
+    normal: { spawn: .72, speed: 1.05, damage: 1.05, timeScale: 1, bossHp: 560, score: 1, midHp: 170, bulletSpeed: 1, fireGap: 1, barrage: 1, gapW: 1, telMul: 1, hazardDmg: 1 },
+    hard: { spawn: .55, speed: 1.28, damage: 1.35, timeScale: .92, bossHp: 800, score: 1.45, midHp: 240, bulletSpeed: 1.08, fireGap: .9, barrage: 1.28, gapW: .85, telMul: .92, hazardDmg: 1.15 }
   };
   const stages = [
     {
@@ -342,6 +347,35 @@
     loadSet('stage4', GEN_COUNTS),
     loadSet('lord-censor', SHEET_COUNTS),
   ];
+  // Two colours per boss: one for the moment a shot lands, one for the state it
+  // enters once it is nearly dead. Both are deliberately foreign to the stage
+  // palette so they read as damage rather than as more scenery.
+  const BOSS_TINT = [
+    { hit: '#9ff4ff', crit: '#ff3e9d' },  // MASQUERADE   pale scan -> magenta cracks
+    { hit: '#ffffff', crit: '#ff8a35' },  // SERVER GOLEM white spray -> warning amber
+    { hit: '#7ad7ff', crit: '#fff3bd' },  // INFERNO DJINN doused blue -> white heat
+    { hit: '#ff4d4d', crit: '#72ff68' },  // BOT GENERAL   error red -> glitch green
+    { hit: '#ffffff', crit: '#7a1848' },  // QUEEN         pure white -> bruised violet
+  ];
+  // Sprites are re-drawn through their own alpha into an offscreen canvas, so a
+  // flat colour lands on the character and never on a bounding box. ctx.filter
+  // is avoided — it appears nowhere else in this file. At most 7 frames per boss
+  // times two colours, so the cache stays tiny.
+  const tintCache = new Map();
+  function tintSprite(img, color) {
+    const key = img.src + '|' + color;
+    let c = tintCache.get(key);
+    if (!c) {
+      c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      g.globalCompositeOperation = 'source-atop';
+      g.fillStyle = color; g.fillRect(0, 0, c.width, c.height);
+      tintCache.set(key, c);
+    }
+    return c;
+  }
   // hurt wins over attack; attack shows through the telegraph windup too.
   const readyFrames = (arr) => arr.filter(frameReady);
   const pickPoseFrame = (set, e) => {
@@ -349,7 +383,9 @@
       const f = readyFrames(set.hurt);
       if (f.length) return f[Math.floor(e.t * 5) % f.length];
     }
-    if (e.attackT > 0 || e.tel > 0) {
+    // Only the tail of a windup shows the attack pose — long telegraphs would
+    // otherwise leave the boss frozen mid-swing for over a second.
+    if (e.attackT > 0 || (e.tel > 0 && e.tel < .55)) {
       const f = readyFrames(set.attack);
       if (f.length) return f[(e.attackIdx || 0) % f.length];
     }
@@ -495,6 +531,12 @@
   let nearProps = [];
   let delayedBursts = [];
   let shockwaves = [];
+  // Wide-area boss attacks (beams and rect fields) live here rather than in
+  // enemyBullets: they need a swept-segment test, not a circle one.
+  let hazards = [];
+  // Every site that wipes enemy fire must wipe both lists — a missed one leaves
+  // an invisible beam still hitting the player after the stage has moved on.
+  function clearEnemyFire() { enemyBullets = []; hazards = []; }
 
   menuHighScore.textContent = yen(highScore);
 
@@ -611,6 +653,7 @@
   function resetGame() {
     clearTimeout(openingTimeout); openingTimeout = 0;
     clearTimeout(resultTimeout); resultTimeout = 0;
+    bossCrit = 0; tintCache.clear();
     score = 0; combo = 0; comboTimer = 0; health = maxHealth; elapsed = 0;
     spawnTimer = .7; pickupTimer = 6; shake = 0; flash = 0; hitStop = 0; gameSpeed = 1;
     bossState = 'waiting'; bossWarning = 0; midBossDone = false;
@@ -619,7 +662,7 @@
     totalKills = 0; stageResult = null; lightning = 0; delayedBursts = [];
     special = 35; specialFlash = 0; formationTimer = 2.8;
     continuesLeft = 3; continueBanner = 0; powerDownBanner = 0;
-    bullets = []; enemyBullets = []; enemies = []; particles = []; pickups = []; shockwaves = [];
+    bullets = []; clearEnemyFire(); enemies = []; particles = []; pickups = []; shockwaves = [];
     setupStage();
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
     player.fire = 0; player.missileFire = .8; player.inv = 1.2; player.hit = 0; player.frame = 0; player.walkPhase = 0; player.walkStep = 0; player.grounded = false; player.takeoff = 0; player.power = 1; player.spread = 1; player.speed = 1; player.facing = 1;
@@ -920,12 +963,19 @@
     shockwaves.push({ x: cx, y: cy, r: 8, speed: 690, life: 1.2, max: 1.2, color: '#ff3e9d' });
     for (const b of enemyBullets) burst(b.x, b.y, b.volt ? '#72ff68' : b.bubble ? '#65fff2' : '#ff9ccf', 2, 110);
     enemyBullets = [];
+    // A beam still charging is cancelled outright; one already firing keeps its
+    // light but stops being lethal, so the bomb never looks like it failed.
+    hazards = hazards.filter(hz => hz.t >= hz.warn);
+    for (const hz of hazards) hz.dead = true;
     for (const e of [...enemies]) {
       if (e.hp <= 0) continue;
       const damage = e.type === 'boss' ? 22 + player.power * 5 : e.type === 'midboss' ? 18 + player.power * 4 : 10 + player.power * 4;
       e.hp -= damage; e.hit = .3;
       if (e.hp <= 0) destroyEnemy(e);
     }
+    // Don't let a boss counter-attack into the bomb's own invulnerability window.
+    const bombed = enemies.find(e => e.type === 'boss');
+    if (bombed) bombed.sp = Math.max(bombed.sp || 0, 1.4);
     burst(cx, cy, '#ffe15a', 70, 620); sfx('special'); voice('special'); updateSpecialButton();
   }
 
@@ -1050,10 +1100,13 @@
     if (sprite && sprite.complete && sprite.naturalWidth) {
       h = 560; w = Math.round(h * sprite.naturalWidth / sprite.naturalHeight);
     }
-    enemies.push({ type: 'boss', x: VW + 380, y: 90, baseY: 90, w, h, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8 });
+    // The contact box is pulled inside the artwork: several sprites are wide
+    // enough to overlap the player's own movement limit, which turned simply
+    // standing at the right edge into passive contact damage.
+    enemies.push({ type: 'boss', x: VW + 380, y: 90, baseY: 90, w, h, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8, hitInset: Math.round(w * .16), hitInsetY: Math.round(h * .08), tier: 0, tierBanner: 0, crit: false });
     bossState = 'active';
     musicStep = 0; musicClock = 0;
-    enemyBullets = [];
+    clearEnemyFire();
     shake = 18; flash = .55;
     playBgm(stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle', true);
     sfx('boss'); sfx('warning'); sfx('bossRoar'); sfx('bossQuake');
@@ -1070,7 +1123,7 @@
     }
     enemies.push({ type: 'midboss', x: VW + 240, y: 140, baseY: 140, w, h, hp, maxHp: hp, vx: 0, t: 0, wave: false, points: 6200 + stageIndex * 1200, fire: .55, sp: 2.1, variant: 'standard' });
     bossState = 'midboss-active';
-    enemyBullets = []; shake = 14; flash = .45;
+    clearEnemyFire(); shake = 14; flash = .45;
     playBgm('midBoss', true); sfx('boss'); sfx('warning');
   }
 
@@ -1141,26 +1194,224 @@
     }
   }
 
+  // Each boss leaves the field its own way. Three rules hold for all of them:
+  // it never happens in act one, something is always still shooting while the
+  // boss is gone, and the whole round is capped — the player's DPS is paused
+  // for the duration, so it has to buy real spectacle.
+  const BOSS_HIDE = [
+    { style: 'afterimage', out: .55, away: 1.6, back: .70, cd: 15 },
+    { style: 'submerge', out: .50, away: 2.0, back: .55, cd: 16 },
+    { style: 'ascend', out: .60, away: 2.0, back: .55, cd: 14 },
+    { style: 'glitchout', out: .35, away: 1.1, back: .35, cd: 11 },
+    { style: 'throne', out: .70, away: 2.4, back: .90, cd: 13 },
+  ];
+
+  function startBossHide(e) {
+    if (e.mode && e.mode.startsWith('hide')) return;
+    const cfg = BOSS_HIDE[stageIndex];
+    e.mode = 'hideOut'; e.hideClock = cfg.out; e.hideT = cfg.cd;
+    e.homeX = VW - e.w - 40; e.homeY = e.y;
+    e.hideAtk = 0; e.dissolve = 0; e.fade = 1; e.tel = 0; e.telType = null;
+    sfx('teleport');
+  }
+
+  function updateBossHide(e, dt) {
+    const cfg = BOSS_HIDE[stageIndex];
+    e.hideClock -= dt;
+    e.ghost = e.mode === 'hideAway';
+    if (e.mode === 'hideOut') {
+      hideExit(e, dt, cfg);
+      if (e.hideClock <= 0) { e.mode = 'hideAway'; e.hideClock = cfg.away; e.hideAtk = 0; }
+      return;
+    }
+    if (e.mode === 'hideAway') {
+      hideAttack(e, dt);
+      if (e.hideClock <= 0) { e.mode = 'hideBack'; e.hideClock = cfg.back; hideEnter(e); }
+      return;
+    }
+    const k = Math.min(1, dt * 6);
+    e.x += (e.homeX - e.x) * k; e.y += (e.homeY - e.y) * k;
+    e.fade = 1 - clamp(e.hideClock / cfg.back, 0, 1);
+    e.dissolve = Math.max(0, e.dissolve - dt / Math.max(.01, cfg.back));
+    if (e.hideClock <= 0) {
+      e.mode = 'hover'; e.x = e.homeX; e.y = e.homeY;
+      e.fade = 1; e.ghost = false; e.dissolve = 0;
+    }
+  }
+
+  function hideExit(e, dt, cfg) {
+    const k = 1 - clamp(e.hideClock / cfg.out, 0, 1);
+    if (cfg.style === 'afterimage') {
+      // The mask slides out to the right leaving three decoys behind.
+      e.x += 980 * dt; e.fade = 1 - k;
+      if (!e.mirageMade) {
+        e.mirageMade = true;
+        // 40% scale, stacked with an alternating x offset. At full size the
+        // three copies overlap into one continuous shape; this reads as three
+        // separate figures while staying clear of the player's reach (x<893).
+        const mw = e.w * .4, mh = e.h * .4;
+        [30, 248, 466].forEach((my, i) => {
+          enemies.push({ type: 'mirage', x: e.homeX + 40 + (i % 2) * 95, y: my, baseY: my, w: mw, h: mh, hp: 1, maxHp: 1, vx: 0, t: 0, wave: false, points: 0, fire: .9 });
+        });
+      }
+    } else if (cfg.style === 'submerge') {
+      e.y += 940 * dt; e.fade = 1 - k * .7;
+      for (let i = 0; i < 3; i++) particles.push({ x: e.x + Math.random() * e.w, y: GROUND_Y + 90, vx: (Math.random() - .5) * 40, vy: -50 - Math.random() * 60, life: .8, max: .8, size: 4 + Math.random() * 4, color: '#65fff2', gravity: -60 });
+    } else if (cfg.style === 'ascend') {
+      e.y -= 1000 * dt; e.fade = 1 - k * .6;
+      burstDebris(e.x + e.w * .5, e.y + e.h, ['#ff5a36', '#ffb347'], 2, 200);
+    } else if (cfg.style === 'glitchout') {
+      e.dissolve = k;
+    } else {
+      // throne: the queen rises with her skirt darkening half the screen.
+      e.y -= 620 * dt; e.fade = 1 - k * .5;
+    }
+  }
+
+  function hideAttack(e, dt) {
+    const cfg = BOSS_HIDE[stageIndex];
+    const D = difficulties[difficultyKey];
+    e.hideAtk -= dt;
+    if (cfg.style === 'afterimage') {
+      if (e.hideAtk <= 0) { e.hideAtk = .9; for (const m of enemies) if (m.type === 'mirage') bossFan(m, 3); }
+    } else if (cfg.style === 'submerge') {
+      // Geysers: a short floor marker, then a column erupting out of the water.
+      if (e.hideAtk <= 0) {
+        e.hideAtk = .75;
+        e.geyserX = clamp(player.x + 56 + (Math.random() - .5) * 420, 70, VW - 90);
+        e.geyserT = .55;
+      }
+      if (e.geyserT > 0) { e.geyserT -= dt; if (e.geyserT <= 0) golemGeyser(e.geyserX); }
+    } else if (cfg.style === 'ascend') {
+      if (e.hideAtk <= 0) {
+        e.hideAtk = .62;
+        e.telX = clamp(player.x + 56 + (Math.random() - .5) * 260, 60, VW - 200);
+        bossPillar(e.telX);
+      }
+    } else if (cfg.style === 'glitchout') {
+      if (e.hideAtk <= 0) {
+        e.hideAtk = .35; lightning = .35;
+        bossStrike(clamp(player.x + 56 + (e.hideClock > .7 ? -95 : 95), 60, VW - 100));
+      }
+    } else {
+      // throne: heart rain with a safe column sliding on a sine, so standing still loses.
+      e.rainT = (e.rainT || 0) - dt;
+      if (e.rainT <= 0) {
+        e.rainT = .11 / D.barrage;
+        const safeX = VW * .35 + Math.sin(e.t * 1.35) * VW * .26;
+        const half = 95 * D.gapW;
+        const x = 40 + Math.random() * (VW * .62);
+        if (Math.abs(x - safeX) > half) enemyBullets.push({ x, y: -30, vx: 0, vy: 300, r: 10, life: 4, damage: 14, heart: true, grazeMul: .4 });
+      }
+    }
+  }
+
+  function hideEnter(e) {
+    const cfg = BOSS_HIDE[stageIndex];
+    if (cfg.style === 'afterimage') {
+      // Reappear centred on whichever decoy survived, not at its top-left.
+      const decoy = enemies.find(m => m.type === 'mirage');
+      if (decoy) e.homeY = clamp(decoy.y + decoy.h / 2 - e.h / 2, 16, Math.max(40, VH - e.h - 24));
+      for (const m of enemies) if (m.type === 'mirage') { burst(m.x + m.w / 2, m.y + m.h / 2, stages[0].accent, 18, 240); m.hp = 0; }
+      e.mirageMade = false;
+      e.x = e.homeX; e.y = e.homeY;
+      bossFan(e, 9);
+    } else if (cfg.style === 'submerge') {
+      // Surfaces behind the player on the far left — the one moment she is flanked.
+      e.x = 120; e.y = e.homeY;
+      shockwaves.push({ x: e.x + e.w / 2, y: e.homeY + e.h / 2, r: 14, speed: 520, life: .8, max: .8, color: '#65fff2' });
+      bossBubbles(e); sfx('bubble');
+    } else if (cfg.style === 'ascend') {
+      // Comes down somewhere in the player's half — the only boss that can end
+      // up on her left — and throws fire along the floor in both directions.
+      e.x = 300 + Math.random() * 420; e.y = -e.h;
+      shake = 26; flash = .5; sfx('fireball');
+      const impact = e.x + e.w * .5;
+      for (const dir of [0, Math.PI]) {
+        hazards.push({
+          kind: 'field', x: impact, y: GROUND_Y + 120, w: 900, h: 120 / difficulties[difficultyKey].gapW,
+          ang: dir, warn: .42, live: .5, fade: .25, lock: 0, t: 0, damage: 20, color: '#ff8a35',
+        });
+      }
+    } else if (cfg.style === 'glitchout') {
+      e.x = clamp(VW - e.w - 80 - Math.random() * 200, 200, VW - e.w - 40);
+      e.y = clamp(40 + Math.random() * 300, 16, Math.max(40, VH - e.h - 24));
+      bossVoltRing(e); bossRailgun(e, 1);
+    } else {
+      e.x = VW * .5; e.y = -580;
+      for (let i = 0; i < 3; i++) shockwaves.push({ x: VW * .5, y: 300, r: 10 + i * 40, speed: 480, life: .9, max: .9, color: '#ff3e9d' });
+      bossHeartRing(e);
+    }
+  }
+
+  // HP is cut into acts rather than one 50% flip. Crossing a line is an event:
+  // the screen clears, a banner names the act, and the boss unlocks patterns.
+  // The queen carries 3.2x the HP of stage one, so she gets an extra act.
+  function bossTiers(idx) { return idx === 4 ? [.70, .40, .18] : [.55, .25]; }
+
+  function bossBreak(e, idx) {
+    clearEnemyFire();
+    shake = 12 + e.tier * 5;
+    flash = .40 + e.tier * .16;
+    hitStop = Math.max(hitStop, .12 + e.tier * .03);
+    shockwaves.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, r: 24, speed: 620, life: .85, max: .85, color: stages[idx].accent2 });
+    shockwaves.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, r: 10, speed: 380, life: 1.1, max: 1.1, color: '#fff' });
+    burst(e.x + e.w / 2, e.y + e.h / 2, stages[idx].accent2, 40, 420);
+    burstDebris(e.x + e.w / 2, e.y + e.h / 2, ['#fff', stages[idx].accent], 14, 300);
+    e.tierBanner = 1.9;
+    sfx('boss'); sfx('bossSuperHit');
+    bossVoice(idx, e.tier >= 2 ? 'attack' : 'serious');
+    e.sp = .9; e.fire = .5;
+    if (idx === 4 && e.tier === 1) summonConsorts(e);
+    if (e.tier >= 1) startBossHide(e);
+  }
+
+  // One place that arms a telegraph, so every attack pays the same reaction tax.
+  function bossTelegraph(e, type, sec, opts = {}) {
+    e.telType = type; e.telMax = sec; e.tel = sec;
+    e.telX = opts.x; e.telY = opts.y;
+    sfx('boss');
+  }
+
   function updateBoss(e, dt) {
     const idx = stageIndex;
     stepPoseTimers(e, dt);
+    if (e.mode && e.mode.startsWith('hide')) { updateBossHide(e, dt); return; }
     const parkX = VW - e.w - 40;
     if (e.x > parkX && e.mode !== 'dash' && e.mode !== 'return') e.x -= 250 * dt;
-    if (!e.phase2 && e.hp <= e.maxHp / 2) {
-      e.phase2 = true; shake = 14; flash = .5;
-      burst(e.x + e.w / 2, e.y + e.h / 2, stages[idx].accent2, 40, 420);
-      enemyBullets = []; sfx('boss'); sfx('bossSuperHit');
-      bossVoice(idx, 'serious');
+    const tiers = bossTiers(idx);
+    const want = tiers.filter(t => e.hp <= e.maxHp * t).length;
+    if (want > (e.tier || 0)) { e.tier = want; bossBreak(e, idx); }
+    // phase2 stays as a derived value: the HUD, BGM, voice lines and the rage
+    // multiplier all still read it.
+    e.phase2 = (e.tier || 0) >= 1;
+    e.tierBanner = Math.max(0, (e.tierBanner || 0) - dt);
+    if (!e.crit && e.hp <= e.maxHp * .25) {
+      e.crit = true;
+      shake = Math.max(shake, 16); flash = Math.max(flash, .35);
+      hitStop = Math.max(hitStop, .09);
+      shockwaves.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, r: 20, speed: 620, life: .7, max: .7, color: BOSS_TINT[idx].crit });
+      burstDebris(e.x + e.w / 2, e.y + e.h / 2, [BOSS_TINT[idx].crit, '#fff'], 22, 380);
+      sfx('bossSuperHit'); bossVoice(idx, 'hurt');
+      if (idx === 4) bossCrit = Math.max(bossCrit, .001);
     }
     const engaged = e.x < parkX + 30;
-    // Final rage tier below 25% HP: every attack cadence ticks 35% faster,
-    // on top of the existing phase2 pattern upgrades at 50%.
-    const rageMul = (e.hp < e.maxHp * .25 ? 1.35 : 1) / difficulties[difficultyKey].fireGap;
+    const rageMul = [1, 1.14, 1.34, 1.5][e.tier || 0] / difficulties[difficultyKey].fireGap;
     e.fire -= dt * rageMul;
     e.sp = e.sp === undefined ? 3.5 : e.sp - dt * rageMul;
+    // Retreats are gated on their own cooldown and never happen in act one.
+    e.hideT = Math.max(0, (e.hideT === undefined ? BOSS_HIDE[idx].cd : e.hideT) - dt);
     if (e.tel > 0) {
       e.tel -= dt;
+      // A rising rumble under the windup, so a long telegraph builds instead of waiting.
+      shake = Math.max(shake, Math.pow(1 - e.tel / (e.telMax || 1), 3) * 7);
       if (e.tel <= 0) executeBossSpecial(e);
+    } else if (e.followUp > 0) {
+      e.followUp -= dt;
+      if (e.followUp <= 0) { e.telType = e.followType; e.tel = .001; e.telMax = .001; }
+    } else if (engaged && (e.tier || 0) >= 1 && e.hideT <= 0) {
+      startBossHide(e);
+      return;
     }
     const yMin = 16, yMax = Math.max(40, VH - e.h - 24);
     const bobY = (mid, amp) => clamp(mid + Math.sin(e.t * 1.1) * amp, yMin, yMax);
@@ -1174,18 +1425,32 @@
       } else {
         e.y = bobY(e.baseY + 40, 70);
         if (engaged && e.fire <= 0) { bossFan(e, e.phase2 ? 9 : 6); e.fire = e.phase2 ? .48 : .62; }
-        if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .7; e.telType = 'dash'; e.telY = clamp(player.y - 30, 40, 480); e.sp = e.phase2 ? 3.8 : 5.2; }
+        if (engaged && e.sp <= 0 && !(e.tel > 0)) {
+          const pick = e.tier >= 1 && Math.random() < .5 ? 'curtain' : 'dash';
+          bossTelegraph(e, pick, telFor(pick === 'curtain' ? 90 : 70), {
+            y: pick === 'curtain' ? clamp(player.y + 55, 130, 590) : clamp(player.y - 30, 40, 480),
+          });
+          e.sp = [5.2, 3.8, 3.0][e.tier || 0];
+        }
       }
     } else if (idx === 1) {
       e.y = bobY(e.baseY + 30, 80);
       if (engaged && e.fire <= 0) { bossBubbles(e); e.fire = e.phase2 ? .48 : .7; }
-      if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .85; e.telType = 'wave'; e.sp = e.phase2 ? 3.2 : 4.6; }
+      if (engaged && e.sp <= 0 && !(e.tel > 0)) {
+        const pick = e.tier >= 1 && Math.random() < .45 ? 'flood' : 'wave';
+        bossTelegraph(e, pick, pick === 'flood' ? telFor(40) : telFor(90), { y: clamp(player.y + 55, 130, 590) });
+        e.sp = [4.6, 3.2, 2.6][e.tier || 0];
+      }
     } else if (idx === 2) {
       e.y = bobY(e.baseY + 50, 55);
       if (engaged && e.fire <= 0) {
         if (e.phase2) { bossFlameSweep(e); e.fire = .12; } else { bossFireball(e); e.fire = .85; }
       }
-      if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .8; e.telType = 'pillar'; e.telX = clamp(player.x + 45, 60, VW - 200); e.sp = e.phase2 ? 2.8 : 4.0; }
+      if (engaged && e.sp <= 0 && !(e.tel > 0)) {
+        const pick = e.tier >= 1 && Math.random() < .5 ? 'heatwall' : 'pillar';
+        bossTelegraph(e, pick, telFor(60), { x: clamp(player.x + 56, 90, VW - 140) });
+        e.sp = [4.0, 2.8, 2.2][e.tier || 0];
+      }
     } else if (idx === 3) {
       e.blink = Math.max(0, (e.blink || 0) - dt);
       e.tpT = e.tpT === undefined ? 2 : e.tpT - dt;
@@ -1198,15 +1463,45 @@
         if (e.phase2) bossVoltRing(e);
       }
       if (engaged && e.fire <= 0) { bossVoltShot(e); e.fire = e.phase2 ? .55 : .75; }
-      if (engaged && e.sp <= 0 && !(e.tel > 0)) { e.tel = .75; e.telType = 'strike'; e.telX = clamp(player.x + 45, 60, VW - 100); e.sp = e.phase2 ? 2.5 : 3.8; }
-    } else {
-      e.y = bobY(e.baseY + 35, 75);
-      e.spiral = (e.spiral || 0) + dt * (e.phase2 ? 3.4 : 2.4);
-      if (engaged && e.fire <= 0) { bossHeartSpiral(e); e.fire = e.phase2 ? .16 : .24; }
       if (engaged && e.sp <= 0 && !(e.tel > 0)) {
-        e.telType = ['fan', 'wave', 'ring'][Math.floor(Math.random() * (e.phase2 ? 3 : 2))];
-        e.tel = .7; e.sp = e.phase2 ? 2.6 : 3.8;
+        const pick = e.tier >= 1 && Math.random() < .5 ? 'railgun' : 'strike';
+        bossTelegraph(e, pick, pick === 'railgun' ? telFor(40) : telFor(60), { x: clamp(player.x + 56, 60, VW - 100) });
+        e.sp = [3.8, 2.5, 2.0][e.tier || 0];
       }
+    } else {
+      // The queen in three acts: the pattern pool widens each time, and the
+      // spiral gains arms. Her HP is untouched — length was never the problem.
+      e.y = bobY(e.baseY + 35, 75);
+      e.spiral = (e.spiral || 0) + dt * [2.4, 3.0, 3.4, 3.9][e.tier || 0];
+      if (engaged && e.fire <= 0) {
+        bossHeartSpiral(e, e.tier >= 2 ? 4 : 2);
+        e.fire = [.26, .20, .17, .15][e.tier || 0];
+      }
+      if (engaged && e.sp <= 0 && !(e.tel > 0)) {
+        const pool = ['curtain', 'fan', 'lattice', 'ring', 'cannon'];
+        const pick = pool[Math.floor(Math.random() * [2, 3, 4, 5][e.tier || 0])];
+        bossTelegraph(e, pick, pick === 'cannon' ? telFor(40) : telFor(pick === 'curtain' ? 90 : 50), {
+          y: clamp(player.y + 55, 130, 590),
+        });
+        e.sp = [4.0, 3.2, 2.6, 2.2][e.tier || 0];
+      }
+    }
+  }
+
+  // Consorts orbit the queen and shoot on their own clock. They are ordinary
+  // enemies to every other system, so they die, score and collide normally.
+  function updateConsort(e, dt) {
+    const boss = enemies.find(b => b.type === 'boss');
+    if (!boss) { e.hp = 0; return; }
+    e.orbit += dt * 1.1;
+    e.x = boss.x + boss.w * .35 + Math.cos(e.orbit) * 170;
+    e.y = clamp(boss.y + boss.h * .45 + Math.sin(e.orbit) * 170, 20, VH - e.h - 30);
+    e.fire -= dt / difficulties[difficultyKey].fireGap;
+    if (e.fire <= 0) {
+      e.fire = 1.6;
+      const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
+      const a = Math.atan2(player.y + 45 - cy, player.x + 40 - cx);
+      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 230, vy: Math.sin(a) * 230, r: 9, life: 6, damage: 14, heart: true, homing: .8 });
     }
   }
 
@@ -1221,11 +1516,19 @@
     else if (type === 'strike') bossStrike(e.telX);
     else if (type === 'fan') bossFan(e, 7);
     else if (type === 'ring') bossHeartRing(e);
+    else if (type === 'curtain') { bossCurtain(e, 0); e.followUp = .95; e.followType = 'curtain2'; }
+    else if (type === 'curtain2') bossCurtain(e, 1);
+    else if (type === 'heatwall') bossHeatWall(e);
+    else if (type === 'flood') bossDataFlood(e);
+    else if (type === 'railgun') bossRailgun(e, e.phase2 ? 3 : 2);
+    else if (type === 'cannon') bossHeartCannon(e);
+    else if (type === 'lattice') bossRoseLattice(e);
   }
 
   function bossFan(e, n) {
     e.attackT = .45;
     const ox = e.x + 18, oy = e.y + e.h / 2;
+    n = Math.max(4, Math.round(n * difficulties[difficultyKey].barrage));
     const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
     for (let i = 0; i < n; i++) {
       const a = aim + (i - (n - 1) / 2) * .19;
@@ -1246,11 +1549,13 @@
   }
 
   function bossBubbleWall(e) {
-    const wide = difficulties[difficultyKey].fireGap > 1.2; // easy: bigger opening
-    const gap = 1 + Math.floor(Math.random() * (wide ? 4 : 5));
+    // Opening measured in px and anchored to where the player was told to be.
+    const half = 112 * difficulties[difficultyKey].gapW;
+    const gapY = e.telY === undefined ? clamp(player.y + 55, 130, 590) : e.telY;
     for (let i = 0; i < 8; i++) {
-      if (i === gap || i === gap + 1 || (wide && i === gap + 2)) continue;
-      enemyBullets.push({ x: e.x - 30, y: 60 + i * 85, vx: -235, vy: 0, r: 13, life: 8, damage: 15, bubble: true });
+      const y = 60 + i * 85;
+      if (Math.abs(y - gapY) < half) continue;
+      enemyBullets.push({ x: e.x - 30, y, vx: -235, vy: 0, r: 13, life: 8, damage: 15, bubble: true, grazeMul: .4 });
     }
     sfx('boss');
   }
@@ -1297,38 +1602,160 @@
   function bossVoltRing(e) {
     e.attackT = .45;
     const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
-    for (let i = 0; i < 12; i++) {
-      const a = i / 12 * Math.PI * 2;
+    const n = Math.max(8, Math.round(12 * difficulties[difficultyKey].barrage));
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2;
       enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 240, vy: Math.sin(a) * 240, r: 8, life: 4, damage: 13, volt: true });
     }
   }
 
-  function bossHeartSpiral(e) {
+  function bossHeartSpiral(e, arms = 2) {
     e.attackT = .45;
     const cx = e.x + 40, cy = e.y + e.h / 2;
-    for (const off of [0, Math.PI]) {
-      const a = e.spiral + off;
-      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, r: 9, life: 6, damage: 13, heart: true });
+    for (let i = 0; i < arms; i++) {
+      const a = e.spiral + i / arms * Math.PI * 2;
+      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, r: 10, life: 6, damage: 16, heart: true, grazeMul: .7 });
     }
   }
 
   function bossHeartWall(e) {
-    const wide = difficulties[difficultyKey].fireGap > 1.2; // easy: bigger opening
-    const gap = 1 + Math.floor(Math.random() * (wide ? 4 : 5));
+    // The opening is measured in pixels, not lanes: one 85px lane leaves 59px of
+    // real clearance, narrower than the player's own 68px airborne hitbox.
+    const half = 112 * difficulties[difficultyKey].gapW;
+    const gapY = e.telY === undefined ? clamp(player.y + 55, 130, 590) : e.telY;
     for (let i = 0; i < 8; i++) {
-      if (i === gap || i === gap + 1 || (wide && i === gap + 2)) continue;
-      enemyBullets.push({ x: e.x - 30, y: 60 + i * 85, vx: -245, vy: 0, r: 11, life: 8, damage: 15, heart: true });
+      const y = 60 + i * 85;
+      if (Math.abs(y - gapY) < half) continue;
+      enemyBullets.push({ x: e.x - 30, y, vx: -245, vy: 0, r: 11, life: 8, damage: 18, heart: true, grazeMul: .4 });
     }
     sfx('boss');
   }
 
   function bossHeartRing(e) {
     const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
-    for (let i = 0; i < 10; i++) {
-      const a = i / 10 * Math.PI * 2;
-      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, r: 10, life: 7, damage: 14, heart: true, homing: .5 });
+    const n = Math.max(6, Math.round(10 * difficulties[difficultyKey].barrage));
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2;
+      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, r: 10, life: 7, damage: 18, heart: true, homing: .5 });
     }
     sfx('boss');
+  }
+
+  // A full-height wall of shot with one corridor, opened at the height the
+  // player was standing when the telegraph fired. At a real 168 px/s there is
+  // no reaching a randomly placed gap, so anchoring it is the only fair option.
+  function bossCurtain(e, side) {
+    const D = difficulties[difficultyKey];
+    const half = 112 * D.gapW;                    // easy 168 / normal 112 / hard 95
+    const anchor = e.telY === undefined ? player.y + 55 : e.telY;
+    const cy = side === 0 ? clamp(anchor, 45 + half, 655 - half)
+                          : clamp(700 - anchor, 45 + half, 655 - half);
+    const pitch = 62 / D.barrage;
+    const sp = side === 0 ? 230 : 190;            // the answering wave is slower
+    const tag = stageIndex === 4 ? { heart: true } : stageIndex === 1 ? { bubble: true }
+              : stageIndex === 2 ? { fire: true } : stageIndex === 3 ? { volt: true } : {};
+    for (let y = 45; y <= 665; y += pitch) {
+      if (Math.abs(y - cy) < half) continue;
+      enemyBullets.push({ x: VW + 26, y, vx: -sp, vy: 0, r: 12, life: 9, damage: 15, grazeMul: .4, ...tag });
+    }
+    e.curtainY = cy;
+    sfx('boss');
+  }
+
+  // Inverse of the curtain: columns of fire everywhere except the lane the
+  // player already occupies, so the read is "hold still", plus floor rollers
+  // to punish sitting on the ground.
+  function bossHeatWall(e) {
+    const D = difficulties[difficultyKey];
+    const half = 100 * D.gapW;
+    const safe = e.telX;
+    for (const off of [-560, -370, -185, 185, 370, 560]) {
+      const x = safe + off;
+      if (x < 40 || x > VW - 60) continue;
+      if (Math.abs(off) < half + 45) continue;
+      bossPillar(x);
+    }
+    const rollers = Math.max(3, Math.round(5 * D.barrage));
+    for (let i = 0; i < rollers; i++) {
+      enemyBullets.push({ x: e.x - 20, y: 604 + i * 14, vx: -260, vy: 0, r: 14, life: 6, damage: 16, fire: true, grazeMul: .4 });
+    }
+  }
+
+  function golemGeyser(x) {
+    for (let i = 0; i < 9; i++) {
+      enemyBullets.push({ x: x + (Math.random() - .5) * 34, y: 700 + i * 40, vx: 0, vy: -520, r: 14, life: 3.2, damage: 16, bubble: true, grazeMul: .4 });
+    }
+    burst(x, 660, '#65fff2', 20, 300); shake = 9; sfx('bubble');
+  }
+
+  // Three screen-wide bands staggered by .8s. The first lands on the player's
+  // own row, so the opening move is always forced.
+  function bossDataFlood(e) {
+    const D = difficulties[difficultyKey];
+    const h = 70 / D.gapW;
+    const py = clamp(player.y + 55, 70, 640);
+    const rows = [py, clamp(py - 240, 70, 640), clamp(py + 240, 70, 640)];
+    rows.forEach((y, i) => hazards.push({
+      kind: 'beam', x: 0, y, w: VW, h, ang: 0,
+      warn: telFor(h / 2 + 34) + i * .8, live: .45, fade: .22, lock: 0, t: 0,
+      damage: 26, color: '#65fff2',
+    }));
+    sfx('boss');
+  }
+
+  // Tracks the player, then commits. The freeze is the whole mechanic: dodge
+  // after the lock, not before.
+  function bossRailgun(e, shots) {
+    const D = difficulties[difficultyKey];
+    const cx = e.x + 30, cy = e.y + e.h * .42;
+    for (let i = 0; i < shots; i++) {
+      hazards.push({
+        kind: 'beam', x: cx, y: cy, w: 1500, h: 56 / D.gapW, ang: Math.PI,
+        warn: 1.15 * D.telMul + i * .62, live: .26, fade: .2,
+        lock: (i === 0 ? .72 : .62) * D.telMul, aim: true, t: 0,
+        damage: 28, color: '#72ff68',
+      });
+    }
+    lightning = .3; lightningX = e.x; sfx('thunder');
+  }
+
+  // The queen's signature: a band thick enough to own a third of the screen.
+  // Deliberately static — a sweeping version is unavoidable at the player's
+  // real top speed, so instead a second band answers on the opposite side.
+  function bossHeartCannon(e) {
+    const D = difficulties[difficultyKey];
+    const h = D.gapW > 1.2 ? 190 : D.gapW < .9 ? 300 : 260;
+    const py = clamp(player.y + 55, 60, 660);
+    hazards.push({
+      kind: 'beam', x: e.x + 20, y: py, w: 1400, h, ang: Math.PI,
+      warn: telFor(h / 2 + 34), live: .6, fade: .3, lock: 0, t: 0,
+      damage: 30, color: '#ff3e9d',
+    });
+    for (let i = 0; i < 3; i++) delayedBursts.push({ x: e.x + 40, y: e.y + e.h * .4, t: .3 + i * .32, color: '#ff9ccf' });
+    sfx('bossSuperHit');
+  }
+
+  // Four arms whose bullets leave at staggered speeds, so the volley unrolls
+  // into a rose instead of a flat ring.
+  function bossRoseLattice(e) {
+    const D = difficulties[difficultyKey];
+    const arms = 4, per = Math.max(6, Math.round(8 * D.barrage));
+    const cx = e.x + 40, cy = e.y + e.h * .45;
+    for (let a = 0; a < arms; a++) {
+      const ang = (e.spiral || 0) + a / arms * Math.PI * 2;
+      for (let i = 0; i < per; i++) {
+        enemyBullets.push({ x: cx, y: cy, vx: Math.cos(ang) * (120 + i * 26), vy: Math.sin(ang) * (120 + i * 26), r: 10, life: 7, damage: 14, heart: true, grazeMul: .4 });
+      }
+    }
+    sfx('boss');
+  }
+
+  // Two shootable hearts orbiting the queen from act two, so she can never be
+  // the only thing on screen worth watching.
+  function summonConsorts(e) {
+    for (const side of [-1, 1]) {
+      enemies.push({ type: 'consort', x: e.x + 40, y: e.y + e.h / 2, w: 74, h: 74, hp: 8, maxHp: 8, vx: 0, t: 0, wave: false, points: 400, fire: 1.6, orbit: side > 0 ? 0 : Math.PI });
+    }
   }
 
   function update(dt) {
@@ -1379,16 +1806,16 @@
     const bossAt = timelineTotal();
     const midAt = midbossStart();
 if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
-      bossState = 'midboss-warning'; bossWarning = 3.0; enemies = []; enemyBullets = []; bullets = []; sfx('warning');
+      bossState = 'midboss-warning'; bossWarning = 3.0; enemies = []; clearEnemyFire(); bullets = []; sfx('warning');
       playBgm('midBoss', true);
     } else if (bossState === 'midboss-warning') {
       bossWarning -= dt;
       if (bossWarning <= 0) spawnMidBoss();
     } else if (bossState === 'waiting' && midBossDone && stageTime >= bossAt) {
-      bossState = 'warning'; bossWarning = 3.6; enemies = []; enemyBullets = []; bullets = []; sfx('warning'); voice('bossAppear');
+      bossState = 'warning'; bossWarning = 3.6; enemies = []; clearEnemyFire(); bullets = []; sfx('warning'); voice('bossAppear');
     } else if (bossState === 'waiting' && !midBossDone && stageTime >= bossAt) {
       // Safety: if mid was skipped somehow, force mid first
-      bossState = 'midboss-warning'; bossWarning = 2.5; enemies = []; enemyBullets = []; sfx('warning');
+      bossState = 'midboss-warning'; bossWarning = 2.5; enemies = []; clearEnemyFire(); sfx('warning');
       playBgm('midBoss', true);
     } else if (bossState === 'warning') {
       bossWarning -= dt;
@@ -1591,7 +2018,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         const dx = b.x - (player.x + 56), dy = b.y - (player.y + 55);
         const grazeRange = b.r + 48;
         if (dx * dx + dy * dy < grazeRange * grazeRange) {
-          b.grazed = true; special = Math.min(100, special + 2.2); score += 4;
+          // Wide patterns carry a reduced rate: a single big attack sweeping past
+          // would otherwise hand back most of the bomb that answers it.
+          b.grazed = true; special = Math.min(100, special + 2.2 * (b.grazeMul || 1)); score += 4;
           burst(b.x, b.y, '#ffe15a', 3, 80); sfx('graze');
         }
       }
@@ -1601,6 +2030,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       e.hit = Math.max(0, (e.hit || 0) - dt);
       if (e.type === 'boss') { updateBoss(e, dt); continue; }
       if (e.type === 'midboss') { updateMidBoss(e, dt); continue; }
+      if (e.type === 'consort') { updateConsort(e, dt); continue; }
+      if (e.type === 'mirage') { e.fire -= dt; continue; }
       // Flankers sweep in from behind (left) and cross rightward, slightly slower.
       e.x -= (e.flank ? -.75 : 1) * e.vx * dt * gameSpeed * difficulty.speed;
       if (e.behavior === 'dive' && e.x < 1040 && e.x > 380) {
@@ -1632,6 +2063,21 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const p of pickups) { p.x -= 130 * dt; p.t += dt; }
     for (const p of particles) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.gravity || 0) * dt; p.life -= dt; p.vx *= Math.pow(.08, dt); if (p.vr) p.rot = (p.rot || 0) + p.vr * dt; }
     for (const r of shockwaves) { r.r += r.speed * dt; r.life -= dt; }
+    // Hazards run on one clock: [0,warn) telegraphs, [warn,warn+live) is lethal,
+    // the rest is the afterglow. Aiming ones track the player until `lock`
+    // seconds remain, then commit — that freeze is what makes them dodgeable.
+    for (const hz of hazards) {
+      hz.t += dt * difficulty.bulletSpeed;
+      if (hz.aim && hz.t < hz.warn - hz.lock) {
+        const want = Math.atan2(player.y + 55 - hz.y, player.x + 56 - hz.x);
+        let d = want - hz.ang;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        hz.ang += clamp(d, -2.4 * dt, 2.4 * dt);
+      }
+    }
+    hazards = hazards.filter(hz => hz.t < hz.warn + hz.live + hz.fade);
+    if (bossCrit > 0 && bossCrit < 1) bossCrit = Math.min(1, bossCrit + dt * .9);
     for (const d of delayedBursts) {
       d.t -= dt;
       if (d.t <= 0) { burst(d.x, d.y, d.color, 18, 300); shake = Math.max(shake, 8); if (d.boom) sfx('boom'); }
@@ -1641,7 +2087,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     collisions();
     bullets = bullets.filter(b => b.life > 0 && b.x < VW + 80 && b.y > -30 && b.y < VH + 30);
     enemyBullets = enemyBullets.filter(b => b.life > 0 && b.x > -40 && b.x < VW + 240 && b.y > -400 && b.y < VH + 400);
-    enemies = enemies.filter(e => e.hp > 0 && e.x > -130 && (!e.flank || e.x < VW + 170));
+    // Bosses are exempt from the left cull: they leave the screen deliberately
+    // during a retreat, and deleting one strands bossState in 'active' forever.
+    enemies = enemies.filter(e => e.hp > 0 && (e.type === 'boss' || e.x > -130) && (!e.flank || e.x < VW + 170));
     particles = particles.filter(p => p.life > 0);
     shockwaves = shockwaves.filter(r => r.life > 0);
     pickups = pickups.filter(p => p.x > -50 && !p.taken);
@@ -1655,7 +2103,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const hitH = player.grounded ? 148 : player.h - 34;
     for (const b of bullets) {
       for (const e of enemies) {
-        if (b.life > 0 && e.hp > 0 && circleRect(b.x, b.y, b.r, e.x, e.y, e.w, e.h)) {
+        if (b.life > 0 && e.hp > 0 && !e.ghost && circleRect(b.x, b.y, b.r, e.x, e.y, e.w, e.h)) {
           b.life = 0;
           let damage = b.damage || 1;
           if (e.shield > 0) {
@@ -1663,20 +2111,38 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
             shockwaves.push({ x: b.x, y: b.y, r: 3, speed: 130, life: .24, max: .24, color: '#a8b7d6' }); sfx('shield');
           }
           e.hp -= damage; e.hit = .11; special = Math.min(100, special + .35 + (b.missile ? .5 : 0)); shake = 3; burst(b.x, b.y, '#31e8ff', 5, 150); burstDebris(b.x, b.y, ['#c9d6ec', '#8fa3c8'], 2, 140); sfx('hit');
+          // Bosses hit back harder in feel: a heavier kick and chips in their own colour.
+          if (e.type === 'boss' || e.type === 'midboss') {
+            shake = Math.max(shake, e.crit ? 5 : 4);
+            burstDebris(b.x, b.y, [BOSS_TINT[stageIndex].hit, '#ffffff'], 2, 200);
+          }
           if (e.hp <= 0) destroyEnemy(e); else hitStop = Math.max(hitStop, .02);
           break;
         }
       }
     }
+    // One source of damage per frame. The body and bullet passes used to run
+    // independently, so a contact hit and a bullet hit could both land in the
+    // same frame for 56 damage and a double power-down.
     if (player.inv <= 0) {
+      let struck = false;
       for (const e of enemies) {
-        if (e.hp > 0 && rects(hitX, hitY, hitW, hitH, e.x, e.y, e.w, e.h)) {
+        if (e.hp > 0 && !e.ghost && rects(hitX, hitY, hitW, hitH, e.x + (e.hitInset || 0), e.y + (e.hitInsetY || 0), e.w - (e.hitInset || 0) * 2, e.h - (e.hitInsetY || 0) * 2)) {
           if (e.type !== 'boss' && e.type !== 'midboss') { e.hp = 0; destroyEnemy(e); }
-          hurt(e.type === 'boss' ? 38 : e.type === 'midboss' ? 32 : 28); break;
+          hurt(e.type === 'boss' ? 38 : e.type === 'midboss' ? 32 : 28); struck = true; break;
         }
       }
-      for (const b of enemyBullets) {
-        if (b.life > 0 && circleRect(b.x, b.y, b.r, hitX, hitY, hitW, hitH)) { b.life = 0; hurt(b.damage || 20); break; }
+      if (!struck) for (const b of enemyBullets) {
+        if (b.life > 0 && circleRect(b.x, b.y, b.r, hitX, hitY, hitW, hitH)) { b.life = 0; hurt(b.damage || 20); struck = true; break; }
+      }
+      if (!struck) for (const hz of hazards) {
+        const el = hz.t - hz.warn;
+        if (hz.dead || el < 0 || el > hz.live) continue;
+        if (hazardHitsBox(hz, hitX, hitY, hitW, hitH)) {
+          hz.dead = true;   // a given beam can only ever hit once
+          hurt(Math.round(hz.damage * difficulties[difficultyKey].hazardDmg));
+          struck = true; break;
+        }
       }
     }
     for (const p of pickups) {
@@ -1725,7 +2191,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     hitStop = Math.max(hitStop, isMajor ? (isBoss ? .12 : .09) : e.type === 'tank' ? .05 : .03);
     if (isMidBoss) {
       // No free heal — recovery comes from items (the mid boss drops one below).
-      midBossDone = true; bossState = 'waiting'; enemyBullets = []; bullets = [];
+      midBossDone = true; bossState = 'waiting'; clearEnemyFire(); bullets = [];
       special = Math.min(100, special + 30);
       // Ensure the post-mid stretch has volume before the main boss.
       stageTime = Math.max(stageTime, midbossStart() + 1.2);
@@ -1737,7 +2203,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     }
     if (isBoss) {
       bossState = stageIndex === stages.length - 1 ? 'final' : 'transition'; stageTransition = 4.6;
-      enemyBullets = []; bullets = []; musicStep = 0; musicClock = 0;
+      clearEnemyFire(); bullets = []; musicStep = 0; musicClock = 0;
       sfx('bossCollapse'); bossVoice(stageIndex, 'death');
       const stage = stages[stageIndex];
       for (let i = 0; i < 14; i++) {
@@ -1771,7 +2237,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     health = maxHealth;
     continueBanner = 3;
     player.inv = 4;
-    enemyBullets = [];
+    bossCrit = 0;
+    clearEnemyFire();
     const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
     shockwaves.push({ x: cx, y: cy, r: 20, speed: 900, life: 1, max: 1, color: '#ffe15a' });
     burst(cx, cy, '#ffe15a', 40, 420);
@@ -1831,7 +2298,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // (in-stage drops or the shop's onigiri).
     stageIndex++; stageTime = 0; stageBanner = 3; bossState = 'waiting'; midBossDone = false; spawnTimer = 1.2; pickupTimer = 4;
     player.inv = 2;
-    stageResult = null; setupStage(); musicStep = 0; musicClock = 0;
+    stageResult = null; bossCrit = 0; tintCache.clear(); setupStage(); musicStep = 0; musicClock = 0;
     state = 'playing';
     pauseButton.classList.add('is-visible');
     specialButton.classList.add('is-visible');
@@ -3694,6 +4161,17 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
 
   function drawPalaceBackdrop(stage) {
+    // The queen's last act stains the whole sky. Fades in once and is reset by
+    // resetGame / leaveShop / doContinue so it never leaks into another run.
+    if (bossCrit > 0) {
+      ctx.save(); ctx.globalAlpha = Math.min(1, bossCrit) * .55;
+      const g = cachedGrad('critSky', () => {
+        const r = ctx.createLinearGradient(0, 0, 0, VH);
+        r.addColorStop(0, '#2a0008'); r.addColorStop(.5, '#7d0b25'); r.addColorStop(1, '#ff2a3c');
+        return r;
+      });
+      ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); ctx.restore();
+    }
     bgLayer(.5, () => {
       drawRoseWindow(stage);
       ctx.save(); ctx.shadowColor = stage.accent2; ctx.shadowBlur = 42; ctx.fillStyle = '#ff6fb5';
@@ -3928,6 +4406,22 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.globalAlpha = p * 2; ctx.fillStyle = '#d6ffd0'; ctx.fillRect(boss.telX - 3, 0, 6, 620);
     } else if (boss.telType === 'dash') {
       ctx.fillStyle = '#ff3e9d'; ctx.fillRect(0, boss.telY, VW, boss.h);
+    } else if (boss.telType === 'curtain') {
+      // Paint the danger, then outline the corridor in white — the player reads
+      // "go between the lines" far faster than "avoid the shaded parts".
+      const half = 112 * difficulties[difficultyKey].gapW;
+      ctx.fillStyle = stages[stageIndex].accent2;
+      ctx.fillRect(0, 40, VW, Math.max(0, boss.telY - half - 40));
+      ctx.fillRect(0, boss.telY + half, VW, Math.max(0, 680 - (boss.telY + half)));
+      ctx.globalAlpha = Math.min(1, p * 2.4); ctx.fillStyle = '#fff';
+      ctx.fillRect(0, boss.telY - half, VW, 3); ctx.fillRect(0, boss.telY + half - 3, VW, 3);
+    } else if (boss.telType === 'heatwall') {
+      const half = 100 * difficulties[difficultyKey].gapW;
+      ctx.fillStyle = '#ff8a35';
+      ctx.fillRect(0, 300, Math.max(0, boss.telX - half), 380);
+      ctx.fillRect(boss.telX + half, 300, Math.max(0, VW - (boss.telX + half)), 380);
+      ctx.globalAlpha = Math.min(1, p * 2.4); ctx.fillStyle = '#fff';
+      ctx.fillRect(boss.telX - half, 300, 3, 380); ctx.fillRect(boss.telX + half - 3, 300, 3, 380);
     } else {
       ctx.fillStyle = stages[stageIndex].accent2;
       ctx.beginPath(); ctx.arc(boss.x + boss.w / 2, boss.y + boss.h / 2, 130 + Math.sin(elapsed * 16) * 14, 0, Math.PI * 2); ctx.fill();
@@ -3935,18 +4429,149 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
+  // While the queen is away, the heart rain leaves one moving column open.
+  function drawHideTelegraph() {
+    const boss = enemies.find(e => e.type === 'boss');
+    if (!boss || boss.mode !== 'hideAway') return;
+    ctx.save();
+    if (BOSS_HIDE[stageIndex].style === 'throne') {
+      const safeX = VW * .35 + Math.sin(boss.t * 1.35) * VW * .26;
+      const half = 95 * difficulties[difficultyKey].gapW;
+      const g = ctx.createLinearGradient(safeX - half, 0, safeX + half, 0);
+      g.addColorStop(0, hexA('#ffe15a', 0)); g.addColorStop(.5, hexA('#ffe15a', .22)); g.addColorStop(1, hexA('#ffe15a', 0));
+      ctx.fillStyle = g; ctx.fillRect(safeX - half, 0, half * 2, VH);
+      ctx.globalAlpha = .5; ctx.fillStyle = '#fff';
+      ctx.fillRect(safeX - half, 0, 2, VH); ctx.fillRect(safeX + half - 2, 0, 2, VH);
+    } else if (BOSS_HIDE[stageIndex].style === 'submerge' && boss.geyserT > 0) {
+      ctx.globalAlpha = .2 + Math.abs(Math.sin(elapsed * 18)) * .2;
+      ctx.fillStyle = '#ff8a35'; ctx.fillRect(boss.geyserX - 32, 636, 64, 24);
+    } else if (BOSS_HIDE[stageIndex].style === 'ascend') {
+      // A shadow on the floor growing as the djinn falls from directly above.
+      const k = 1 - clamp(boss.hideClock / BOSS_HIDE[2].away, 0, 1);
+      ctx.globalAlpha = .18 + k * .3; ctx.fillStyle = '#1a0a06';
+      ctx.beginPath(); ctx.ellipse(boss.telX || VW / 2, GROUND_Y + 130, 30 + k * 120, 16 + k * 30, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  const TEL_LABEL = {
+    curtain: '鏡のカーテン', heatwall: 'ヒートウォール', flood: 'データ・フラッド',
+    railgun: 'チャージ・レールガン', cannon: 'ハートブレイク・キャノン', lattice: 'ローズ・ラティス',
+    pillar: '火柱', strike: '雷撃', dash: '突進', wave: '波', fan: '扇', ring: 'リング',
+  };
+
+  // Drawn over the boss rather than under it: a charge orb at the muzzle, rings
+  // collapsing into it, a countdown arc, and the attack's name.
+  function drawBossTelegraphOverlay() {
+    const boss = enemies.find(e => e.type === 'boss' && e.tel > 0 && e.telType);
+    if (!boss) return;
+    const tp = clamp(1 - boss.tel / (boss.telMax || 1), 0, 1);
+    const mx = boss.x + 40, my = boss.y + boss.h * .42;
+    const col = BOSS_TINT[stageIndex].hit;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const r = 8 + tp * tp * 62;
+    const g = ctx.createRadialGradient(mx, my, 1, mx, my, r * 1.9);
+    g.addColorStop(0, 'rgba(255,255,255,.98)'); g.addColorStop(.3, hexA(col, .85)); g.addColorStop(1, hexA(col, 0));
+    ctx.fillStyle = g;
+    if (stageIndex === 4) { heartPath(mx, my, r * 1.4); ctx.fill(); }
+    else { ctx.beginPath(); ctx.arc(mx, my, r * 1.9, 0, Math.PI * 2); ctx.fill(); }
+    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const k = (tp * 2.2 + i / 3) % 1;
+      ctx.globalAlpha = (1 - k) * .8;
+      ctx.beginPath(); ctx.arc(mx, my, r + (1 - k) * 180, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+    ctx.save(); ctx.globalAlpha = .55; ctx.strokeStyle = '#fff'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(boss.x + boss.w / 2, boss.y + boss.h / 2, 96, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * tp); ctx.stroke();
+    ctx.restore();
+    if (tp > .35 && TEL_LABEL[boss.telType]) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, (tp - .35) * 3) * (.7 + Math.sin(elapsed * 14) * .3);
+      ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+      ctx.font = '20px "DotGothic16", monospace';
+      ctx.fillText(TEL_LABEL[boss.telType], VW / 2, 116);
+      ctx.restore(); ctx.textAlign = 'left';
+    }
+  }
+
+  // Hazard telegraph: a thin sight line that swells toward full thickness, then
+  // snaps bright white the moment the angle locks. Drawn under every actor.
+  function drawHazardWarnings() {
+    for (const hz of hazards) {
+      if (hz.t >= hz.warn) continue;
+      const k = clamp(hz.t / Math.max(.01, hz.warn), 0, 1);
+      const locked = hz.t > hz.warn - hz.lock;
+      ctx.save(); ctx.translate(hz.x, hz.y); if (hz.ang) ctx.rotate(hz.ang);
+      ctx.globalAlpha = (locked ? .34 : .16) + Math.abs(Math.sin(elapsed * (locked ? 30 : 14))) * .14;
+      ctx.fillStyle = hz.color; ctx.fillRect(0, -hz.h / 2 * k, hz.w, hz.h * k);
+      ctx.globalAlpha = locked ? .9 : .5; ctx.fillStyle = '#fff'; ctx.fillRect(0, -1.5, hz.w, 3);
+      ctx.restore();
+    }
+  }
+
+  // Hazard body: layered gradients rather than shadowBlur, matching how the
+  // rest of the game fakes light. Chevrons streaming along the beam sell speed.
+  function drawHazards() {
+    for (const hz of hazards) {
+      const el = hz.t - hz.warn;
+      if (el < 0) continue;
+      const a = el < hz.live ? 1 : Math.max(0, 1 - (el - hz.live) / hz.fade);
+      if (a <= 0) continue;
+      ctx.save(); ctx.translate(hz.x, hz.y); if (hz.ang) ctx.rotate(hz.ang);
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a;
+      const bg = ctx.createLinearGradient(0, -hz.h * 1.2, 0, hz.h * 1.2);
+      bg.addColorStop(0, hexA(hz.color, 0)); bg.addColorStop(.5, hexA(hz.color, .30)); bg.addColorStop(1, hexA(hz.color, 0));
+      ctx.fillStyle = bg; ctx.fillRect(0, -hz.h * 1.2, hz.w, hz.h * 2.4);
+      const g = ctx.createLinearGradient(0, -hz.h / 2, 0, hz.h / 2);
+      g.addColorStop(0, hexA(hz.color, 0)); g.addColorStop(.5, hz.color); g.addColorStop(1, hexA(hz.color, 0));
+      ctx.fillStyle = g; ctx.fillRect(0, -hz.h / 2, hz.w, hz.h);
+      ctx.fillStyle = `rgba(255,255,255,${.85 * a})`; ctx.fillRect(0, -hz.h * .13, hz.w, hz.h * .26);
+      ctx.globalAlpha = a * .5; ctx.fillStyle = '#fff';
+      const off = (elapsed * 900) % 64;
+      for (let d = -64; d < hz.w; d += 64) {
+        ctx.beginPath(); ctx.moveTo(d + off, -hz.h * .4); ctx.lineTo(d + off + 22, 0);
+        ctx.lineTo(d + off, hz.h * .4); ctx.lineTo(d + off + 9, 0); ctx.closePath(); ctx.fill();
+      }
+      ctx.globalAlpha = a;
+      const mz = ctx.createRadialGradient(0, 0, 2, 0, 0, hz.h * 1.7);
+      mz.addColorStop(0, 'rgba(255,255,255,.95)'); mz.addColorStop(.4, hexA(hz.color, .6)); mz.addColorStop(1, hexA(hz.color, 0));
+      ctx.fillStyle = mz; ctx.beginPath(); ctx.arc(0, 0, hz.h * 1.7, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+
+  // The queen's skirt hanging over the field while she is aloft. Drawn under
+  // every actor so it darkens the stage rather than hiding the fight.
+  function drawThroneShadow() {
+    const boss = enemies.find(e => e.type === 'boss');
+    if (stageIndex !== 4 || !boss || !boss.mode || !boss.mode.startsWith('hide')) return;
+    const rise = clamp((90 - boss.y) / 700, 0, 1);
+    if (rise <= 0) return;
+    ctx.save();
+    heartPath(VW * .72, -140 + rise * .55 * VH, 520);
+    ctx.fillStyle = 'rgba(20,2,14,.62)'; ctx.fill();
+    ctx.restore();
+  }
+
   function drawGame() {
+    drawThroneShadow();
     drawBossTelegraph();
+    drawHideTelegraph();
+    drawHazardWarnings();
     for (const p of pickups) drawPickup(p);
     ctx.globalCompositeOperation = 'lighter';
     for (const b of bullets) drawPlayerBullet(b);
     ctx.globalCompositeOperation = 'source-over';
     for (const b of enemyBullets) drawEnemyBullet(b);
+    drawHazards();
     for (const r of shockwaves) {
       ctx.save(); ctx.globalAlpha = Math.max(0, r.life / r.max); ctx.strokeStyle = r.color; ctx.lineWidth = 5 + r.life * 8; ctx.shadowColor = r.color; ctx.shadowBlur = 18;
       ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
     }
     for (const e of enemies) drawEnemy(e);
+    drawBossTelegraphOverlay();
     if (state === 'playing' || state === 'over' || (state === 'menu' && menuStep === 'title')) drawPlayer();
     // Additive blending makes overlapping sparks glow white-hot like real light.
     ctx.globalCompositeOperation = 'lighter';
@@ -4190,9 +4815,44 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
+  // Decoy copies of MASQUERADE: flat single-colour silhouettes so the real one
+  // is tellable at a glance once it returns, but only at a glance.
+  function drawMirage(e) {
+    const sprite = frameReady(bossSets[0].idle[0]) ? bossSets[0].idle[0] : bossSprites[0];
+    ctx.globalAlpha = (ctx.globalAlpha || 1) * (.42 + Math.sin(elapsed * 6 + e.y) * .12);
+    if (frameReady(sprite)) {
+      const px = e.h / sprite.naturalHeight;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(tintSprite(sprite, stages[0].accent), 0, 0, sprite.naturalWidth * px, e.h);
+    } else {
+      ctx.fillStyle = stages[0].accent;
+      ctx.beginPath(); ctx.roundRect(e.w * .2, e.h * .1, e.w * .6, e.h * .8, 30); ctx.fill();
+    }
+  }
+
+  // The queen's consorts: small beating hearts on an orbit.
+  function drawConsort(e) {
+    const pulse = 1 + Math.sin(e.t * 8) * .08;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(e.w / 2, e.h / 2, 2, e.w / 2, e.h / 2, e.w * .8);
+    g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(.4, hexA('#ff3e9d', .7)); g.addColorStop(1, hexA('#ff3e9d', 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(e.w / 2, e.h / 2, e.w * .8, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = e.hit > 0 ? '#fff' : '#ff3e9d';
+    heartPath(e.w / 2, e.h / 2, e.w * .34 * pulse); ctx.fill();
+    ctx.fillStyle = '#ffd7ea';
+    heartPath(e.w / 2 - 3, e.h / 2 - 4, e.w * .12); ctx.fill();
+  }
+
   function drawEnemy(e) {
     const stage = stages[stageIndex];
+    // A boss that has left the field is neither drawn nor collidable; the
+    // spectacle during that window belongs to whatever it left behind.
+    if (e.ghost) return;
     ctx.save(); ctx.translate(Math.round(e.x), Math.round(e.y));
+    if (e.fade !== undefined && e.fade < 1) ctx.globalAlpha = Math.max(0, e.fade);
+    if (e.type === 'mirage') { drawMirage(e); ctx.restore(); return; }
+    if (e.type === 'consort') { drawConsort(e); ctx.restore(); return; }
     // Flankers travel rightward — mirror the sprite so they face their heading.
     if (e.flank) { ctx.translate(e.w, 0); ctx.scale(-1, 1); }
     if (e.type !== 'boss' && e.type !== 'midboss') {
@@ -4475,7 +5135,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawEnemyVariant(e);
     } else if (e.hit > 0) {
       // Soft hit flash (no hard bounding-box frame).
-      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(.55, e.hit * 4);
+      // Kept, but dialled back so the new per-boss damage colour reads through it.
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(.35, e.hit * 4);
       const g = ctx.createRadialGradient(e.w * .5, e.h * .5, 4, e.w * .5, e.h * .5, e.w * .55);
       g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(e.w * .5, e.h * .5, e.w * .48, e.h * .42, 0, 0, Math.PI * 2); ctx.fill();
@@ -4705,7 +5366,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.rotate(lean);
       ctx.scale(1 - breath, 1 + breath);
       ctx.translate(-115, -190);
-      ctx.shadowColor = hurt ? 'rgba(255,80,80,.95)' : hexA(stage.accent2, .85);
+      const tint = BOSS_TINT[stageIndex];
+      const crit = e.hp / e.maxHp < .25;
+      ctx.shadowColor = hurt ? 'rgba(255,80,80,.95)' : crit ? hexA(tint.crit, .95) : hexA(stage.accent2, .85);
       ctx.shadowBlur = hurt ? 34 : 26 + Math.sin(e.t * 5) * 8;
       ctx.imageSmoothingEnabled = false;
       // Undistorted, size-stable fit: every frame is drawn at the same
@@ -4717,7 +5380,35 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const px = e.h / idleF.naturalHeight;
       const kx = e.w / 230, ky = e.h / 190;
       const dw = sprite.naturalWidth * px / kx, dh = sprite.naturalHeight * px / ky;
-      ctx.drawImage(sprite, (230 - dw) / 2 + (hurt ? Math.sin(e.t * 52) * 3 : 0), 190 - dh + Math.sin(e.t * 2.2) * 5, dw, dh);
+      const dx0 = (230 - dw) / 2 + (hurt ? Math.sin(e.t * 52) * 3 : 0);
+      const dy0 = 190 - dh + Math.sin(e.t * 2.2) * 5;
+      // Dissolving into scanlines: the sprite is sliced and the strips drift
+      // apart. Has to happen here, before the early return below.
+      if (e.dissolve > 0) {
+        ctx.shadowBlur = 0;
+        for (let i = 0; i < 14; i++) {
+          const sy = sprite.naturalHeight * i / 14;
+          const oy = Math.sin(i * 1.7 + elapsed * 8) * e.dissolve * (i % 2 ? 260 : -260);
+          ctx.globalAlpha = Math.max(0, 1 - e.dissolve * (i / 14 + .3));
+          ctx.drawImage(sprite, 0, sy, sprite.naturalWidth, sprite.naturalHeight / 14,
+            dx0 + oy, dy0 + dh * i / 14, dw, dh / 14 + 1);
+        }
+        ctx.restore();
+        return;
+      }
+      ctx.drawImage(sprite, dx0, dy0, dw, dh);
+      // Damage colour, painted through the sprite's own alpha so no box shows.
+      // A landed shot flashes additively; below 25% HP the body sits in its
+      // wounded colour and pulses. Only ever one pass per frame.
+      const hitA = Math.min(.62, (e.hit || 0) * 5);
+      const critA = crit ? .20 + Math.abs(Math.sin(e.t * 6.5)) * .18 : 0;
+      if (hitA > .02 || critA > 0) {
+        ctx.shadowBlur = 0;
+        const useHit = hitA > critA;
+        ctx.globalCompositeOperation = useHit ? 'lighter' : 'source-over';
+        ctx.globalAlpha = Math.max(hitA, critA);
+        ctx.drawImage(tintSprite(sprite, useHit ? tint.hit : tint.crit), dx0, dy0, dw, dh);
+      }
       ctx.restore();
       return;
     }
@@ -5085,15 +5776,25 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = 'rgba(10,6,31,.9)'; ctx.fillRect(330, VH - 52, 620, 28);
       ctx.fillStyle = '#311848'; ctx.fillRect(338, VH - 44, 604, 12);
       const ratio = Math.max(0, boss.hp / boss.maxHp);
-      if (boss.type === 'boss' && stageIndex === stages.length - 1) {
-        // Final boss shows two stacked gauges: yellow drains first, then pink.
-        ctx.fillStyle = stage.accent2; ctx.fillRect(338, VH - 44, 604 * Math.min(1, ratio * 2), 12);
-        if (ratio > .5) { ctx.fillStyle = '#ffe15a'; ctx.fillRect(338, VH - 44, 604 * ((ratio - .5) * 2), 12); }
-      } else {
-        ctx.fillStyle = stage.accent2; ctx.fillRect(338, VH - 44, 604 * ratio, 12);
+      ctx.fillStyle = stage.accent2; ctx.fillRect(338, VH - 44, 604 * ratio, 12);
+      // Notches at the act boundaries, so how much fight is left is legible.
+      if (boss.type === 'boss') {
+        ctx.fillStyle = 'rgba(10,6,31,.85)';
+        for (const t of bossTiers(stageIndex)) ctx.fillRect(338 + 604 * t - 1, VH - 44, 2, 12);
       }
       ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText(boss.type === 'midboss' ? `MID BOSS  ${stage.midBoss}` : `BOSS  ${stage.boss}`, VW / 2, VH - 58);
-      if (boss.phase2) { ctx.fillStyle = stage.accent2; ctx.font = '8px "Press Start 2P", monospace'; ctx.fillText('- FINAL PHASE -', VW / 2, VH - 18); }
+      if (boss.type === 'boss' && boss.tier > 0) {
+        // Press Start 2P has no Japanese glyphs — DotGothic16 is the house font
+        // for Japanese text elsewhere in this file.
+        const labels = stageIndex === 4
+          ? ['', '第二幕 嫉妬', '第三幕 絶唱', '最終幕 断末魔']
+          : ['', '- 本気モード -', '- 断末魔 -'];
+        // Gold rather than the boss's crit tint: several of those are dark
+        // enough to vanish against their own stage's floor decoration.
+        ctx.fillStyle = boss.tierBanner > 0 && Math.floor(elapsed * 12) % 2 === 0 ? '#fff' : (boss.crit ? '#ffe15a' : stage.accent2);
+        ctx.font = '15px "DotGothic16", monospace';
+        ctx.fillText(labels[boss.tier] || '', VW / 2, VH - 16);
+      }
       ctx.textAlign = 'left';
     }
     if (bossState === 'warning' || bossState === 'midboss-warning') {
@@ -5264,6 +5965,29 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
   function rects(ax, ay, aw, ah, bx, by, bw, bh) { return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by; }
   function circleRect(cx, cy, r, x, y, w, h) { const nx = clamp(cx, x, x+w); const ny = clamp(cy, y, y+h); return (cx-nx)**2 + (cy-ny)**2 < r*r; }
+  // Beam vs box: inflate the box by the beam's half-thickness, then clip the
+  // beam's centre line against it (Liang-Barsky). Corners read as rounded on a
+  // rotated beam, which is the forgiving direction.
+  function hazardHitsBox(hz, bx, by, bw, bh) {
+    const pad = hz.h / 2;
+    const x0 = bx - pad, y0 = by - pad, x1 = bx + bw + pad, y1 = by + bh + pad;
+    const dx = Math.cos(hz.ang || 0) * hz.w, dy = Math.sin(hz.ang || 0) * hz.w;
+    let t0 = 0, t1 = 1;
+    const edges = [[-dx, hz.x - x0], [dx, x1 - hz.x], [-dy, hz.y - y0], [dy, y1 - hz.y]];
+    for (const [p, q] of edges) {
+      if (p === 0) { if (q < 0) return false; continue; }
+      const r = q / p;
+      if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+      else { if (r < t0) return false; if (r < t1) t1 = r; }
+    }
+    return true;
+  }
+  // Telegraph budget. The player's real terminal vertical speed is 168 px/s on
+  // keyboard at SPEED 1 — the fixed point of (v + 1250*dt) * pow(.0009, dt) at
+  // 60 fps. The 420/655 clamp on line ~1455 is never reached; only pointer
+  // steering, which is a proportional controller, pins to it. Budget 150 px/s
+  // for a 12% margin, plus .30s of reaction time.
+  function telFor(px) { return clamp(.30 + px / 150, .65, 2.2) * difficulties[difficultyKey].telMul; }
   function heartPath(cx, cy, s) {
     ctx.beginPath();
     ctx.moveTo(cx, cy + s * .75);
@@ -5299,7 +6023,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     }
     // Hidden debug keys: Shift+N skips a stage, Shift+M summons its mid boss, Shift+B summons its boss.
     if (e.shiftKey && e.code === 'KeyN' && state === 'playing' && !paused) {
-      enemies = []; enemyBullets = []; bullets = [];
+      enemies = []; clearEnemyFire(); bullets = [];
       bossState = stageIndex === stages.length - 1 ? 'final' : 'transition';
       stageTransition = 2.4;
       stageResult = { kills: stageKills, time: elapsed - stageStart, noDamageBonus: stageDamaged ? 0 : 5000, timeBonus: 0 };
@@ -5377,7 +6101,28 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, stageTime, phaseId: activePhase.id, enemies: enemies.length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, stageTime, phaseId: activePhase.id, enemies: enemies.length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+  // Boss-fight test hooks, alongside the Shift+N/M/B keys and ?boss=N above:
+  // they let a headless run drive a boss to any state without playing the fight.
+  window.__hz = () => hazards.length;
+  window.__types = () => enemies.map(en => en.type);
+  window.__boss = () => {
+    const b = enemies.find(en => en.type === 'boss');
+    return b ? { tier: b.tier, hp: b.hp, maxHp: b.maxHp, telType: b.telType, mode: b.mode, ghost: !!b.ghost, crit: !!b.crit, x: b.x, y: b.y } : null;
+  };
+  window.__damage = n => { const b = enemies.find(en => en.type === 'boss'); if (b) b.hp = Math.max(1, b.hp - n); };
+  window.__D = () => difficulties[difficultyKey];
+  window.__telFor = px => telFor(px);
+  window.__setDiff = k => { difficultyKey = k; };
+  window.__armTelegraph = (type, sec) => { const b = enemies.find(en => en.type === 'boss'); if (b) bossTelegraph(b, type, sec, { x: clamp(player.x + 56, 90, VW - 140), y: clamp(player.y + 55, 130, 590) }); };
+  window.__setHp = frac => { const b = enemies.find(en => en.type === 'boss'); if (b) b.hp = Math.max(1, Math.round(b.maxHp * frac)); };
+  window.__hide = () => { const b = enemies.find(en => en.type === 'boss'); if (b) { b.tier = Math.max(1, b.tier); startBossHide(b); } };
+  window.__forceAttack = type => {
+    const b = enemies.find(en => en.type === 'boss');
+    if (!b) throw new Error('no boss');
+    b.telType = type; b.telX = clamp(player.x + 56, 90, VW - 140); b.telY = clamp(player.y + 55, 130, 590);
+    executeBossSpecial(b);
+  };
 
   // Menu theme: try to start it immediately (works when audio is already
   // unlocked, e.g. after returning from a run), and arm a one-shot gesture so a
@@ -5413,7 +6158,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         pickupTimer = mode === 'stage' ? 6 : 999;
         stageResult = null; setupStage(); musicStep = 0; musicClock = 0;
         stageTime = mode === 'boss' ? timelineTotal() - .5 : mode === 'mid' ? midbossStart() - .5 : 0;
-        enemies = []; enemyBullets = [];
+        enemies = []; clearEnemyFire();
         playBgm(`stage${stageIndex}`, true);
       }, 120);
     } else if (q.get('staffroll')) {
