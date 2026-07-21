@@ -184,7 +184,8 @@
   let combo = 0;
   let comboTimer = 0;
   let health = 100;
-  const maxHealth = 100;
+  let maxHealth = 100;      // raised by the shop's vitamin; reset per run
+  let vitaminsBought = 0;
   let elapsed = 0;
   let spawnTimer = 0;
   let pickupTimer = 0;
@@ -654,6 +655,7 @@
     clearTimeout(openingTimeout); openingTimeout = 0;
     clearTimeout(resultTimeout); resultTimeout = 0;
     bossCrit = 0; tintCache.clear();
+    maxHealth = 100; vitaminsBought = 0;
     score = 0; combo = 0; comboTimer = 0; health = maxHealth; elapsed = 0;
     spawnTimer = .7; pickupTimer = 6; shake = 0; flash = 0; hitStop = 0; gameSpeed = 1;
     bossState = 'waiting'; bossWarning = 0; midBossDone = false;
@@ -2251,23 +2253,35 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // used to happen inline in the transition timer.
   // The onigiri heals the same ballpark as an in-stage food drop (+32) — the
   // shop sells items, it doesn't hand out full recoveries.
+  //
+  // Every chip caps out, so a shop of only capped goods runs out of things to
+  // sell long before the run ends and the money piles up with nowhere to go.
+  // The vitamin is the uncapped sink: always purchasable, and its price climbs
+  // each time so late money buys less and less rather than nothing at all.
+  const VITAMIN_BASE = 2000, VITAMIN_STEP = 1200;
   const shopItems = [
-    { id: 'buyHeal', price: 400, can: () => health < maxHealth, apply: () => { health = Math.min(maxHealth, health + 40); }, status: () => `HP ${Math.ceil(health)}/${maxHealth}` },
-    { id: 'buyPower', price: 1500, can: () => player.power < 3, apply: () => player.power++, status: () => `Lv ${player.power}/3` },
-    { id: 'buyWide', price: 1500, can: () => player.spread < 3, apply: () => player.spread++, status: () => `Lv ${player.spread}/3` },
-    { id: 'buySpeed', price: 1000, can: () => player.speed < 3, apply: () => player.speed++, status: () => `Lv ${player.speed}/3` },
+    { id: 'buyHeal', price: () => 600, can: () => health < maxHealth, apply: () => { health = Math.min(maxHealth, health + 40); }, status: () => `HP ${Math.ceil(health)}/${maxHealth}` },
+    { id: 'buyPower', price: () => 2600, can: () => player.power < 3, apply: () => player.power++, status: () => `Lv ${player.power}/3` },
+    { id: 'buyWide', price: () => 2600, can: () => player.spread < 3, apply: () => player.spread++, status: () => `Lv ${player.spread}/3` },
+    { id: 'buySpeed', price: () => 1800, can: () => player.speed < 3, apply: () => player.speed++, status: () => `Lv ${player.speed}/3` },
     // Continues start at 3 and can be stocked up to 5 — the shop must be able
     // to raise the count above the starting value, not just refill losses.
-    { id: 'buyHeart', price: 2500, can: () => continuesLeft < 5, apply: () => continuesLeft++, status: () => `のこり ${continuesLeft}/5` }
+    { id: 'buyHeart', price: () => 4000, can: () => continuesLeft < 5, apply: () => continuesLeft++, status: () => `のこり ${continuesLeft}/5` },
+    {
+      id: 'buyMaxHp', price: () => VITAMIN_BASE + VITAMIN_STEP * vitaminsBought,
+      can: () => true,
+      apply: () => { vitaminsBought++; maxHealth += 15; health += 15; },
+      status: () => `さいだい ${maxHealth}`,
+    },
   ];
   shopItems.forEach(item => {
     item.btn = document.querySelector('#' + item.id);
     item.btn.addEventListener('click', () => {
-      if (state !== 'shop' || !item.can() || score < item.price) return;
-      score -= item.price;
+      if (state !== 'shop' || !item.can() || score < item.price()) return;
+      score -= item.price();
       item.apply();
       sfx('power');
-      if (item.id === 'buyHeal') voice('heal');
+      if (item.id === 'buyHeal' || item.id === 'buyMaxHp') voice('heal');
       updateShop();
     });
   });
@@ -2276,8 +2290,12 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     shopMoney.textContent = yen(score);
     for (const item of shopItems) {
       const maxed = !item.can();
-      item.btn.disabled = maxed || score < item.price;
+      const cost = item.price();
+      item.btn.disabled = maxed || score < cost;
       item.btn.querySelector('.shop-status').textContent = maxed ? 'MAX' : item.status();
+      // Priced from the table rather than the markup, so the vitamin's rising
+      // cost shows up on the button.
+      item.btn.querySelector('.shop-price').textContent = maxed ? '—' : yen(cost);
     }
   }
 
@@ -6109,6 +6127,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   const LOCAL_DEV = ['localhost', '127.0.0.1', '::1', ''].includes(location.hostname);
   if (LOCAL_DEV) {
     window.__hz = () => hazards.length;
+    window.__grant = n => { score += n; };
+    window.__maxHp = () => maxHealth;
+    window.__openShop = () => { openShop(); };
     window.__types = () => enemies.map(en => en.type);
     window.__boss = () => {
       const b = enemies.find(en => en.type === 'boss');

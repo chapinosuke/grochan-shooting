@@ -350,8 +350,8 @@ kbd {
 .shop-lead strong { margin-left: 8px; color: var(--yellow); font: 15px "Press Start 2P", monospace; }
 .shop-items {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 168px));
-  gap: 14px;
+  grid-template-columns: repeat(6, minmax(108px, 150px));
+  gap: 12px;
   margin: 20px 0 8px;
 }
 .shop-item {
