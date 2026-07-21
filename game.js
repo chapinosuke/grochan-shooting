@@ -6104,25 +6104,30 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, stageTime, phaseId: activePhase.id, enemies: enemies.length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
   // Boss-fight test hooks, alongside the Shift+N/M/B keys and ?boss=N above:
   // they let a headless run drive a boss to any state without playing the fight.
-  window.__hz = () => hazards.length;
-  window.__types = () => enemies.map(en => en.type);
-  window.__boss = () => {
-    const b = enemies.find(en => en.type === 'boss');
-    return b ? { tier: b.tier, hp: b.hp, maxHp: b.maxHp, telType: b.telType, mode: b.mode, ghost: !!b.ghost, crit: !!b.crit, x: b.x, y: b.y } : null;
-  };
-  window.__damage = n => { const b = enemies.find(en => en.type === 'boss'); if (b) b.hp = Math.max(1, b.hp - n); };
-  window.__D = () => difficulties[difficultyKey];
-  window.__telFor = px => telFor(px);
-  window.__setDiff = k => { difficultyKey = k; };
-  window.__armTelegraph = (type, sec) => { const b = enemies.find(en => en.type === 'boss'); if (b) bossTelegraph(b, type, sec, { x: clamp(player.x + 56, 90, VW - 140), y: clamp(player.y + 55, 130, 590) }); };
-  window.__setHp = frac => { const b = enemies.find(en => en.type === 'boss'); if (b) b.hp = Math.max(1, Math.round(b.maxHp * frac)); };
-  window.__hide = () => { const b = enemies.find(en => en.type === 'boss'); if (b) { b.tier = Math.max(1, b.tier); startBossHide(b); } };
-  window.__forceAttack = type => {
-    const b = enemies.find(en => en.type === 'boss');
-    if (!b) throw new Error('no boss');
-    b.telType = type; b.telX = clamp(player.x + 56, 90, VW - 140); b.telY = clamp(player.y + 55, 130, 590);
-    executeBossSpecial(b);
-  };
+  // Local only — these can set a boss's HP directly, which has no place on the
+  // published page. Served from a host or from file://, they never exist.
+  const LOCAL_DEV = ['localhost', '127.0.0.1', '::1', ''].includes(location.hostname);
+  if (LOCAL_DEV) {
+    window.__hz = () => hazards.length;
+    window.__types = () => enemies.map(en => en.type);
+    window.__boss = () => {
+      const b = enemies.find(en => en.type === 'boss');
+      return b ? { tier: b.tier, hp: b.hp, maxHp: b.maxHp, telType: b.telType, mode: b.mode, ghost: !!b.ghost, crit: !!b.crit, x: b.x, y: b.y } : null;
+    };
+    window.__damage = n => { const b = enemies.find(en => en.type === 'boss'); if (b) b.hp = Math.max(1, b.hp - n); };
+    window.__D = () => difficulties[difficultyKey];
+    window.__telFor = px => telFor(px);
+    window.__setDiff = k => { difficultyKey = k; };
+    window.__armTelegraph = (type, sec) => { const b = enemies.find(en => en.type === 'boss'); if (b) bossTelegraph(b, type, sec, { x: clamp(player.x + 56, 90, VW - 140), y: clamp(player.y + 55, 130, 590) }); };
+    window.__setHp = frac => { const b = enemies.find(en => en.type === 'boss'); if (b) b.hp = Math.max(1, Math.round(b.maxHp * frac)); };
+    window.__hide = () => { const b = enemies.find(en => en.type === 'boss'); if (b) { b.tier = Math.max(1, b.tier); startBossHide(b); } };
+    window.__forceAttack = type => {
+      const b = enemies.find(en => en.type === 'boss');
+      if (!b) throw new Error('no boss');
+      b.telType = type; b.telX = clamp(player.x + 56, 90, VW - 140); b.telY = clamp(player.y + 55, 130, 590);
+      executeBossSpecial(b);
+    };
+  }
 
   // Menu theme: try to start it immediately (works when audio is already
   // unlocked, e.g. after returning from a run), and arm a one-shot gesture so a
