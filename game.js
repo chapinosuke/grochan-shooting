@@ -290,7 +290,7 @@
       { img: 'assets/images/story/op1_academy_day.webp', text: 'ここは 花のAI学園。ぐろちゃん・ちゃっぴー・くろ子は、いつもいっしょの仲よし3人組。' },
       { img: 'assets/images/story/op2_heist_night.webp', text: 'ある夜、空にあやしい影が…。学園のみんなの「ハート」が、ひと晩でぬすまれてしまった！' },
       { img: 'assets/images/story/op3_sleeping_friends.webp', text: 'ハートをなくした くろ子もちゃっぴーも、目をさまさない…。' },
-      { img: 'assets/images/story/op4_launch.webp', text: 'Xの異変にまっさきに気づいたぐろちゃんは、SpaceX製ユニットで夜空へ発進！「みんなのハート、ぜったい取りもどす！」' },
+      { img: 'assets/images/story/op4_launch.webp', text: 'ハートをぬすんだ影は、まだ空にいる。ぐろちゃんはSpaceX製ユニットにとび乗った！「みんなのハート、ぜったい取りもどす！」' },
     ],
     interludes: [
       [{ img: 'assets/images/story/int1_shard1.webp', text: 'MASQUERADEを撃破！仮面の道化は、みんなのハートを「いいね」に変えて集めていた。残る反応は海の方へ！' }],
