@@ -1346,6 +1346,31 @@
     }
   }
 
+  // The defeated boss's last seconds: the ground rumbles the whole time, the
+  // body settles slowly, and embers stream off it while the sprite burns away
+  // strip by strip (drawDeathDissolve). Ends on one clean white pop.
+  function updateDyingBoss(e, dt) {
+    e.dying -= dt;
+    const k = clamp(1 - e.dying / e.dyingMax, 0, 1);
+    shake = Math.max(shake, 9 * (1 - k * .55));
+    e.y += 12 * dt;
+    for (let i = 0; i < 2; i++) {
+      particles.push({
+        x: e.x + Math.random() * e.w, y: e.y + Math.random() * e.h,
+        vx: (Math.random() - .5) * 70, vy: -30 - Math.random() * 90,
+        life: .5 + Math.random() * .6, max: 1.1, size: 3 + Math.random() * 5,
+        color: Math.random() < .4 ? '#ffe15a' : Math.random() < .7 ? stages[stageIndex].accent2 : '#fff',
+        gravity: -30,
+      });
+    }
+    if (e.dying <= 0) {
+      const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
+      burst(cx, cy, '#fff', 34, 430);
+      shockwaves.push({ x: cx, y: cy, r: 18, speed: 640, life: .8, max: .8, color: '#fff' });
+      flash = Math.max(flash, .45); sfx('boom');
+    }
+  }
+
   // HP is cut into acts rather than one 50% flip. Crossing a line is an event:
   // the screen clears, a banner names the act, and the boss unlocks patterns.
   // The queen carries 3.2x the HP of stage one, so she gets an extra act.
@@ -2030,6 +2055,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const e of enemies) {
       e.t += dt;
       e.hit = Math.max(0, (e.hit || 0) - dt);
+      if (e.dying > 0) { updateDyingBoss(e, dt); continue; }
       if (e.type === 'boss') { updateBoss(e, dt); continue; }
       if (e.type === 'midboss') { updateMidBoss(e, dt); continue; }
       if (e.type === 'consort') { updateConsort(e, dt); continue; }
@@ -2091,7 +2117,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     enemyBullets = enemyBullets.filter(b => b.life > 0 && b.x > -40 && b.x < VW + 240 && b.y > -400 && b.y < VH + 400);
     // Bosses are exempt from the left cull: they leave the screen deliberately
     // during a retreat, and deleting one strands bossState in 'active' forever.
-    enemies = enemies.filter(e => e.hp > 0 && (e.type === 'boss' || e.x > -130) && (!e.flank || e.x < VW + 170));
+    enemies = enemies.filter(e => (e.hp > 0 || e.dying > 0) && (e.type === 'boss' || e.x > -130) && (!e.flank || e.x < VW + 170));
     particles = particles.filter(p => p.life > 0);
     shockwaves = shockwaves.filter(r => r.life > 0);
     pickups = pickups.filter(p => p.x > -50 && !p.taken);
@@ -2191,6 +2217,21 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     burstDebris(ex, ey, [stages[stageIndex].accent2, '#5a4058', '#2a1f2c'], isMajor ? (isBoss ? 26 : 18) : e.type === 'tank' ? 12 : 7, isMajor ? 420 : e.type === 'tank' ? 300 : 220);
     shake = isMajor ? (isBoss ? 28 : 20) : e.type === 'tank' ? 12 : 6; flash = isMajor ? (isBoss ? 1 : .6) : e.type === 'tank' ? .35 : .12; sfx(isMajor ? 'bigBoom' : 'boom');
     hitStop = Math.max(hitStop, isMajor ? (isBoss ? .12 : .09) : e.type === 'tank' ? .05 : .03);
+    if (isMajor) {
+      // FF-style death: the body stays on the field as a corpse and burns away
+      // over a few seconds (updateDyingBoss / drawDeathDissolve) instead of
+      // vanishing on the killing frame. The culling filter keeps it alive
+      // while e.dying > 0; hp<=0 already makes it non-collidable everywhere.
+      e.dying = e.dyingMax = isBoss ? 3.4 : 2.2;
+      e.tel = 0; e.telType = null; e.mode = null; e.ghost = false; e.fade = 1;
+      sfx('bossQuake');
+    }
+    if (isBoss) {
+      // Her court dies with her.
+      for (const m of enemies) {
+        if (m.type === 'consort' || m.type === 'mirage') { burst(m.x + m.w / 2, m.y + m.h / 2, '#ff9ccf', 12, 220); m.hp = 0; }
+      }
+    }
     if (isMidBoss) {
       // No free heal — recovery comes from items (the mid boss drops one below).
       midBossDone = true; bossState = 'waiting'; clearEnemyFire(); bullets = [];
@@ -5246,9 +5287,16 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const px = e.h / midIdle.naturalHeight;
       const kx = e.w / 158, ky = e.h / 132;
       const dw = midSprite.naturalWidth * px / kx, dh = midSprite.naturalHeight * px / ky;
-      ctx.drawImage(midSprite, (158 - dw) / 2, 132 - dh + Math.sin(e.t * 2.6) * 4, dw, dh);
+      const mdx = (158 - dw) / 2, mdy = 132 - dh + Math.sin(e.t * 2.6) * 4;
+      if (e.dying > 0) { drawDeathDissolve(midSprite, mdx, mdy, dw, dh, e); ctx.restore(); return; }
+      ctx.drawImage(midSprite, mdx, mdy, dw, dh);
       ctx.restore();
       return;
+    }
+    // Procedural fallback corpse: no strips to tear, so fade and judder.
+    if (e.dying > 0) {
+      ctx.globalAlpha *= Math.max(0, e.dying / e.dyingMax);
+      ctx.translate((Math.random() - .5) * 6, 0);
     }
     const acc = stage.accent2, TAU = Math.PI * 2;
     // Rounded 3D side thruster pods (drawn behind the shell).
@@ -5359,6 +5407,43 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
+  // FF-style defeat: a white-hot blink first, then the sprite tears into
+  // horizontal strips that drift up and burn out in a staggered order, each
+  // strip glowing in the boss's stage colour at the moment it goes. Runs in
+  // the caller's authoring-box space, so both boss and mid boss can use it.
+  function drawDeathDissolve(sprite, dx0, dy0, dw, dh, e) {
+    const k = clamp(1 - e.dying / e.dyingMax, 0, 1);
+    ctx.shadowBlur = 0;
+    if (k < .2) {
+      ctx.drawImage(sprite, dx0 + (Math.random() - .5) * 5, dy0, dw, dh);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = .4 + Math.abs(Math.sin(elapsed * 30)) * .5;
+      ctx.drawImage(tintSprite(sprite, '#ffffff'), dx0, dy0, dw, dh);
+      return;
+    }
+    const kk = (k - .2) / .8;
+    const strips = 16, sh = sprite.naturalHeight / strips;
+    const glowTint = tintSprite(sprite, stages[stageIndex].accent2);
+    for (let i = 0; i < strips; i++) {
+      const dieAt = ((i * 53 + 7) % strips) / strips * .55;
+      const local = clamp((kk - dieAt) / .45, 0, 1);
+      if (local >= 1) continue;
+      const sy = sh * i;
+      const ox = Math.sin(i * 2.1 + elapsed * 20) * local * 30;
+      const rise = local * local * 110;
+      const dx = dx0 + ox, dy = dy0 + dh * i / strips - rise, dhs = dh / strips + 1;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1 - local;
+      ctx.drawImage(sprite, 0, sy, sprite.naturalWidth, sh, dx, dy, dw, dhs);
+      const glow = local * (1 - local) * 2;   // peaks mid-burn: the tearing edge
+      if (glow > .05) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = glow;
+        ctx.drawImage(glowTint, 0, sy, sprite.naturalWidth, sh, dx, dy, dw, dhs);
+      }
+    }
+  }
+
   function drawBoss(e) {
     const stage = stages[stageIndex];
     // Generated pixel-art boss sprite (side view, facing the player). Drawn
@@ -5400,6 +5485,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const dw = sprite.naturalWidth * px / kx, dh = sprite.naturalHeight * px / ky;
       const dx0 = (230 - dw) / 2 + (hurt ? Math.sin(e.t * 52) * 3 : 0);
       const dy0 = 190 - dh + Math.sin(e.t * 2.2) * 5;
+      if (e.dying > 0) { drawDeathDissolve(sprite, dx0, dy0, dw, dh, e); ctx.restore(); return; }
       // Dissolving into scanlines: the sprite is sliced and the strips drift
       // apart. Has to happen here, before the early return below.
       if (e.dissolve > 0) {
@@ -5429,6 +5515,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }
       ctx.restore();
       return;
+    }
+    // Procedural fallback corpse: no strips to tear, so fade and judder.
+    if (e.dying > 0) {
+      ctx.globalAlpha *= Math.max(0, e.dying / e.dyingMax);
+      ctx.translate((Math.random() - .5) * 6, 0);
     }
     const pulse = 4 + Math.sin(e.t * 5) * 3;
     // shared soft, rounded drop shadow (no hard rectangular corners behind the body)
@@ -5789,7 +5880,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.textAlign = 'center'; ctx.fillStyle = stage.accent; ctx.font = '10px "Press Start 2P", monospace'; ctx.fillText(`STAGE ${stageIndex + 1} / ${stages.length}`, VW / 2, 48);
       ctx.fillStyle = '#fff'; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText(stage.name, VW / 2, 70); ctx.textAlign = 'left';
     }
-    const boss = enemies.find(e => e.type === 'boss' || e.type === 'midboss');
+    // A dying corpse keeps rendering but is no longer "the boss" — the HP bar
+    // leaves with the killing blow, like the fight is already over.
+    const boss = enemies.find(e => (e.type === 'boss' || e.type === 'midboss') && !(e.dying > 0));
     if (boss) {
       ctx.fillStyle = 'rgba(10,6,31,.9)'; ctx.fillRect(330, VH - 52, 620, 28);
       ctx.fillStyle = '#311848'; ctx.fillRect(338, VH - 44, 604, 12);
