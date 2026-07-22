@@ -34,6 +34,7 @@
   const soundButton = document.querySelector('#soundButton');
   const pauseButton = document.querySelector('#pauseButton');
   const specialButton = document.querySelector('#specialButton');
+  const bombButton = document.querySelector('#bombButton');
   const resumeButton = document.querySelector('#resumeButton');
   const difficultyButtons = [...document.querySelectorAll('[data-difficulty]')];
   const controllerStatus = document.querySelector('#controllerStatus');
@@ -220,6 +221,9 @@
   let continuesLeft = 3;
   let continueBanner = 0;
   let powerDownBanner = 0;
+  let bombStock = 0;
+  let charmStock = 0;
+  let charmFlash = 0;
   let bossCrit = 0;      // 0..1 fade of the palace's blood-red sky in the queen's last act
   let bgCam = 0;
   let bgCamX = 0;        // horizontal camera yaw, eased from player.x (parallax)
@@ -228,10 +232,11 @@
   let formationTimer = 3;
   let fpsShow = false;   // F1 toggles a verification-only FPS readout
   let fpsAvg = 60;       // EMA of 1/rawDt
-  const padInput = { x: 0, y: 0, fire: false, special: false };
+  const padInput = { x: 0, y: 0, fire: false, special: false, bomb: false };
   let padStartWasDown = false;
   let padActionWasDown = false;
   let padSpecialWasDown = false;
+  let padBombWasDown = false;
   const difficulties = {
     // bulletSpeed scales how fast enemy shots travel; fireGap stretches the time between
     // volleys (>1 = fewer bullets, wider gaps). Easy is tuned to be comfortably dodgeable.
@@ -664,6 +669,7 @@
     totalKills = 0; stageResult = null; lightning = 0; delayedBursts = [];
     special = 35; specialFlash = 0; formationTimer = 2.8;
     continuesLeft = 3; continueBanner = 0; powerDownBanner = 0;
+    bombStock = 0; charmStock = 0; charmFlash = 0;
     bullets = []; clearEnemyFire(); enemies = []; particles = []; pickups = []; shockwaves = [];
     setupStage();
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
@@ -681,9 +687,11 @@
     pauseLabel.classList.remove('is-visible');
     pauseButton.classList.add('is-visible');
     specialButton.classList.add('is-visible');
+    bombButton.classList.add('is-visible');
     pauseButton.classList.remove('is-paused');
     pauseButton.textContent = '❚❚';
     updateSpecialButton();
+    updateBombButton();
     lastTime = performance.now();
     ensureAudio();
     playBgm('stage0', true);
@@ -727,6 +735,7 @@
     pauseLabel.classList.remove('is-visible');
     pauseButton.classList.remove('is-visible', 'is-paused');
     specialButton.classList.remove('is-visible', 'is-ready');
+    bombButton.classList.remove('is-visible', 'is-ready');
     pauseButton.textContent = '❚❚';
     playBgm('title', true);
     showTitle();
@@ -738,7 +747,7 @@
     titleScreen.classList.remove('is-visible');
     startScreen.classList.remove('is-visible'); gameOverScreen.classList.remove('is-visible');
     openingScreen.classList.remove('is-visible');
-    pauseButton.classList.remove('is-visible'); specialButton.classList.remove('is-visible');
+    pauseButton.classList.remove('is-visible'); specialButton.classList.remove('is-visible'); bombButton.classList.remove('is-visible');
     playBgm('title'); ensureAudio(); sfx('power');
     // Story slides first, then the mission-card screen with the LAUNCH button.
     // Stay on the opening until the player launches (button / ENTER / click) — no auto-advance.
@@ -986,6 +995,27 @@
     specialButton.classList.toggle('is-ready', ready);
     specialButton.disabled = !ready || state !== 'playing' || ['transition', 'final'].includes(bossState);
     specialButton.textContent = ready ? 'SPECIAL!' : `SPECIAL ${Math.floor(special)}%`;
+  }
+
+  // A stocked emergency bomb: unlike useSpecial() it doesn't need the gauge
+  // full and deals no damage, it only sweeps the screen clean and buys a
+  // moment of safety — a panic button, not a second special attack.
+  function useBomb() {
+    if (state !== 'playing' || paused || ['transition', 'final'].includes(bossState) || bombStock <= 0) return;
+    bombStock--; player.inv = Math.max(player.inv, 1.1); shake = Math.max(shake, 16); flash = Math.max(flash, .4);
+    const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
+    shockwaves.push({ x: cx, y: cy, r: 10, speed: 760, life: .8, max: .8, color: '#c9d6ec' });
+    for (const b of enemyBullets) burst(b.x, b.y, '#c9d6ec', 2, 90);
+    enemyBullets = [];
+    hazards = hazards.filter(hz => hz.t >= hz.warn);
+    for (const hz of hazards) hz.dead = true;
+    burst(cx, cy, '#c9d6ec', 34, 420); sfx('shield'); updateBombButton();
+  }
+
+  function updateBombButton() {
+    bombButton.classList.toggle('is-ready', bombStock > 0);
+    bombButton.disabled = bombStock <= 0 || state !== 'playing' || ['transition', 'final'].includes(bossState);
+    bombButton.textContent = `BOMB ×${bombStock}`;
   }
 
   function pickSpawnType() {
@@ -1804,6 +1834,7 @@
     stageBanner = Math.max(0, stageBanner - dt);
     continueBanner = Math.max(0, continueBanner - dt);
     powerDownBanner = Math.max(0, powerDownBanner - dt);
+    charmFlash = Math.max(0, charmFlash - dt);
     const phaseInfo = currentPhase(stageTime);
     activePhase = phaseInfo.phase; activeTIn = phaseInfo.tIn;
     if (activePhase.id !== lastPhaseId) { lastPhaseId = activePhase.id; setpieceStep = 0; }
@@ -2001,8 +2032,12 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // Once all upgrades are maxed, mostly drop heals so 5-minute stages don't
       // shower the player with dead pickups.
       const allMaxed = player.power >= 3 && player.spread >= 3 && player.speed >= 3;
-      const type = allMaxed ? (roll < .8 ? 'heal' : roll < .87 ? 'power' : roll < .94 ? 'spread' : 'speed')
-        : roll < .28 ? 'heal' : roll < .53 ? 'power' : roll < .76 ? 'spread' : 'speed';
+      const bombRoom = bombStock < 3;
+      // Bomb carves a small slice out of the tail of each branch, falling back
+      // to heal once stocked up so the drop pool doesn't waste rolls on it.
+      const type = allMaxed
+        ? (roll < .74 ? 'heal' : roll < .81 ? 'power' : roll < .88 ? 'spread' : roll < .95 ? 'speed' : bombRoom ? 'bomb' : 'heal')
+        : roll < .26 ? 'heal' : roll < .49 ? 'power' : roll < .70 ? 'spread' : roll < .91 ? 'speed' : bombRoom ? 'bomb' : 'heal';
       pickups.push({ type, kind: type === 'heal' ? (Math.random() < .5 ? 'drink' : 'burger') : null, x: VW + 30, y: 100 + Math.random() * (VH - 240), r: 19, t: 0 });
       pickupTimer = (8 + Math.random() * 7) * (activePhase.mode === 'calm' ? 1.6 : 1);
     }
@@ -2179,8 +2214,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         if (p.type === 'power') player.power = Math.min(3, player.power + 1);
         else if (p.type === 'spread') player.spread = Math.min(3, player.spread + 1);
         else if (p.type === 'speed') player.speed = Math.min(3, player.speed + 1);
+        else if (p.type === 'bomb') { bombStock = Math.min(3, bombStock + 1); updateBombButton(); }
         else { health = Math.min(maxHealth, health + 32); voice('heal'); }
-        burst(p.x, p.y, p.type === 'power' ? '#ff8a35' : p.type === 'spread' ? '#31e8ff' : p.type === 'speed' ? '#72ff68' : '#ffe15a', 22, 260); sfx('power');
+        burst(p.x, p.y, p.type === 'power' ? '#ff8a35' : p.type === 'spread' ? '#31e8ff' : p.type === 'speed' ? '#72ff68' : p.type === 'bomb' ? '#c9d6ec' : '#ffe15a', 22, 260); sfx('power');
       }
     }
   }
@@ -2262,8 +2298,12 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function hurt(damage) {
     health = Math.max(0, health - damage * difficulties[difficultyKey].damage); player.inv = 1.4; player.hit = .45; combo = 0; shake = 18; flash = .7; hitStop = Math.max(hitStop, .07);
     stageDamaged = true;
-    // Getting hit knocks the shot power down one level (Gradius-style risk/reward).
-    if (player.power > 1) { player.power--; powerDownBanner = 1.4; }
+    // Getting hit knocks the shot power down one level (Gradius-style risk/reward),
+    // unless a stocked charm (shop-only) cancels this one demotion.
+    if (player.power > 1) {
+      if (charmStock > 0) { charmStock--; charmFlash = 1.2; sfx('shield'); }
+      else { player.power--; powerDownBanner = 1.4; }
+    }
     burst(player.x + player.w / 2, player.y + player.h / 2, '#ff3e9d', 28, 330); sfx('hurt');
     if (health <= 0) {
       if (continuesLeft > 0) doContinue();
@@ -2301,10 +2341,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // each time so late money buys less and less rather than nothing at all.
   const VITAMIN_BASE = 2000, VITAMIN_STEP = 1200;
   const shopItems = [
-    { id: 'buyHeal', price: () => 600, can: () => health < maxHealth, apply: () => { health = Math.min(maxHealth, health + 40); }, status: () => `HP ${Math.ceil(health)}/${maxHealth}` },
+    // Ordered to match the on-screen grid: attack stats, then immediate
+    // recovery, then run-long insurance (charm / continues / max HP).
     { id: 'buyPower', price: () => 2600, can: () => player.power < 3, apply: () => player.power++, status: () => `Lv ${player.power}/3` },
     { id: 'buyWide', price: () => 2600, can: () => player.spread < 3, apply: () => player.spread++, status: () => `Lv ${player.spread}/3` },
     { id: 'buySpeed', price: () => 1800, can: () => player.speed < 3, apply: () => player.speed++, status: () => `Lv ${player.speed}/3` },
+    { id: 'buyHeal', price: () => 600, can: () => health < maxHealth, apply: () => { health = Math.min(maxHealth, health + 40); }, status: () => `HP ${Math.ceil(health)}/${maxHealth}` },
+    // Consumed automatically in hurt() to cancel one power-down — cheap
+    // insurance against the Gradius-style demotion on getting hit.
+    { id: 'buyCharm', price: () => 2200, can: () => charmStock < 3, apply: () => charmStock++, status: () => `のこり ${charmStock}/3` },
     // Continues start at 3 and can be stocked up to 5 — the shop must be able
     // to raise the count above the starting value, not just refill losses.
     { id: 'buyHeart', price: () => 4000, can: () => continuesLeft < 5, apply: () => continuesLeft++, status: () => `のこり ${continuesLeft}/5` },
@@ -2348,6 +2393,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     shopScreen.classList.add('is-visible');
     pauseButton.classList.remove('is-visible');
     specialButton.classList.remove('is-visible');
+    bombButton.classList.remove('is-visible');
   }
 
   function leaveShop() {
@@ -2361,7 +2407,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     state = 'playing';
     pauseButton.classList.add('is-visible');
     specialButton.classList.add('is-visible');
+    bombButton.classList.add('is-visible');
     updateSpecialButton();
+    updateBombButton();
     playBgm(`stage${stageIndex}`, true);
   }
 
@@ -2373,6 +2421,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     voice(cleared ? 'clear' : 'gameover');
     pauseButton.classList.remove('is-visible', 'is-paused');
     specialButton.classList.remove('is-visible', 'is-ready');
+    bombButton.classList.remove('is-visible', 'is-ready');
     pauseLabel.classList.remove('is-visible');
     if (cleared) score += 2500 * difficulties[difficultyKey].score;
     resultTitle.textContent = cleared ? 'ALL CLEAR!' : 'GAME OVER';
@@ -5697,7 +5746,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.save(); ctx.translate(p.x, p.y + bob); ctx.scale(s, s);
     // Soft ground glow only — no hard circle/frame.
     ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .28;
-    const aura = p.type === 'heal' ? '#72ff68' : p.type === 'power' ? '#ff8a35' : p.type === 'spread' ? '#31e8ff' : '#ffe15a';
+    const aura = p.type === 'heal' ? '#72ff68' : p.type === 'power' ? '#ff8a35' : p.type === 'spread' ? '#31e8ff' : p.type === 'bomb' ? '#c9d6ec' : '#ffe15a';
     const ag = ctx.createRadialGradient(0, 8, 2, 0, 8, 26);
     ag.addColorStop(0, hexA(aura, .55)); ag.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = ag; ctx.beginPath(); ctx.ellipse(0, 10, 20, 8, 0, 0, Math.PI * 2); ctx.fill();
@@ -5707,6 +5756,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       else drawEnergyDrinkPickup(p.t);
     } else if (p.type === 'power') drawPowerPickup(p.t);
     else if (p.type === 'spread') drawSpreadPickup(p.t);
+    else if (p.type === 'bomb') drawBombPickup(p.t);
     else drawSpeedPickup(p.t);
     ctx.restore();
   }
@@ -5848,6 +5898,28 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
+  function drawBombPickup(t) {
+    // Round cartoon bomb: dark shell, lit fuse, drifting spark.
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(0, 15, 12, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+    const shell = ctx.createRadialGradient(-4, -4, 2, 0, 2, 14);
+    shell.addColorStop(0, '#5a6580'); shell.addColorStop(.45, '#2a3350'); shell.addColorStop(1, '#0c1022');
+    ctx.fillStyle = shell;
+    ctx.beginPath(); ctx.arc(0, 3, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.ellipse(-5, -3, 3.5, 2.4, -.5, 0, Math.PI * 2); ctx.fill();
+    // cap + fuse
+    ctx.fillStyle = '#9aa3b5'; ctx.fillRect(-3, -14, 6, 4);
+    ctx.strokeStyle = '#c8a25a'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, -14); ctx.quadraticCurveTo(6, -20, 3, -25); ctx.stroke();
+    // spark
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = hexA('#ffe15a', .7 + Math.sin(t * 14) * .3);
+    ctx.beginPath(); ctx.arc(3, -25, 3 + Math.sin(t * 12) * 1, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = hexA('#c9d6ec', .5 + Math.sin(t * 9) * .3);
+    ctx.beginPath(); ctx.arc(6, -3, 16, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
   function drawHUD() {
     ctx.save();
     const stage = stages[stageIndex];
@@ -5933,6 +6005,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillText('POWER DOWN', player.x + player.w / 2, player.y - 18 - (1.4 - powerDownBanner) * 40);
       ctx.restore(); ctx.textAlign = 'left';
     }
+    if (charmFlash > 0) {
+      // Rising "おまもり!" tag confirms the charm ate the power-down instead.
+      const a = Math.min(1, charmFlash * 2.5);
+      ctx.save(); ctx.globalAlpha = a; ctx.textAlign = 'center';
+      ctx.fillStyle = '#c9d6ec'; ctx.font = '16px "DotGothic16", monospace';
+      ctx.fillText('おまもり発動!', player.x + player.w / 2, player.y - 18 - (1.2 - charmFlash) * 40);
+      ctx.restore(); ctx.textAlign = 'left';
+    }
     if (stageBanner > 0) {
       const alpha = Math.min(1, stageBanner, (3 - stageBanner) * 2);
       const slide = (1 - Math.min(1, alpha)) * 26;
@@ -6002,13 +6082,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function pollGamepad() {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     const pad = [...pads].find(Boolean);
-    if (!pad) { padInput.x = 0; padInput.y = 0; padInput.fire = false; padInput.special = false; padStartWasDown = false; padActionWasDown = false; padSpecialWasDown = false; return; }
+    if (!pad) { padInput.x = 0; padInput.y = 0; padInput.fire = false; padInput.special = false; padInput.bomb = false; padStartWasDown = false; padActionWasDown = false; padSpecialWasDown = false; padBombWasDown = false; return; }
     const deadzone = value => Math.abs(value) < .18 ? 0 : value;
     padInput.x = deadzone(pad.axes[0] || 0) + ((pad.buttons[15]?.pressed ? 1 : 0) - (pad.buttons[14]?.pressed ? 1 : 0));
     padInput.y = deadzone(pad.axes[1] || 0) + ((pad.buttons[13]?.pressed ? 1 : 0) - (pad.buttons[12]?.pressed ? 1 : 0));
     padInput.x = clamp(padInput.x, -1, 1); padInput.y = clamp(padInput.y, -1, 1);
     padInput.fire = Boolean(pad.buttons[0]?.pressed || pad.buttons[1]?.pressed || pad.buttons[2]?.pressed || (pad.buttons[7]?.value || 0) > .25);
     padInput.special = Boolean(pad.buttons[3]?.pressed || (pad.buttons[6]?.value || 0) > .5);
+    padInput.bomb = Boolean(pad.buttons[4]?.pressed || pad.buttons[5]?.pressed);
     const startDown = Boolean(pad.buttons[9]?.pressed);
     const actionDown = Boolean(pad.buttons[0]?.pressed);
     if (startDown && !padStartWasDown && state === 'playing') togglePause();
@@ -6024,8 +6105,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       else if (state === 'shop') leaveShop();
     }
     if (padInput.special && !padSpecialWasDown && state === 'playing') useSpecial();
+    if (padInput.bomb && !padBombWasDown && state === 'playing') useBomb();
     padStartWasDown = startDown; padActionWasDown = actionDown;
     padSpecialWasDown = padInput.special;
+    padBombWasDown = padInput.bomb;
   }
 
   function sfx(type) {
@@ -6058,6 +6141,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     pauseButton.classList.toggle('is-paused', paused);
     pauseButton.textContent = paused ? '▶' : '❚❚';
     specialButton.disabled = paused || special < 100;
+    bombButton.disabled = paused || bombStock <= 0;
     if (paused) pauseBgm();
     else { lastTime = performance.now(); playBgm(desiredBgmKey()); }
   }
@@ -6121,6 +6205,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (e.code === 'F1') { e.preventDefault(); fpsShow = !fpsShow; }
     if ((e.code === 'Escape' || e.code === 'KeyP') && state === 'playing') togglePause();
     if (e.code === 'KeyX' && !e.repeat) useSpecial();
+    if (e.code === 'KeyC' && !e.repeat) useBomb();
     if ((e.code === 'Enter' || e.code === 'Space') && storySlides) { if (!e.repeat) advanceStory(); return; }
     if (e.code === 'Enter' && state === 'menu') { if (menuStep === 'title') showHowto(); else showOpening(); }
     else if (e.code === 'Enter' && state === 'opening') resetGame();
@@ -6205,6 +6290,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   });
   pauseButton.addEventListener('click', togglePause);
   specialButton.addEventListener('click', useSpecial);
+  bombButton.addEventListener('click', useBomb);
   resumeButton.addEventListener('click', () => setPaused(false));
   pauseTitleButton.addEventListener('click', returnToTitle);
   addEventListener('gamepadconnected', event => {
@@ -6215,7 +6301,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, stageTime, phaseId: activePhase.id, enemies: enemies.length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, bombStock, charmStock, stageTime, phaseId: activePhase.id, enemies: enemies.length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
   // Boss-fight test hooks, alongside the Shift+N/M/B keys and ?boss=N above:
   // they let a headless run drive a boss to any state without playing the fight.
   // Local only — these can set a boss's HP directly, which has no place on the
@@ -6224,6 +6310,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   if (LOCAL_DEV) {
     window.__hz = () => hazards.length;
     window.__grant = n => { score += n; };
+    window.__grantBomb = () => { bombStock = Math.min(3, bombStock + 1); updateBombButton(); };
+    window.__grantCharm = () => { charmStock = Math.min(3, charmStock + 1); };
+    window.__setPower = n => { player.power = clamp(n, 1, 3); };
+    window.__hurt = (n = 20) => hurt(n);
     window.__maxHp = () => maxHealth;
     window.__openShop = () => { openShop(); };
     window.__types = () => enemies.map(en => en.type);

@@ -350,9 +350,12 @@ kbd {
 .shop-lead strong { margin-left: 8px; color: var(--yellow); font: 15px "Press Start 2P", monospace; }
 .shop-items {
   display: grid;
-  grid-template-columns: repeat(6, minmax(108px, 150px));
+  /* 7 items: 4 attack/recovery on row 1, 3 run-long insurance items on row 2 —
+     repeat(6, ...) used to leave a lone orphan on its own row. */
+  grid-template-columns: repeat(4, minmax(108px, 150px));
   gap: 12px;
   margin: 20px 0 8px;
+  justify-content: center;
 }
 .shop-item {
   display: flex;
@@ -436,6 +439,13 @@ kbd {
 .special-button.is-visible { opacity: 1; visibility: visible; }
 .special-button.is-ready { color: #120b2e; background: var(--yellow); box-shadow: 4px 4px 0 var(--pink), 0 0 24px rgba(255,225,90,.4); animation: blink .8s steps(2) infinite; }
 .special-button:disabled { color: #71698f; border-color: #4b4567; cursor: default; }
+.bomb-button {
+  left: 136px; min-width: 96px; color: var(--cyan); border-color: var(--cyan);
+  opacity: 0; visibility: hidden; box-shadow: 0 0 18px rgba(49,232,255,.12);
+}
+.bomb-button.is-visible { opacity: 1; visibility: visible; }
+.bomb-button.is-ready { color: #120b2e; background: var(--cyan); box-shadow: 4px 4px 0 var(--pink), 0 0 24px rgba(49,232,255,.4); }
+.bomb-button:disabled { color: #71698f; border-color: #4b4567; cursor: default; }
 
 .controller-status {
   position: absolute; z-index: 7; left: 50%; bottom: 20px; transform: translate(-50%, 25px);
