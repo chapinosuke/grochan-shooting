@@ -523,6 +523,11 @@
 
   const GROUND_Y = 500;
   const CHIMNEYS = [[120, 60, 210], [196, 44, 160], [880, 70, 230], [1010, 50, 180], [430, 40, 140]];
+  // Aqua stage's rare giant fish breach: shared by updateAmbient (splash timing)
+  // and drawBigFish (the arc itself), so the two stay in sync. SCALE blows the
+  // ~1000px base body up further (bigger than the screen is wide at the apex);
+  // DUR is short relative to that size so the leap snaps rather than floats.
+  const BIGFISH_DUR = 2.5, BIGFISH_TRAVEL = 760, BIGFISH_ARC = 340, BIGFISH_SCALE = 1.45;
   const REFINERY_TANKS = [[240, 46, 250], [730, 38, 210], [1080, 52, 268]];
   const player = { x: 170, y: 360, w: 118, h: 102, vx: 0, vy: 0, fire: 0, missileFire: 0, inv: 0, hit: 0, frame: 0, walkPhase: 0, walkStep: 0, grounded: false, power: 1, spread: 1, speed: 1, takeoff: 0, facing: 1 };
   let bullets = [];
@@ -873,6 +878,9 @@
       for (let i = 0; i < 26; i++) ambient.push(makeAmbient('bubble'));
       bgProps.push({ kind: 'lighthouse', x: 1050, phase: 0 });
       bgProps.push({ kind: 'fish', x: VW + 100, phase: Math.random() * 4 }, { kind: 'fish', x: VW + 620, phase: Math.random() * 4 });
+      // A single much larger fish breaches far less often than the small ones —
+      // a rare "whoa" beat. Pure background dressing; it has no hitbox.
+      bgProps.push({ kind: 'bigFish', x: VW * .5, phase: Math.random() * 18, cycle: 16 + Math.random() * 8 });
     } else if (theme === 'factory') {
       for (let i = 0; i < 14; i++) ambient.push(makeAmbient('smoke'));
       for (let i = 0; i < 10; i++) ambient.push(makeAmbient('spark'));
@@ -930,6 +938,16 @@
     for (const p of bgProps) {
       if (p.kind === 'car') { p.x += p.v * p.dir * dt; if (p.x < -160) { p.x = VW + 60; p.dir = 1; p.v = 60 + Math.random() * 90; } if (p.x > VW + 160) { p.x = -60; p.dir = -1; } }
       else if (p.kind === 'fish') { p.phase += dt; if (p.phase > 4.6) { p.phase = 0; p.x = VW * .25 + Math.random() * VW * .8; } }
+      else if (p.kind === 'bigFish') {
+        const wasUp = p.phase < BIGFISH_DUR;
+        p.phase += dt;
+        // Splash where it re-enters the water, then again on the next launch.
+        if (wasUp && p.phase >= BIGFISH_DUR) splashRipple(p.x - BIGFISH_TRAVEL);
+        if (p.phase > (p.cycle || 18)) {
+          p.phase = 0; p.x = VW * .22 + Math.random() * VW * .56; p.cycle = 16 + Math.random() * 8;
+          splashRipple(p.x);
+        }
+      }
       else if (p.kind === 'code') { p.y += p.v * dt; if (p.y > 620) { p.y = -80; p.x = Math.random() * VW; } }
       else if (p.kind === 'gear' || p.kind === 'searchlight' || p.kind === 'panel' || p.kind === 'lighthouse') p.phase = (p.phase || 0) + dt * (p.speed || 1);
     }
@@ -3723,7 +3741,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       for (const p of bgProps) if (p.kind === 'lighthouse') drawLighthouse(p);
     });
     drawOcean(stage);
-    for (const p of bgProps) if (p.kind === 'fish') drawFish(p, stage);
+    for (const p of bgProps) { if (p.kind === 'fish') drawFish(p, stage); else if (p.kind === 'bigFish') drawBigFish(p, stage); }
     drawHighway(stage);
   }
 
@@ -3841,6 +3859,90 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.fillStyle = stage.accent;
     ctx.beginPath(); ctx.ellipse(0, 0, 16, 6, 0, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(24, -7); ctx.lineTo(24, 7); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  // A wide directional plume — droplets kick up and arc toward the camera
+  // instead of a symmetric puff in place, so the splash reads as something
+  // physically thrown by a huge body hitting the water. Cosmetic only: plain
+  // particles, not a shockwave ring (that reads as a gameplay hazard cue).
+  function splashRipple(x, y = 574) {
+    for (let i = 0; i < 46; i++) {
+      const a = -Math.PI / 2 + (Math.random() - .5) * 2.6;
+      const v = 300 + Math.random() * 420;
+      particles.push({
+        x, y, vx: Math.cos(a) * v - 170, vy: Math.sin(a) * v,
+        life: .5 + Math.random() * .7, max: 1.2, color: '#dff6ff',
+        size: 4 + Math.random() * 11, gravity: 360,
+      });
+    }
+  }
+
+  function drawBigFish(p, stage) {
+    if ((p.phase || 0) > BIGFISH_DUR) return;
+    const t = (p.phase || 0) / BIGFISH_DUR;
+    const x = p.x - t * BIGFISH_TRAVEL;
+    const y = 575 - Math.sin(t * Math.PI) * BIGFISH_ARC;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(Math.cos(t * Math.PI) * .32); ctx.scale(BIGFISH_SCALE, BIGFISH_SCALE);
+    ctx.globalAlpha = .95;
+    // Nose trails toward -x (direction of travel); the lunate tail fin and
+    // tapered peduncle sit on the +x side. ~1000px nose-to-tail so a single
+    // leap spans most of the screen width at the apex.
+    const body = ctx.createLinearGradient(0, -95, 0, 90);
+    body.addColorStop(0, stage.accent2); body.addColorStop(.42, stage.accent); body.addColorStop(1, '#dff6ff');
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.moveTo(-450, 0);
+    // top: nose -> brow -> back (widest near the dorsal base) -> peduncle
+    ctx.quadraticCurveTo(-430, -58, -300, -70);
+    ctx.quadraticCurveTo(-120, -80, 60, -62);
+    ctx.quadraticCurveTo(220, -42, 330, -22);
+    ctx.quadraticCurveTo(385, -12, 420, -7);
+    ctx.lineTo(420, 7);
+    // bottom: peduncle -> belly (bulges lower/rounder than the back) -> nose
+    ctx.quadraticCurveTo(385, 12, 330, 24);
+    ctx.quadraticCurveTo(180, 56, 0, 69);
+    ctx.quadraticCurveTo(-160, 78, -320, 56);
+    ctx.quadraticCurveTo(-410, 36, -450, 0);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = stage.accent2;
+    // Second dorsal + anal fin (small, near the tail) — drawn first so the
+    // big dorsal and pectoral fins layer over them.
+    ctx.beginPath(); ctx.moveTo(280, -26); ctx.lineTo(312, -58); ctx.lineTo(250, -38); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(270, 30); ctx.lineTo(300, 60); ctx.lineTo(240, 42); ctx.closePath(); ctx.fill();
+    // Lunate tail fin: swept crescent lobes with an inward notch, tuna/shark-style.
+    ctx.beginPath();
+    ctx.moveTo(415, -8);
+    ctx.quadraticCurveTo(462, -72, 566, -148);
+    ctx.quadraticCurveTo(498, -54, 468, 0);
+    ctx.quadraticCurveTo(498, 54, 566, 148);
+    ctx.quadraticCurveTo(462, 72, 415, 8);
+    ctx.closePath(); ctx.fill();
+    // Tall sail-like dorsal fin.
+    ctx.beginPath();
+    ctx.moveTo(-45, -64); ctx.quadraticCurveTo(-12, -178, 62, -196); ctx.quadraticCurveTo(72, -122, 92, -56);
+    ctx.closePath(); ctx.fill();
+    // Pectoral fin, swept back beneath the head.
+    ctx.beginPath();
+    ctx.moveTo(-225, 42); ctx.quadraticCurveTo(-268, 132, -186, 176); ctx.quadraticCurveTo(-144, 104, -142, 50);
+    ctx.closePath(); ctx.fill();
+    // Gill slits.
+    ctx.strokeStyle = hexA(stage.accent2, .55); ctx.lineWidth = 3;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath(); ctx.moveTo(-345 + i * 14, -34); ctx.quadraticCurveTo(-352 + i * 14, 0, -345 + i * 14, 32); ctx.stroke();
+    }
+    // Eye + mouth line.
+    ctx.fillStyle = '#0a1c30'; ctx.beginPath(); ctx.arc(-378, -18, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#eafcff'; ctx.beginPath(); ctx.arc(-382, -22, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#0a1c30'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-448, 4); ctx.quadraticCurveTo(-428, 18, -400, 12); ctx.stroke();
+    // Belly sheen streaks — the only "scale" texture, kept sparse so the
+    // silhouette still reads clean at speed.
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .28; ctx.strokeStyle = '#eafcff'; ctx.lineWidth = 3;
+    for (let i = 0; i < 6; i++) {
+      const bx = -260 + i * 90;
+      ctx.beginPath(); ctx.moveTo(bx, 32); ctx.quadraticCurveTo(bx + 24, 48, bx + 48, 32); ctx.stroke();
+    }
     ctx.restore();
   }
 
