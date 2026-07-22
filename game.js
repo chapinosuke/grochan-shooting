@@ -2247,7 +2247,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (isBoss) {
       bossState = stageIndex === stages.length - 1 ? 'final' : 'transition'; stageTransition = 4.6;
       clearEnemyFire(); bullets = []; musicStep = 0; musicClock = 0;
-      sfx('bossCollapse'); bossVoice(stageIndex, 'death');
+      sfx('bossCollapse'); sfx('thunder'); bossVoice(stageIndex, 'death');
       const stage = stages[stageIndex];
       for (let i = 0; i < 14; i++) {
         delayedBursts.push({ x: e.x + Math.random() * e.w, y: e.y + Math.random() * e.h, t: .08 + i * .11, color: i % 3 ? '#ffe15a' : stage.accent2, boom: i % 2 === 0 });
@@ -5464,7 +5464,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       else if (e.mode === 'return') lean = .09;
       if (hurt) lean += .06 + Math.sin(e.t * 46) * .035;
       ctx.save();
-      if (e.blink > 0) ctx.globalAlpha = .3 + Math.abs(Math.sin(e.t * 34)) * .6;
+      // Flicker for a teleport strobe (e.blink) and for the whole windup of an
+      // incoming special attack (e.tel > 0) — same tell, so the player reads
+      // "something is about to happen" the same way either time.
+      if (e.blink > 0 || e.tel > 0) ctx.globalAlpha = .3 + Math.abs(Math.sin(e.t * 34)) * .6;
       ctx.translate(115, 190);
       ctx.rotate(lean);
       ctx.scale(1 - breath, 1 + breath);
