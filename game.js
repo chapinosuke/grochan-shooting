@@ -2645,6 +2645,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // particles/gameplay. Every stage gets large objects with visible top/side
     // faces, a shared vanishing point and strong scale separation.
     drawStageVolume(stage);
+    // The route is more than a looping panorama: phase, mid-boss and boss state
+    // direct one-off scenic beats and lighting changes for the whole stage.
+    // Kept below ambient/gameplay so even the largest spectacle cannot cover
+    // enemies, bullets or the HUD.
+    drawStageDirection(stage);
     drawAmbient();
     drawNearScenery(stage);
     drawAtmosphere(stage);
@@ -2659,6 +2664,249 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.translate(bgCamX * depth, bgCam * depth);
     fn();
     ctx.restore();
+  }
+
+  // --- Route-aware background direction ---------------------------------
+  // Stateless by design: ?stage, Shift+T/M/B and continues can jump anywhere
+  // in the route without leaving an animation controller out of sync.
+  const BG_PHASE_ORDER = ['opening', 'buildup', 'formationA', 'breather1', 'midboss', 'recover', 'assault2', 'setpiece', 'breather2', 'eliteRush', 'finalPush'];
+  function backgroundDirector() {
+    const route = clamp(stageTime / Math.max(1, timelineTotal()), 0, 1);
+    const phaseIndex = Math.max(0, BG_PHASE_ORDER.indexOf(activePhase.id));
+    const boss = ['warning', 'active', 'transition', 'final'].includes(bossState);
+    const mid = ['midboss-warning', 'midboss-active'].includes(bossState);
+    const setpiece = bossState === 'waiting' && activePhase.mode === 'setpiece';
+    const setT = setpiece ? clamp(activeTIn / Math.max(1, activePhase.dur * timeScale()), 0, 1) : 0;
+    const warning = bossState === 'warning' || bossState === 'midboss-warning';
+    const energy = boss ? 1 : mid ? .78 : clamp((activePhase.intensity || .25) * .82 + route * .18, .18, 1);
+    return { route, phaseIndex, boss, mid, setpiece, setT, warning, energy, q: bgQuality() };
+  }
+
+  function drawStageDirection(stage) {
+    const d = backgroundDirector();
+    if (stage.theme === 'neon') drawNeonDirection(stage, d);
+    else if (stage.theme === 'aqua') drawAquaDirection(stage, d);
+    else if (stage.theme === 'factory') drawFactoryDirection(stage, d);
+    else if (stage.theme === 'storm') drawStormDirection(stage, d);
+    else drawPalaceDirection(stage, d);
+    drawScenicLightEcho(stage, d);
+  }
+
+  // Shared material response along the bottom of frame. It makes lightning,
+  // furnace fire, signs and stained glass feel like lights in one world rather
+  // than independent glowing shapes.
+  function drawScenicLightEcho(stage, d) {
+    if (d.q <= 0) return;
+    const event = d.setpiece ? Math.sin(d.setT * Math.PI) : 0;
+    const pulse = d.boss ? .85 + Math.sin(elapsed * 2.2) * .15 : .45 + d.energy * .35;
+    const y = stage.theme === 'palace' ? 610 : stage.theme === 'factory' ? 630 : 600;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < (d.q >= 2 ? 5 : 3); i++) {
+      const x = 110 + i * 260 + Math.sin(elapsed * .35 + i * 2.1) * 55;
+      const w = 70 + event * 100 + (i % 2) * 35;
+      const g = ctx.createLinearGradient(x, y, x, 724);
+      g.addColorStop(0, hexA(i % 2 ? stage.accent2 : stage.accent, .08 * pulse));
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.moveTo(x - 5, y); ctx.lineTo(x + 5, y);
+      ctx.lineTo(x + w, 724); ctx.lineTo(x - w, 724); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawNeonDirection(stage, d) {
+    // The route gradually becomes busier; calm/set-piece beats let the famous
+    // crossing fill with commuters instead of adding more permanent buildings.
+    if (d.q > 0 && (d.setpiece || activePhase.mode === 'calm')) {
+      const strength = d.setpiece ? Math.sin(d.setT * Math.PI) : .45;
+      ctx.save(); ctx.globalAlpha = .18 + strength * .32;
+      const count = d.q >= 2 ? 30 : 17;
+      for (let i = 0; i < count; i++) {
+        const lane = i % 3, dir = lane === 1 ? -1 : 1;
+        const u = (elapsed * (.045 + lane * .008) + i / count) % 1;
+        const x = dir > 0 ? -80 + u * 1440 : 1360 - u * 1440;
+        const y = 586 + lane * 25 + Math.sin(i * 3.7) * 7;
+        const s = .55 + lane * .16;
+        ctx.fillStyle = i % 4 === 0 ? stage.accent2 : i % 4 === 1 ? stage.accent : '#d9d1ff';
+        ctx.beginPath(); ctx.arc(x, y - 17 * s, 5 * s, 0, Math.PI * 2); ctx.fill();
+        ctx.fillRect(x - 4 * s, y - 12 * s, 8 * s, 17 * s);
+        ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 2 * s;
+        ctx.beginPath(); ctx.moveTo(x, y + 3 * s); ctx.lineTo(x - 6 * s, y + 15 * s);
+        ctx.moveTo(x, y + 3 * s); ctx.lineTo(x + 6 * s, y + 15 * s); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    // MASQUERADE hijacks the district screens and kills the city fill light.
+    if (d.boss || d.warning) {
+      const a = d.warning ? .12 + Math.sin(elapsed * 12) * .05 : .16;
+      ctx.save(); ctx.fillStyle = `rgba(3,0,18,${a})`; ctx.fillRect(0, 0, VW, VH);
+      ctx.translate(475, 148);
+      ctx.globalAlpha = d.warning ? .65 : .42; ctx.fillStyle = '#080313'; ctx.fillRect(0, 0, 330, 114);
+      ctx.strokeStyle = stage.accent2; ctx.lineWidth = 3; ctx.shadowColor = stage.accent2; ctx.shadowBlur = 18; ctx.strokeRect(0, 0, 330, 114);
+      ctx.textAlign = 'center'; ctx.font = '16px "Press Start 2P", monospace'; ctx.fillStyle = '#ffd8ef';
+      ctx.fillText('LIKE  LIKE  LIKE', 165, 48);
+      ctx.font = '11px "Press Start 2P", monospace'; ctx.fillStyle = stage.accent;
+      ctx.fillText('MASQUERADE OWNS THE NIGHT', 165, 78);
+      for (let y = 8; y < 110; y += 8) { ctx.globalAlpha = .1; ctx.fillRect(4, y, 322, 1); }
+      ctx.restore();
+    }
+  }
+
+  function drawAquaDirection(stage, d) {
+    // One immense bridge tower crosses the camera during the scripted route
+    // beat. Its cables sweep the whole composition, making forward travel clear.
+    if (d.setpiece) {
+      const u = clamp(d.setT * 1.25, 0, 1), x = 1450 - u * 1740;
+      ctx.save(); ctx.globalAlpha = .82;
+      drawVolumeBox(x - 108, 116, 46, 500, 28, '#123e69', '#04162b', '#4b91b5', .9, stage.accent);
+      drawVolumeBox(x + 62, 116, 46, 500, 28, '#123e69', '#04162b', '#4b91b5', .9, stage.accent);
+      for (const by of [176, 304, 430]) {
+        drawVolumeBox(x - 104, by, 208, 24, 18, '#174b76', '#061b31', '#58a5c5', .82, hexA(stage.accent, .8));
+      }
+      ctx.strokeStyle = hexA(stage.accent, .72); ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(x, 100); ctx.quadraticCurveTo(x - 420, 185, x - 760, 560);
+      ctx.moveTo(x, 100); ctx.quadraticCurveTo(x + 420, 185, x + 760, 560); ctx.stroke();
+      ctx.lineWidth = 2; ctx.globalAlpha = .5;
+      for (let k = -7; k <= 7; k++) {
+        const hx = x + k * 82, top = 142 + Math.abs(k) * 24;
+        ctx.beginPath(); ctx.moveTo(hx, top); ctx.lineTo(hx, 570); ctx.stroke();
+      }
+      ctx.restore();
+    }
+    // SERVER GOLEM corrupts the sea into a cold storage grid while retaining
+    // enough transparency for the ocean and projectiles to read.
+    if (d.boss || d.warning) {
+      const flick = d.warning ? .5 + Math.sin(elapsed * 14) * .35 : .55;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .12 * flick;
+      ctx.strokeStyle = stage.accent; ctx.lineWidth = 1;
+      for (let y = 300; y < 660; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(VW, y + 18); ctx.stroke(); }
+      for (let x = -100; x < VW + 100; x += 64) { ctx.beginPath(); ctx.moveTo(VW / 2, 300); ctx.lineTo(x, 680); ctx.stroke(); }
+      for (let i = 0; i < 20; i++) {
+        const px = (i * 193 + elapsed * (28 + i % 3 * 9)) % (VW + 100) - 50;
+        const py = 160 + (i * 47) % 390;
+        ctx.fillStyle = i % 3 ? stage.accent : '#ffffff'; ctx.fillRect(px, py, 5 + i % 6, 5 + i % 6);
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawFactoryDirection(stage, d) {
+    const event = d.setpiece ? Math.sin(d.setT * Math.PI) : 0;
+    // A ladle pour is the stage's singular industrial spectacle. The stream
+    // lights the smoke, grating and nearby machine silhouettes as one event.
+    if (event > .02) {
+      const x = 770 + Math.sin(d.setT * Math.PI * 2) * 80;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = .28 + event * .45; ctx.shadowColor = '#ff6a25'; ctx.shadowBlur = 28;
+      ctx.fillStyle = '#24121b'; ctx.beginPath(); ctx.ellipse(x, 245, 94, 48, -.16, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ff9f43'; ctx.lineWidth = 7; ctx.stroke();
+      const stream = ctx.createLinearGradient(x, 260, x, 660);
+      stream.addColorStop(0, '#fff7a0'); stream.addColorStop(.35, '#ffb12e'); stream.addColorStop(1, '#ff3b18');
+      ctx.strokeStyle = stream; ctx.lineWidth = 14 + event * 12;
+      ctx.beginPath(); ctx.moveTo(x - 58, 270); ctx.bezierCurveTo(x - 35, 370, x + 20, 500, x - 10, 667); ctx.stroke();
+      ctx.globalAlpha = event * .18; ctx.fillStyle = '#ff6a25'; ctx.fillRect(0, 320, VW, 360);
+      ctx.restore();
+    }
+    // Repeating presses wake up with route intensity; during the boss the hall
+    // drops into silhouette and furnace apertures become the only key lights.
+    if (d.q > 0) {
+      ctx.save(); ctx.globalAlpha = .22 + d.energy * .25; ctx.fillStyle = '#10080e';
+      for (let i = 0; i < 6; i++) {
+        const x = 80 + i * 225, travel = (Math.sin(elapsed * (1.5 + i * .08) + i) + 1) * 22;
+        ctx.fillRect(x, 250, 34, 210 + travel); ctx.fillRect(x - 26, 438 + travel, 86, 24);
+      }
+      ctx.restore();
+    }
+    if (d.boss || d.warning) {
+      ctx.save(); ctx.fillStyle = `rgba(16,2,8,${d.warning ? .18 : .24})`; ctx.fillRect(0, 0, VW, VH);
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 5; i++) {
+        const x = 90 + i * 280, hot = .55 + Math.sin(elapsed * 5 + i) * .25;
+        const g = ctx.createRadialGradient(x, 590, 4, x, 590, 120);
+        g.addColorStop(0, `rgba(255,235,120,${.32 * hot})`); g.addColorStop(.25, `rgba(255,70,20,${.2 * hot})`); g.addColorStop(1, 'rgba(255,40,10,0)');
+        ctx.fillStyle = g; ctx.fillRect(x - 120, 470, 240, 220);
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawStormDirection(stage, d) {
+    // Lightning briefly reveals the outline of a colossal command construct
+    // behind the cloud deck. The boss keeps only its dim visor visible.
+    const reveal = Math.max(Math.min(1, lightning * 4), d.boss ? .22 : 0);
+    if (reveal > .02) {
+      ctx.save(); ctx.globalAlpha = reveal * .38; ctx.strokeStyle = '#baffd4'; ctx.lineWidth = 4;
+      ctx.shadowColor = stage.accent; ctx.shadowBlur = 22;
+      ctx.beginPath(); ctx.moveTo(470, 455); ctx.lineTo(448, 260); ctx.lineTo(520, 176);
+      ctx.lineTo(590, 208); ctx.lineTo(640, 126); ctx.lineTo(690, 208);
+      ctx.lineTo(760, 176); ctx.lineTo(832, 260); ctx.lineTo(810, 455); ctx.stroke();
+      ctx.fillStyle = stage.accent2; ctx.globalAlpha = reveal * .7;
+      ctx.fillRect(574, 252, 48, 8); ctx.fillRect(658, 252, 48, 8);
+      ctx.restore();
+    }
+    // During the route set-piece, server towers overload from left to right.
+    if (d.setpiece && d.q > 0) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 9; i++) {
+        const local = clamp((d.setT * 1.35 - i * .085) * 4, 0, 1);
+        if (!local) continue;
+        const x = 70 + i * 145, a = Math.sin(local * Math.PI);
+        ctx.globalAlpha = a * .42; ctx.fillStyle = i % 2 ? stage.accent2 : stage.accent;
+        ctx.fillRect(x, 210, 4, 410);
+        ctx.beginPath(); ctx.arc(x + 2, 212, 10 + a * 22, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+    }
+    if (d.boss || d.warning) {
+      ctx.save(); ctx.globalAlpha = d.warning ? .16 : .09; ctx.fillStyle = '#9affbf';
+      for (let i = 0; i < 16; i++) {
+        const y = (i * 53 + elapsed * (70 + i % 4 * 20)) % VH;
+        const x = (i * 181) % VW; ctx.fillRect(x, y, 50 + (i * 31) % 170, 2 + i % 3);
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawPalaceDirection(stage, d) {
+    // The ceremonial doors open only for the late-route processional beat,
+    // revealing the throne rather than leaving another ornament permanently on.
+    if (d.setpiece) {
+      const open = Math.sin(clamp(d.setT * 1.15, 0, 1) * Math.PI * .5);
+      const gap = open * 138;
+      ctx.save(); ctx.globalAlpha = .72;
+      for (const side of [-1, 1]) {
+        const x = VW / 2 + side * gap;
+        ctx.fillStyle = '#26081f'; ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(x, 280); ctx.lineTo(x + side * 165, 324); ctx.lineTo(x + side * 165, 640); ctx.lineTo(x, 640); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ff3e9d'; heartPath(x + side * 80, 450, 20); ctx.fill();
+      }
+      ctx.restore();
+    }
+    if (d.boss || d.warning || bossCrit > 0) {
+      const crit = clamp(bossCrit, 0, 1), force = d.warning ? .35 + Math.sin(elapsed * 10) * .15 : .45 + crit * .55;
+      // Cracks grow outward from the rose window as the queen loses control.
+      ctx.save(); ctx.globalAlpha = .24 + crit * .34; ctx.strokeStyle = crit > .45 ? '#ff4055' : '#ffe5f2'; ctx.lineWidth = 2;
+      ctx.shadowColor = '#ff315c'; ctx.shadowBlur = 10;
+      for (let i = 0; i < 13; i++) {
+        const a = i / 13 * Math.PI * 2 + .12, len = 100 + force * (120 + (i * 37) % 110);
+        ctx.beginPath(); ctx.moveTo(640, 205);
+        const mx = 640 + Math.cos(a) * len * .52, my = 205 + Math.sin(a) * len * .52;
+        ctx.lineTo(mx, my); ctx.lineTo(640 + Math.cos(a + (i % 2 ? .08 : -.08)) * len, 205 + Math.sin(a + (i % 2 ? .08 : -.08)) * len); ctx.stroke();
+      }
+      // A row of candles goes dark from the outside inward through the fight.
+      const extinguished = d.warning ? 2 : Math.floor(4 + crit * 8);
+      for (let i = 0; i < 12; i++) {
+        const x = 190 + i * 82; ctx.fillStyle = '#d7a65a'; ctx.fillRect(x, 594, 5, 35);
+        if (i < extinguished / 2 || i >= 12 - Math.ceil(extinguished / 2)) continue;
+        ctx.globalAlpha = .55; ctx.fillStyle = '#ffe9a0';
+        ctx.beginPath(); ctx.ellipse(x + 2, 588, 4, 10 + Math.sin(elapsed * 6 + i) * 2, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .08 + crit * .15;
+      const blood = ctx.createLinearGradient(640, 480, 640, 720);
+      blood.addColorStop(0, 'rgba(255,20,70,0)'); blood.addColorStop(1, '#ff143e'); ctx.fillStyle = blood;
+      ctx.beginPath(); ctx.moveTo(570, 480); ctx.lineTo(710, 480); ctx.lineTo(980, 720); ctx.lineTo(300, 720); ctx.closePath(); ctx.fill(); ctx.restore();
+    }
   }
 
   // A second haze wash painted BETWEEN the far and mid layers, so distant

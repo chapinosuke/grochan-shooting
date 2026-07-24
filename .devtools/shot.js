@@ -1,7 +1,7 @@
 // Screenshot harness for visual verification of game.js changes.
 // Usage:
 //   node .devtools/shot.js <mode> <stageSkips>
-//     mode: play | boss | mid   (default boss)
+//     mode: play | boss | mid | setpiece   (default boss)
 //     stageSkips: 0..4  (Shift+N skips; 0=SHIBUYA,1=AQUA,2=FACTORY,3=STORM,4=PALACE)
 //   e.g.  node .devtools/shot.js play 3     -> storm gameplay w/ enemies + player fire
 //         node .devtools/shot.js boss 0     -> stage1 boss
@@ -76,6 +76,13 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   }
   if (arg === 'boss') { await press('KeyB', true); await new Promise(r => setTimeout(r, 7000)); }
   if (arg === 'mid') { await press('KeyM', true); await new Promise(r => setTimeout(r, 7000)); }
+  if (arg === 'setpiece') {
+    // Enter and immediately clear the mid-boss through its normal debug kill
+    // path, then jump 30 seconds into the post-mid route (the set-piece phase).
+    await press('KeyM', true); await new Promise(r => setTimeout(r, 3600));
+    await press('KeyM', true); await new Promise(r => setTimeout(r, 500));
+    await press('KeyT', true); await new Promise(r => setTimeout(r, 2200));
+  }
 
   // Hold fire so player bullets appear.
   await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true })));
