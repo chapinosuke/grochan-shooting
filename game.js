@@ -539,6 +539,9 @@
   let clouds = [];
   let ambient = [];
   let bgProps = [];
+  let aquaRings = [];    // expanding surface ripples left by the big fish (cosmetic)
+  let boltGhosts = [];   // fading after-images of recent lightning strikes (cosmetic)
+  let palaceBossMix = 0; // eased 0..1: palace shifts to battle lighting while the queen is on stage
   let nearProps = [];
   let delayedBursts = [];
   let shockwaves = [];
@@ -671,7 +674,7 @@
     bossState = 'waiting'; bossWarning = 0; midBossDone = false;
     stageIndex = 0; stageTime = 0; stageBanner = 3; stageTransition = 0;
     musicClock = 0; musicStep = 0;
-    totalKills = 0; stageResult = null; lightning = 0; delayedBursts = [];
+    totalKills = 0; stageResult = null; lightning = 0; palaceBossMix = 0; delayedBursts = [];
     special = 35; specialFlash = 0; formationTimer = 2.8;
     continuesLeft = 3; continueBanner = 0; powerDownBanner = 0;
     bombStock = 0; charmStock = 0; charmFlash = 0;
@@ -910,8 +913,16 @@
       const [cx, cw, ch] = CHIMNEYS[Math.floor(Math.random() * CHIMNEYS.length)];
       return { kind, x: cx + cw / 2 + (Math.random() - .5) * 14, y: 560 - ch - 8, vy: -(14 + Math.random() * 20), r: 9 + Math.random() * 18, life: 2.5 + Math.random() * 2 };
     }
-    if (kind === 'spark') return { kind, x: Math.random() * VW, y: 560 + Math.random() * 80, vx: -(60 + Math.random() * 120), vy: -(60 + Math.random() * 160), life: .4 + Math.random() * .8 };
+    // Sparks leap out of the molten river under the floor grating, so their
+    // arcs visibly connect the glow to the machinery above it.
+    if (kind === 'spark') return { kind, x: Math.random() * VW, y: 672 + Math.random() * 40, vx: -(60 + Math.random() * 120), vy: -(140 + Math.random() * 240), life: .4 + Math.random() * .8 };
     if (kind === 'rain') return { kind, x: Math.random() * (VW + 200), y: -20 - Math.random() * VH, vx: -230, vy: 620 + Math.random() * 240, len: 14 + Math.random() * 16 };
+    if (kind === 'dust') {
+      // Gold motes born at a window mouth, drifting down the god-ray direction
+      // toward the nave centre.
+      const wx = [190, 398, 828, 1036][Math.floor(Math.random() * 4)];
+      return { kind, x: wx + 10 + Math.random() * 56, y: 280 + Math.random() * 70, vx: (640 - wx) * .05 + (Math.random() - .5) * 6, vy: 26 + Math.random() * 18, life: 5 + Math.random() * 3 };
+    }
     return { kind: 'heart', x: Math.random() * VW, y: Math.random() * VH * .8, vy: -(8 + Math.random() * 16), s: 4 + Math.random() * 8, a: Math.random() * 6 };
   }
 
@@ -921,14 +932,15 @@
       a.x += (a.vx || 0) * dt - 26 * dt * gameSpeed;
       a.y += (a.vy || 0) * dt;
       if (a.kind === 'spark') a.vy += 480 * dt;
-      if (a.kind === 'smoke') a.r += dt * 6;
+      if (a.kind === 'smoke') { a.r += dt * 6; a.x -= dt * (560 - a.y) * .05; }  // wind shear grows with altitude
       if (a.a !== undefined) a.a += dt * 3;
       if (a.life !== undefined) a.life -= dt;
     }
     ambient = ambient.filter(a => a.y > -60 && a.y < VH + 40 && a.x > -80 && (a.life === undefined || a.life > 0));
-    const cap = { aqua: 26, factory: 24, storm: 70, palace: 20 }[theme] || 0;
+    let cap = { aqua: 26, factory: 24, storm: 70, palace: 26 }[theme] || 0;
+    if (theme === 'palace') cap += Math.round(palaceBossMix * 8);   // more petals while the queen fights
     while (ambient.length < cap) {
-      const kind = theme === 'aqua' ? 'bubble' : theme === 'palace' ? 'heart' : theme === 'storm' ? 'rain' : Math.random() < .58 ? 'smoke' : 'spark';
+      const kind = theme === 'aqua' ? 'bubble' : theme === 'palace' ? (Math.random() < .6 ? 'heart' : 'dust') : theme === 'storm' ? 'rain' : Math.random() < .58 ? 'smoke' : 'spark';
       const fresh = makeAmbient(kind);
       if (kind === 'bubble') fresh.y = VH - 40;
       if (kind === 'heart') fresh.y = VH - 30;
@@ -2680,6 +2692,158 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
+  // --- Shared pseudo-3D foundation ---------------------------------------
+  // proj3 projects a world point through a fixed-focal pinhole camera onto the
+  // screen. x/y are screen units on the z=0 gameplay plane, z recedes into the
+  // scene (px). Parallax from bgCamX/bgCam grows with depth via camK, making
+  // this the continuous version of the discrete bgLayer(depth) steps
+  // (bgLayer(.5)≈z 6000 / .32≈2400 / .15≈1200 / .1≈700).
+  const FOCAL = 900, HORIZON_Y = 560;
+  const camK = z => Math.min(1, Math.max(0, z) / 1400);
+  function proj3(x, y, z) {
+    const s = FOCAL / (FOCAL + z), k = camK(z);
+    return {
+      x: VW / 2 + (x - VW / 2 + bgCamX * k) * s,
+      y: HORIZON_Y + (y - HORIZON_Y + bgCam * k) * s,
+      s
+    };
+  }
+
+  // Project four [x,y,z] corners and fill the resulting quad.
+  function quad3(corners, fill, alpha = 1) {
+    ctx.save(); ctx.globalAlpha *= alpha; ctx.fillStyle = fill;
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const p = proj3(corners[i][0], corners[i][1], corners[i][2]);
+      i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
+    }
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+
+  // Run an existing screen-space painter at depth z: same projection as proj3
+  // applied via the CTM, so legacy draw helpers can be pushed into the scene
+  // without rewriting their coordinates.
+  function bgLayerZ(z, fn) {
+    const s = FOCAL / (FOCAL + z), k = camK(z);
+    ctx.save();
+    ctx.translate(VW / 2 + bgCamX * k * s, HORIZON_Y + bgCam * k * s);
+    ctx.scale(s, s);
+    ctx.translate(-VW / 2, -HORIZON_Y);
+    fn();
+    ctx.restore();
+  }
+
+  // Aerial perspective: sink a colour toward the stage's mid-sky with distance.
+  // Denser air (smaller FOG_D) reads as storm murk, thinner as palace clarity.
+  // z is bucketed to 100px so the string cache stays tiny.
+  const FOG_D = { neon: 2200, aqua: 2600, factory: 1800, storm: 1400, palace: 3200 };
+  const fogCache = new Map();
+  function fogMix(hex, z) {
+    const bucket = Math.max(0, Math.round(z / 100));
+    const key = stageIndex + hex + '|' + bucket;
+    let c = fogCache.get(key);
+    if (!c) {
+      const stage = stages[stageIndex];
+      const f = 1 - Math.exp(-bucket * 100 / (FOG_D[stage.theme] || 2200));
+      const a = parseInt(hex.slice(1), 16), b = parseInt(stage.sky[1].slice(1), 16);
+      const ch = sh => Math.round(((a >> sh) & 255) + (((b >> sh) & 255) - ((a >> sh) & 255)) * f);
+      c = `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+      fogCache.set(key, c);
+    }
+    return c;
+  }
+
+  // Scalar fog factor (0..1) for washing baked facades that fogMix can't tint.
+  const fogAmount = z => 1 - Math.exp(-Math.max(0, z) / (FOG_D[stages[stageIndex].theme] || 2200));
+
+  // Four-normal Lambert-ish face shading with a per-stage key light. boost
+  // (0..1, quantized to .1) lets lightning / boss states punch the lit faces
+  // without allocating new colour strings per frame. Callers feed the result
+  // into drawVolumeBox / quad3 fills; the primitives stay untouched.
+  const STAGE_LIGHT = {
+    neon: { color: '#31e8ff', faces: { top: 1.12, front: 1, left: .82, right: .72 }, tint: .1 },
+    aqua: { color: '#9fd8ff', faces: { top: 1.18, front: 1, left: .8, right: .7 }, tint: .12 },
+    factory: { color: '#ff9f43', faces: { top: .9, front: .78, left: 1.24, right: .64 }, tint: .3 },
+    storm: { color: '#c9ffe2', faces: { top: 1.25, front: .92, left: .8, right: .8 }, tint: .18 },
+    palace: { color: '#ffe15a', faces: { top: 1.3, front: 1, left: .84, right: .74 }, tint: .2 }
+  };
+  const litCache = new Map();
+  function faceLit(hex, normal, boost = 0) {
+    const q = Math.max(0, Math.min(10, Math.round(boost * 10)));
+    const key = stageIndex + hex + normal + q;
+    let c = litCache.get(key);
+    if (!c) {
+      const L = STAGE_LIGHT[stages[stageIndex].theme];
+      const f = (L.faces[normal] || 1) * (1 + q * .05);
+      const t = Math.min(1, L.tint * Math.max(0, f - .95) + q * .04);
+      const n = parseInt(hex.slice(1), 16), l = parseInt(L.color.slice(1), 16);
+      const ch = sh => {
+        const base = Math.min(255, ((n >> sh) & 255) * f);
+        return Math.round(base + (((l >> sh) & 255) - base) * t);
+      };
+      c = `rgb(${ch(16)},${ch(8)},${ch(0)})`;
+      litCache.set(key, c);
+    }
+    return c;
+  }
+
+  // Linear mix of two '#rrggbb' colours as an rgba() string.
+  function mixHexA(a, b, t, alpha = 1) {
+    const ha = parseInt(a.slice(1), 16), hb = parseInt(b.slice(1), 16);
+    const ch = sh => Math.round(((ha >> sh) & 255) + (((hb >> sh) & 255) - ((ha >> sh) & 255)) * t);
+    return `rgba(${ch(16)},${ch(8)},${ch(0)},${alpha})`;
+  }
+
+  // Painter's-algorithm queue for scenes whose elements interleave in depth
+  // (palace columns / chandeliers / god rays). Other stages keep the cheaper
+  // back-to-front call order and never touch this.
+  const volQueue = [];
+  function volPush(z, fn) { volQueue.push({ z, fn }); }
+  function volFlush() {
+    volQueue.sort((a, b) => b.z - a.z);
+    for (const v of volQueue) v.fn();
+    volQueue.length = 0;
+  }
+
+  // True-perspective extruded box. World x-span [x0,x1], y-span [yTop,yBase]
+  // (y grows downward), z-span [z0,z1]. Paints the visible side face, then the
+  // top/underside when the camera can see it, then the front face — and returns
+  // the front rect (all four front corners share z0, so it projects to an
+  // axis-aligned rect) so callers can blit a baked facade into it.
+  function boxZ(x0, x1, yTop, yBase, z0, z1, front, side, topCol, alpha = 1) {
+    const a0 = proj3(x0, yTop, z0), b0 = proj3(x1, yTop, z0);
+    const c0 = proj3(x1, yBase, z0), d0 = proj3(x0, yBase, z0);
+    const a1 = proj3(x0, yTop, z1), b1 = proj3(x1, yTop, z1);
+    const c1 = proj3(x1, yBase, z1), d1 = proj3(x0, yBase, z1);
+    const poly = pts => {
+      ctx.beginPath();
+      for (let i = 0; i < 4; i++) i ? ctx.lineTo(pts[i].x, pts[i].y) : ctx.moveTo(pts[i].x, pts[i].y);
+      ctx.closePath(); ctx.fill();
+    };
+    ctx.save(); ctx.globalAlpha *= alpha;
+    if (side) {
+      ctx.fillStyle = side;
+      if (b1.x < b0.x - .4) poly([b0, b1, c1, c0]);        // right face swings toward the VP
+      else if (a1.x > a0.x + .4) poly([a0, a1, d1, d0]);   // left face
+    }
+    if (topCol) {
+      if (yTop > HORIZON_Y + 2) { ctx.fillStyle = topCol; poly([a0, b0, b1, a1]); }
+      else if (yBase < HORIZON_Y - 2) { ctx.fillStyle = topCol; poly([d0, c0, c1, d1]); }
+    }
+    if (front) { ctx.fillStyle = front; ctx.fillRect(a0.x, a0.y, c0.x - a0.x, c0.y - a0.y); }
+    ctx.restore();
+    return { x: a0.x, y: a0.y, w: c0.x - a0.x, h: c0.y - a0.y, s: a0.s };
+  }
+
+  // Inverse of proj3 on the x axis: the world x that lands on screen x `sx`
+  // at projection scale s. Used to pin far landmarks to a composition spot.
+  const worldXAt = (sx, s) => VW / 2 + (sx - VW / 2) / s;
+
+  // Backdrop quality tier driven by the fps EMA — the generalized form of
+  // drawBokeh's fps<45 skip. 2=full, 1=no reflections/heat shimmer, 0=drop all
+  // enrichment so the worst case never costs more than the pre-3D backdrop.
+  const bgQuality = () => fpsAvg >= 55 ? 2 : fpsAvg >= 45 ? 1 : 0;
+
   // Extruded box primitive used by the stage-volume pass. The back face shifts
   // toward the screen-centre vanishing point, so left and right objects expose
   // opposite side faces instead of looking like uniformly skewed cardboard.
@@ -2797,6 +2961,24 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         ctx.save(); ctx.globalAlpha = .42; ctx.fillStyle = stage.accent;
         ctx.fillRect(tx - 38, 338, 4, 202); ctx.fillRect(tx + 28, 338, 4, 202); ctx.restore();
       }
+      // Underside truss: X-braces between the deck slab and its shadow band
+      // turn the flat underside into readable steelwork.
+      ctx.save(); ctx.globalAlpha = .5; ctx.strokeStyle = '#0d3357'; ctx.lineWidth = 2;
+      for (let x = -64; x < VW + 64; x += 64) {
+        ctx.beginPath(); ctx.moveTo(x, deckY + 22); ctx.lineTo(x + 64, deckY + 42); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x + 64, deckY + 22); ctx.lineTo(x, deckY + 42); ctx.stroke();
+      }
+      ctx.restore();
+      // Piers carry the deck down to the sea; each casts a smeared reflection.
+      for (const px of [120, 500, 780, 1160]) {
+        drawVolumeBox(px - 14, deckY + 40, 28, 80, 9, '#0a2444', '#04101f', '#123a5e', .8);
+        if (bgQuality() >= 1) drawWaterStreak(px, deckY + 124, 16, 46, stage.accent, .13);
+      }
+      // Tower reflections smear below the deck line.
+      if (bgQuality() >= 1) for (const tx of [318, 956]) {
+        drawWaterStreak(tx - 32, deckY + 50, 12, 88, stage.accent, .16);
+        drawWaterStreak(tx + 32, deckY + 50, 12, 88, stage.accent, .16);
+      }
       // Deck lane streaks shrink toward the centre.
       ctx.fillStyle = 'rgba(255,255,255,.45)';
       const laneOff = (elapsed * 150) % 92;
@@ -2866,22 +3048,32 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
 
   function drawPalaceVolume(stage) {
+    const dim = 1 - palaceBossMix * .3;
     bgLayer(.08, () => {
-      // Nested arches shrink toward the central throne-room vanishing point.
-      // Each arch is built from extruded pillars and a top beam, creating a
-      // corridor rather than a single flat row of columns.
+      // Ribbed gothic vault: six arches recede toward the throne's vanishing
+      // point. Extruded pillars carry a dark vault web closed by a gold rib —
+      // the ceiling of a cathedral nave rather than a row of beams.
       for (let i = 5; i >= 0; i--) {
         const t = i / 6, inset = 72 + t * 350, topY = 228 + t * 190;
         const baseY = 650, pw = 46 - t * 24, depth = 24 - t * 13;
-        const alpha = .26 + (1 - t) * .42;
+        const alpha = (.26 + (1 - t) * .42) * dim;
         drawVolumeBox(inset, topY, pw, baseY - topY, depth, '#2c0a24', '#10030e', '#7b2051', alpha, hexA('#ffe15a', .32));
         drawVolumeBox(VW - inset - pw, topY, pw, baseY - topY, depth, '#2c0a24', '#10030e', '#7b2051', alpha, hexA('#ffe15a', .32));
-        drawVolumeBox(inset, topY, VW - inset * 2, 22, depth, '#3a0d2d', '#130411', '#9a2b61', alpha, hexA(stage.accent2, .42));
-        ctx.save(); ctx.globalAlpha = alpha * .55; ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(VW / 2, topY + 22, (VW - inset * 2) * .22, Math.PI, 0); ctx.stroke(); ctx.restore();
+        const span = VW / 2 - inset - pw / 2;
+        ctx.save();
+        ctx.globalAlpha = alpha * .8;
+        ctx.strokeStyle = '#22071c'; ctx.lineWidth = 30 - t * 12;
+        ctx.beginPath(); ctx.ellipse(VW / 2, topY + 26, span, 190 - t * 88, 0, Math.PI * 1.02, Math.PI * 1.98); ctx.stroke();
+        ctx.globalAlpha = alpha * .9;
+        ctx.strokeStyle = faceLit('#8a6a1f', 'top', Math.min(1, bossCrit) * .4); ctx.lineWidth = 4.5 - t * 2;
+        ctx.beginPath(); ctx.ellipse(VW / 2, topY + 26, span - (15 - t * 6), 176 - t * 82, 0, Math.PI * 1.03, Math.PI * 1.97); ctx.stroke();
+        ctx.restore();
       }
     });
-    drawVolumeFloor(stage, { horizon: 506, bottom: 744, color: '#ffd27a', alpha: .17, speed: .34 });
+    // The guardian effigies stand proud of the vault ribs — drawn here, after
+    // the architecture, so the dark rib pillars never bury their gold.
+    drawPalaceStatues(stage);
+    drawVolumeFloor(stage, { horizon: 506, bottom: 744, color: '#ffd27a', alpha: .17 * dim, speed: .34 });
     drawPalaceGround(stage);
   }
 
@@ -2950,6 +3142,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.globalAlpha = .35; ctx.fillStyle = '#7b174e';
       ctx.beginPath(); ctx.moveTo(12, 84); ctx.quadraticCurveTo(115, 180, 28, 330); ctx.lineTo(-20, 330); ctx.lineTo(-20, 84); ctx.fill();
       ctx.beginPath(); ctx.moveTo(VW - 12, 84); ctx.quadraticCurveTo(VW - 115, 180, VW - 28, 330); ctx.lineTo(VW + 20, 330); ctx.lineTo(VW + 20, 84); ctx.fill();
+      // gilded fillet + heart studs on the near pillars
+      ctx.globalAlpha = .7; ctx.fillStyle = '#c9a13b';
+      ctx.fillRect(20, 84, 4, 590); ctx.fillRect(VW - 24, 84, 4, 590);
+      ctx.fillStyle = '#ffe15a';
+      for (let y = 150; y < 650; y += 125) { heartPath(22, y, 6); ctx.fill(); heartPath(VW - 22, y, 6); ctx.fill(); }
     }
     ctx.restore();
   }
@@ -3036,6 +3233,77 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.globalAlpha = 1;
   }
 
+  // Baked high-rise facade: a window grid with a deterministic mix of lit,
+  // dark and curtained cells, plus one vertical neon sign strip. Bake once,
+  // blit into whatever perspective rect boxZ hands back.
+  function neonTowerSprite(v) {
+    return bakeSprite('neonTower' + v, 96, 340, bc => {
+      const g = bc.createLinearGradient(0, 0, 96, 0);
+      g.addColorStop(0, '#191243'); g.addColorStop(.42, '#241a57'); g.addColorStop(1, '#0d0930');
+      bc.fillStyle = g; bc.fillRect(0, 0, 96, 340);
+      let s = v * 977 + 13;
+      const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+      const cols = ['#31e8ff', '#ff3e9d', '#ffe15a', '#8d7bff'];
+      for (let fy = 10; fy < 332; fy += 14) {
+        const floorLit = rnd() > .3;
+        for (let fx = 7; fx < 88; fx += 12) {
+          const r = rnd();
+          bc.fillStyle = (!floorLit || r < .35) ? 'rgba(8,6,28,.9)' : hexA(cols[(r * 17 | 0) % 4], .28 + r * .6);
+          bc.fillRect(fx, fy, 8, 9);
+        }
+      }
+      const sx2 = v % 2 ? 78 : 4, c = cols[v % 4];
+      bc.fillStyle = '#07051d'; bc.fillRect(sx2, 26, 14, 118);
+      bc.strokeStyle = c; bc.lineWidth = 2; bc.strokeRect(sx2 + 1, 27, 12, 116);
+      bc.fillStyle = c;
+      for (let i = 0; i < 5; i++) bc.fillRect(sx2 + 4, 34 + i * 22, 6, 12);
+      bc.fillStyle = '#2a1e5e'; bc.fillRect(0, 0, 96, 6);
+      bc.fillStyle = hexA(c, .8); bc.fillRect(0, 0, 96, 2);
+    });
+  }
+
+  // True-3D city canyon: two ranks of extruded towers cross the scene through
+  // the shared pinhole camera — near facades slide faster than far ones
+  // automatically, side faces aim at the one vanishing point and each rank
+  // sinks into the haze with distance. Bases anchor to the near-city ground
+  // band so nothing floats.
+  function drawNeonCanyon(stage) {
+    const q = bgQuality();
+    if (!q) return;
+    const ranks = q === 2 ? [[1900, 470, .55], [950, 590, .78]] : [[950, 590, .78]];
+    for (const [z, gap, alpha] of ranks) {
+      const s = FOCAL / (FOCAL + z);
+      const yBase = HORIZON_Y + 78 / s;               // projected base ≈ y638, behind the near city strip
+      const t0 = elapsed * 120;
+      const half = (VW / 2 + 90) / s;
+      const k0 = Math.floor((VW / 2 - half + t0) / gap), k1 = Math.ceil((VW / 2 + half + t0) / gap);
+      const fog = fogAmount(z);
+      const side = fogMix('#0a0726', z);
+      for (let k = k0; k <= k1; k++) {
+        const wx = k * gap - t0;
+        const h = 560 + (((k * 73) % 7) + 7) % 7 * 62;
+        const bw = gap * .62;
+        const r = boxZ(wx, wx + bw, yBase - h, yBase, z, z + 280, null, side, null, alpha);
+        if (r.x > VW + 60 || r.x + r.w < -60) continue;
+        ctx.save(); ctx.globalAlpha = alpha;
+        blit(neonTowerSprite(((k % 4) + 4) % 4), r.x, r.y, r.w, r.h);
+        ctx.globalAlpha = alpha * fog * .85;
+        ctx.fillStyle = stage.sky[1]; ctx.fillRect(r.x, r.y, r.w, r.h);
+        // rooftop antenna with a blinking aviation beacon on every third tower
+        if (((k % 3) + 3) % 3 === 0) {
+          const ax = r.x + r.w * .5;
+          ctx.globalAlpha = alpha * .8; ctx.strokeStyle = '#241a57'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(ax, r.y); ctx.lineTo(ax, r.y - 34 * r.s); ctx.stroke();
+          const tw = .5 + Math.sin(elapsed * 2.4 + k * 1.7) * .5;
+          ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = alpha * tw;
+          ctx.fillStyle = '#ff5a5a';
+          ctx.beginPath(); ctx.arc(ax, r.y - 34 * r.s, 1.6 + 1.8 * r.s, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+  }
+
   function drawNeonBackdrop(stage) {
     bgLayer(.5, () => {
       drawMoon(970, 145, 42, '#fff3aa', 'rgba(255,225,90,A)');
@@ -3052,6 +3320,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       draw109Tower(stage);
     });
     drawDepthHaze(stage, .55);
+    drawNeonCanyon(stage);
     bgLayer(.15, () => {
       for (const p of bgProps) if (p.kind === 'car') drawFlyingCar(p, stage);
       drawCity((elapsed * -20) % 120, 600, stage.city, 54, .78, 18);
@@ -3568,19 +3837,38 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function drawAquaGround(stage) {
     const ground = 650;
     // open sea filling the band, foam lines rolling under the deck
-    const sea = ctx.createLinearGradient(0, ground, 0, VH);
-    sea.addColorStop(0, '#0b3f66'); sea.addColorStop(1, '#031225');
+    const sea = cachedGrad('aquaNearSea', () => {
+      const gr = ctx.createLinearGradient(0, ground, 0, VH);
+      gr.addColorStop(0, '#0b3f66'); gr.addColorStop(1, '#031225');
+      return gr;
+    });
     ctx.fillStyle = sea; ctx.fillRect(0, ground, VW, VH - ground);
+    // Near swell: this is the closest water on screen, so the rolling rows are
+    // big and slow with bright crest specular — the camera-side counterpart of
+    // drawOcean's fog-sunk far bands.
     ctx.save();
-    for (let i = 0; i < 3; i++) {
-      const y = 676 + i * 16;
-      ctx.globalAlpha = .3 - i * .08; ctx.strokeStyle = '#bdf3ff'; ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      const t = i / 3;
+      const y0 = 662 + i * 19, amp = 5 + t * 7;
+      const pts = [];
+      for (let x = -30; x <= VW + 30; x += 26) {
+        pts.push({ x, y: y0 + Math.sin(x * (.02 - t * .008) + elapsed * (1.3 + t * .8) + i * 2.1) * amp });
+      }
+      ctx.globalAlpha = .5;
+      ctx.fillStyle = ['#0e4a75', '#0a3a60', '#07294a', '#041b35'][i];
       ctx.beginPath();
-      for (let x = -20; x <= VW + 20; x += 16) {
-        const yy = y + Math.sin(x * .045 + elapsed * (2.2 - i * .5) + i * 2) * 4;
-        if (x === -20) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (const p2 of pts) ctx.lineTo(p2.x, p2.y);
+      ctx.lineTo(VW + 30, VH + 30); ctx.lineTo(-30, VH + 30);
+      ctx.closePath(); ctx.fill();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = i % 2 ? stage.accent : '#bdf3ff'; ctx.lineWidth = 1.4 + t * 1.4; ctx.globalAlpha = .1 + t * .16;
+      ctx.beginPath();
+      for (let j = 1; j < pts.length; j++) {
+        if (pts[j].y < pts[j - 1].y) { ctx.moveTo(pts[j - 1].x, pts[j - 1].y); ctx.lineTo(pts[j].x, pts[j].y); }
       }
       ctx.stroke();
+      ctx.globalCompositeOperation = 'source-over';
     }
     ctx.restore();
     // the highway deck the player actually walks on
@@ -3655,15 +3943,76 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   function drawPalaceGround(stage) {
     const ground = 650;
-    const base = ctx.createLinearGradient(0, ground, 0, VH);
-    base.addColorStop(0, '#3a0f2e'); base.addColorStop(1, '#12030f');
+    const base = cachedGrad('palGroundBase', () => {
+      const g = ctx.createLinearGradient(0, ground, 0, VH);
+      g.addColorStop(0, '#3a0f2e'); g.addColorStop(1, '#12030f');
+      return g;
+    });
     ctx.fillStyle = base; ctx.fillRect(0, ground, VW, VH - ground);
-    // marble tiles with gold seams
-    const off = (elapsed * 100) % 110;
-    ctx.save(); ctx.globalAlpha = .55;
-    for (let x = -off - 110; x < VW + 110; x += 110) {
-      ctx.strokeStyle = 'rgba(255,225,90,.5)'; ctx.lineWidth = 2; ctx.strokeRect(x, ground + 8, 104, 58);
-      ctx.fillStyle = 'rgba(255,255,255,.06)'; ctx.fillRect(x + 4, ground + 12, 44, 20);
+    // True-perspective marble checker: rows bunch quadratically toward the
+    // horizon and column seams converge on the throne's vanishing point while
+    // scrolling with the stage.
+    const VPX = 640, rows = 3, tileW = 130;
+    const drift = (elapsed * 1.1) % 2;
+    ctx.save(); ctx.globalAlpha = .8;
+    for (let r = 0; r < rows; r++) {
+      const t0 = r / rows, t1 = (r + 1) / rows;
+      const y0 = ground + 2 + 68 * Math.pow(t0, 1.4), y1 = ground + 2 + 68 * Math.pow(t1, 1.4);
+      const s0 = (y0 - 520) / 200, s1 = (y1 - 520) / 200;
+      for (let k = -9; k < 19; k++) {
+        const wx0 = (k - drift) * tileW, wx1 = wx0 + tileW;
+        const ax = VPX + (wx0 - VPX) * s0, bx = VPX + (wx1 - VPX) * s0;
+        const cx2 = VPX + (wx1 - VPX) * s1, dx = VPX + (wx0 - VPX) * s1;
+        if (Math.max(bx, cx2) < -40 || Math.min(ax, dx) > VW + 40) continue;
+        ctx.fillStyle = (k + r) % 2 ? '#4a1136' : '#2c0a26';
+        ctx.beginPath(); ctx.moveTo(ax, y0); ctx.lineTo(bx, y0); ctx.lineTo(cx2, y1); ctx.lineTo(dx, y1); ctx.closePath(); ctx.fill();
+      }
+      ctx.strokeStyle = 'rgba(255,225,90,.22)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, y1); ctx.lineTo(VW, y1); ctx.stroke();
+    }
+    ctx.restore();
+    // Coloured light pooling on the polished floor: the rose window's glass
+    // beneath the vanishing point, plus a faint gold glint under each
+    // chandelier. Mirrors without a mirror pass.
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const mix = Math.max(palaceBossMix * .6, Math.min(1, bossCrit));
+    const pool = ctx.createRadialGradient(640, 688, 8, 640, 688, 230);
+    pool.addColorStop(0, mixHexA('#ff9ccf', '#ff2a3c', mix, .12 + Math.sin(elapsed * .8) * .03));
+    pool.addColorStop(.6, mixHexA('#ffd76a', '#ff2a3c', mix, .05));
+    pool.addColorStop(1, 'rgba(255,120,60,0)');
+    ctx.fillStyle = pool; ctx.beginPath(); ctx.ellipse(640, 688, 230, 26, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = .5 * (1 - palaceBossMix * .45);
+    for (const gx of [300, 985]) {
+      const gl = ctx.createRadialGradient(gx, 682, 3, gx, 682, 70);
+      gl.addColorStop(0, 'rgba(255,215,106,.22)'); gl.addColorStop(1, 'rgba(255,180,60,0)');
+      ctx.fillStyle = gl; ctx.beginPath(); ctx.ellipse(gx, 682, 70, 12, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+    // Mirror-polish reflections: stained glass drops colour smears below each
+    // window and the guardian statues leave tall gold smears; loose gold
+    // glints slide by with the floor. All additive and low alpha.
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const winMix = Math.max(palaceBossMix * .6, Math.min(1, bossCrit));
+    for (let i = 0; i < PALACE_WINDOWS.length; i++) {
+      const wx = PALACE_WINDOWS[i][0] + 37;
+      const g2 = ctx.createLinearGradient(0, ground, 0, ground + 64);
+      g2.addColorStop(0, mixHexA('#ff9ccf', '#ff2a3c', winMix, .12 + Math.sin(elapsed * .8 + i) * .03));
+      g2.addColorStop(1, 'rgba(255,60,120,0)');
+      ctx.fillStyle = g2; ctx.fillRect(wx - 26, ground, 52, 64);
+    }
+    for (const sx2 of [188, 1092]) {
+      const g3 = ctx.createLinearGradient(0, ground, 0, ground + 54);
+      g3.addColorStop(0, 'rgba(255,215,106,.14)'); g3.addColorStop(1, 'rgba(255,180,60,0)');
+      ctx.fillStyle = g3; ctx.fillRect(sx2 - 22, ground, 44, 54);
+    }
+    ctx.fillStyle = '#ffe6a0';
+    for (let i = 0; i < 6; i++) {
+      const tw = Math.max(0, Math.sin(elapsed * 1.7 + i * 2.4));
+      if (tw < .4) continue;
+      ctx.globalAlpha = (tw - .4) * .5;
+      const gx = ((i * 227 - elapsed * 40) % (VW + 80) + VW + 80) % (VW + 80) - 40;
+      const gy = ground + 14 + (i * 37) % 46;
+      ctx.beginPath(); ctx.moveTo(gx - 5, gy); ctx.lineTo(gx, gy - 3); ctx.lineTo(gx + 5, gy); ctx.lineTo(gx, gy + 3); ctx.closePath(); ctx.fill();
     }
     ctx.restore();
     // heart-emblem red carpet runner
@@ -3733,6 +4082,17 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.restore();
     });
     drawDepthHaze(stage, .4);
+    // A second span of the same highway sinks into the haze near the horizon —
+    // the strongest single depth anchor the open sea can get.
+    bgLayerZ(2100, () => {
+      ctx.save(); ctx.globalAlpha = .9;
+      ctx.fillStyle = fogMix('#0a2a50', 2100);
+      ctx.fillRect(-260, 538, VW + 520, 18);
+      for (const tx of [140, 1140]) { ctx.fillRect(tx - 13, 372, 26, 172); ctx.fillRect(tx - 22, 396, 44, 10); }
+      ctx.strokeStyle = fogMix('#65fff2', 2100); ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(-260, 402); ctx.quadraticCurveTo(640, 566, 1540, 402); ctx.stroke();
+      ctx.restore();
+    });
     bgLayer(.15, () => {
       ctx.save(); ctx.globalAlpha = .5; ctx.fillStyle = stage.far;
       ctx.beginPath(); ctx.ellipse(430, 560, 150, 42, 0, Math.PI, 0); ctx.fill();
@@ -3741,7 +4101,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       for (const p of bgProps) if (p.kind === 'lighthouse') drawLighthouse(p);
     });
     drawOcean(stage);
-    for (const p of bgProps) { if (p.kind === 'fish') drawFish(p, stage); else if (p.kind === 'bigFish') drawBigFish(p, stage); }
+    drawAquaTanker(stage);
+    // Light smears on the water under the lighthouse lamp, aligned to its layer.
+    if (bgQuality() >= 1) bgLayer(.15, () => {
+      for (const p of bgProps) if (p.kind === 'lighthouse') drawWaterStreak(p.x, 570, 26, 78, '#ffe15a', .26);
+    });
+    for (const p of bgProps) {
+      if (p.kind === 'fish') drawFish(p, stage);
+      else if (p.kind === 'bigFish') { drawBigFishShadow(p, stage); drawBigFish(p, stage); }
+    }
     drawHighway(stage);
   }
 
@@ -3818,11 +4186,75 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
+  // Broken vertical light streak — how a point light smears over rolling water.
+  // Slices shear sideways with independent phases so the streak shimmers.
+  function drawWaterStreak(x, topY, w, h, color, alpha = .3) {
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    const n = 7;
+    for (let i = 0; i < n; i++) {
+      const t = i / n;
+      const sw = w * (1 - t * .5) * (.6 + Math.abs(Math.sin(elapsed * 2.1 + i * 1.4 + x * .05)) * .6);
+      ctx.globalAlpha = alpha * (1 - t * .8);
+      ctx.fillStyle = color;
+      ctx.fillRect(x - sw / 2 + Math.sin(elapsed * 1.6 + i * 2.2 + x * .11) * (3 + t * 7), topY + t * h, sw, h / n * .55);
+    }
+    ctx.restore();
+  }
+
   function drawOcean(stage) {
     const top = 556;
-    const g = ctx.createLinearGradient(0, top, 0, VH);
-    g.addColorStop(0, '#0a3a66'); g.addColorStop(1, '#031228');
+    const g = cachedGrad('oceanBase', () => {
+      const gr = ctx.createLinearGradient(0, top, 0, VH);
+      gr.addColorStop(0, '#0a3a66'); gr.addColorStop(1, '#031228');
+      return gr;
+    });
     ctx.fillStyle = g; ctx.fillRect(0, top, VW, VH - top);
+    const q = bgQuality();
+    if (q > 0) {
+      // Perspective swell: polyline bands whose spacing comes from inverting
+      // the pinhole projection (y -> z), so wave rows bunch physically toward
+      // the horizon. Far rows sink into the sky via fogMix; crest back-slopes
+      // catch an accent specular, brighter as the water nears the camera.
+      const NB = 12, bottom = 700, lerpHex = (a, b, t) => {
+        const ha = parseInt(a.slice(1), 16), hb = parseInt(b.slice(1), 16);
+        const ch = sh => (Math.round(((ha >> sh) & 255) + (((hb >> sh) & 255) - ((ha >> sh) & 255)) * t)).toString(16).padStart(2, '0');
+        return '#' + ch(16) + ch(8) + ch(0);
+      };
+      let prev = null;
+      ctx.save();
+      for (let i = 0; i <= NB; i++) {
+        const t = i / NB;
+        const y0 = 560.5 + (bottom - 560.5) * t * t;
+        // The visible strip is only ~90px tall, so the raw pinhole distance
+        // saturates the fog — scale it down to keep contrast in the near rows.
+        const z = FOCAL * ((bottom - HORIZON_Y) / (y0 - HORIZON_Y) - 1) * .28;
+        const amp = .8 + 15 * Math.pow(t, 1.6), freq = .015 - .009 * t, spd = .8 + t * 1.2;
+        const pts = [];
+        for (let x = -40; x <= VW + 40; x += 32) {
+          pts.push({ x, y: y0 + Math.sin(x * freq + elapsed * spd + i * 2.4) * amp });
+        }
+        if (prev) {
+          ctx.globalAlpha = .95;
+          ctx.fillStyle = fogMix(lerpHex('#1a5c8c', '#04182e', t), z);
+          ctx.beginPath();
+          ctx.moveTo(prev[0].x, prev[0].y - 1);
+          for (const p2 of prev) ctx.lineTo(p2.x, p2.y - 1);
+          for (let j = pts.length - 1; j >= 0; j--) ctx.lineTo(pts[j].x, pts[j].y + 1);
+          ctx.closePath(); ctx.fill();
+          // Specular on segments whose slope faces the light (descending left).
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.strokeStyle = stage.accent; ctx.lineWidth = 1 + t * 2; ctx.globalAlpha = .08 + .3 * t;
+          ctx.beginPath();
+          for (let j = 1; j < pts.length; j++) {
+            if (pts[j].y < pts[j - 1].y) { ctx.moveTo(pts[j - 1].x, pts[j - 1].y); ctx.lineTo(pts[j].x, pts[j].y); }
+          }
+          ctx.stroke();
+          ctx.globalCompositeOperation = 'source-over';
+        }
+        prev = pts;
+      }
+      ctx.restore();
+    }
     // Moon's rippling reflection: broken horizontal glints down the water column.
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < 14; i++) {
@@ -3833,21 +4265,76 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillRect(210 - w / 2 + Math.sin(elapsed * 1.8 + i) * 10, y, w, 3);
     }
     ctx.restore();
-    ctx.save(); ctx.globalAlpha = .18; ctx.fillStyle = '#bfefff';
-    for (let i = 0; i < 6; i++) ctx.fillRect(180 + Math.sin(elapsed * 2 + i) * 14 - i * 4, top + 10 + i * 15, 70 - i * 8, 4);
-    ctx.restore();
-    ctx.save();
-    for (let row = 0; row < 4; row++) {
-      ctx.strokeStyle = row % 2 ? stage.accent : stage.accent2; ctx.lineWidth = 2; ctx.globalAlpha = .3 - row * .05;
-      ctx.beginPath();
-      const y0 = top + 8 + row * 24;
-      for (let x = -40; x <= VW + 40; x += 26) {
-        const y = y0 + Math.sin(x * .02 + elapsed * (1.4 + row * .3) + row * 2) * 5;
-        x === -40 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    // Expanding surface ripples where the big fish broke the water. Perspective
+    // ellipses, not radial shockwaves (those read as a gameplay hazard cue).
+    if (aquaRings.length) {
+      aquaRings = aquaRings.filter(r => elapsed - r.birth > -2 && elapsed - r.birth < 1.5);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      for (const r of aquaRings) {
+        const a = elapsed - r.birth;
+        if (a < 0) continue;
+        const k = a / 1.5;
+        ctx.globalAlpha = .32 * (1 - k);
+        ctx.strokeStyle = '#bfefff'; ctx.lineWidth = 2.6 - k * 1.6;
+        ctx.beginPath(); ctx.ellipse(r.x, r.y, 26 + k * 200, (26 + k * 200) * .2, 0, 0, Math.PI * 2); ctx.stroke();
       }
+      ctx.restore();
+    }
+  }
+
+  // A laden container ship crawls across the bay behind the bridge — the slow,
+  // huge landmark that sells the scale of open water. Hull, superstructure and
+  // container stacks are all genuine projected volumes at one depth, so the
+  // whole ship shrinks, fogs and parallaxes as a single object.
+  function drawAquaTanker(stage) {
+    if (bgQuality() < 1) return;
+    const z = 1500, s = FOCAL / (FOCAL + z);
+    const hullL = 940, wl = 597, deckY = wl - 128;
+    const spanW = (VW + 160) / s + 1400;   // short off-screen rest: the ship is a near-permanent landmark
+    const x0 = VW / 2 + spanW / 2 - (elapsed * 30) % spanW - hullL; // bow (left edge) world x
+    const p0 = proj3(x0, deckY, z), p1 = proj3(x0 + hullL, deckY, z);
+    if (p1.x < -80 || p0.x > VW + 80) return;
+    ctx.save();
+    // hull with a raked bow (sailing left) + boot-top stripe + deck rail
+    quad3([[x0, deckY, z], [x0 + hullL, deckY, z], [x0 + hullL, wl, z], [x0 + 52, wl, z]], fogMix('#0b2038', z), .94);
+    quad3([[x0 + 40, wl - 9, z], [x0 + hullL, wl - 9, z], [x0 + hullL, wl, z], [x0 + 52, wl, z]], fogMix('#6e2233', z), .9);
+    quad3([[x0, deckY, z], [x0 + hullL, deckY, z], [x0 + hullL, deckY + 6, z], [x0, deckY + 6, z]], fogMix('#9fd8ff', z), .5);
+    // container stacks
+    const cols = ['#1e6f8f', '#8f4a2c', '#3c7a4f', '#6f2f56', '#2c5f8f'];
+    let ci = 0;
+    for (let cx2 = x0 + 110; cx2 + 96 < x0 + hullL - 200; cx2 += 106) {
+      const tiers = 2 + ((ci * 7) % 2);
+      for (let tk = 0; tk < tiers; tk++) {
+        boxZ(cx2, cx2 + 96, deckY - 27 * (tk + 1), deckY - 27 * tk, z, z + 70,
+          fogMix(cols[(ci + tk) % 5], z), fogMix('#061626', z), null, .92);
+      }
+      ci++;
+    }
+    // bridge castle at the stern, lit rows of windows, funnel and mast light
+    const cr = boxZ(x0 + hullL - 172, x0 + hullL - 46, deckY - 116, deckY, z, z + 80,
+      fogMix('#a9bcca', z), fogMix('#25394c', z), null, .95);
+    ctx.globalAlpha = .8; ctx.fillStyle = hexA(stage.accent, .75);
+    for (let row = 0; row < 2; row++)
+      for (let wk = 0; wk < 5; wk++)
+        ctx.fillRect(cr.x + cr.w * .12 + wk * cr.w * .16, cr.y + cr.h * (.16 + row * .24), cr.w * .09, cr.h * .1);
+    boxZ(x0 + hullL - 128, x0 + hullL - 96, deckY - 152, deckY - 116, z, z + 30,
+      fogMix('#7a2334', z), fogMix('#3a1220', z), null, .92);
+    const mast = proj3(x0 + hullL - 112, deckY - 158, z);
+    const tw = .5 + Math.sin(elapsed * 1.8) * .5;
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = tw * .85;
+    ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.arc(mast.x, mast.y, 2.2, 0, Math.PI * 2); ctx.fill();
+    // bow wake: white shear lines trailing back along the waterline
+    const bowP = proj3(x0 + 46, wl, z);
+    ctx.globalAlpha = .3; ctx.strokeStyle = '#bfefff'; ctx.lineWidth = 1.6;
+    for (let i = 0; i < 3; i++) {
+      const wy = bowP.y + 1 + i * 2.4;
+      ctx.beginPath(); ctx.moveTo(bowP.x + 4, wy);
+      ctx.lineTo(bowP.x + 34 + i * 26 + Math.sin(elapsed * 2 + i * 1.8) * 7, wy + 1);
       ctx.stroke();
     }
     ctx.restore();
+    // smeared light reflection under the castle
+    drawWaterStreak((cr.x + cr.w / 2), bowP.y + 2, 22, 44, '#9fd8ff', .1);
   }
 
   function drawFish(p, stage) {
@@ -3867,6 +4354,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // physically thrown by a huge body hitting the water. Cosmetic only: plain
   // particles, not a shockwave ring (that reads as a gameplay hazard cue).
   function splashRipple(x, y = 574) {
+    // Surface rings spread out from the entry point with a slight stagger.
+    for (let i = 0; i < 3; i++) aquaRings.push({ x: x - 10 + i * 20, y: y + 14, birth: elapsed + i * .18 });
     for (let i = 0; i < 46; i++) {
       const a = -Math.PI / 2 + (Math.random() - .5) * 2.6;
       const v = 300 + Math.random() * 420;
@@ -3876,6 +4365,25 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         size: 4 + Math.random() * 11, gravity: 360,
       });
     }
+  }
+
+  // Dark displacement patch + accent glint tracking the leaping fish across the
+  // water — it anchors the huge airborne body to the sea it left. Widest at
+  // take-off/entry, tightest at the apex, like a real cast shadow.
+  function drawBigFishShadow(p, stage) {
+    const ph = p.phase || 0;
+    if (ph <= 0 || ph > BIGFISH_DUR) return;
+    const t = ph / BIGFISH_DUR;
+    const lift = Math.sin(t * Math.PI);
+    const x = p.x - t * BIGFISH_TRAVEL;
+    const rx = 330 * (1 - lift * .5);
+    ctx.save();
+    ctx.globalAlpha = .3 * lift; ctx.fillStyle = '#03101f';
+    ctx.beginPath(); ctx.ellipse(x, 594, rx, 15, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .2 * lift;
+    ctx.strokeStyle = stage.accent; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(x, 594, rx + 16, 19, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
   }
 
   function drawBigFish(p, stage) {
@@ -3965,17 +4473,155 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (let x = -rail; x < VW; x += 130) ctx.fillRect(x, ground - 20, 5, 14);
   }
 
+  // Crepuscular rays fan up from the low sun and cut through the smoky air.
+  // Additive triangles with breathing alpha; count follows the quality tier.
+  function drawSunGodRays(stage) {
+    const q = bgQuality();
+    if (!q) return;
+    const rays = q === 2 ? 6 : 4;
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < rays; i++) {
+      const phi = -Math.PI + .38 + i * ((Math.PI - .76) / (rays - 1)) + Math.sin(elapsed * .1 + i * 2.3) * .04;
+      const len = 880, w = 46 + (i * 37 % 54);
+      ctx.save();
+      ctx.translate(640, 468); ctx.rotate(phi);
+      const g = cachedGrad('facRay' + i + '_' + rays, () => {
+        const gr = ctx.createLinearGradient(0, 0, len, 0);
+        gr.addColorStop(0, 'rgba(255,190,90,.15)'); gr.addColorStop(.5, 'rgba(255,140,60,.05)'); gr.addColorStop(1, 'rgba(255,120,50,0)');
+        return gr;
+      });
+      ctx.fillStyle = g;
+      ctx.globalAlpha = .55 + Math.sin(elapsed * .7 + i * 1.9) * .25;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(len, -w / 2); ctx.lineTo(len, w / 2); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // Twin hyperboloid cooling towers on the far horizon, steam peeling off
+  // their throats into the sunset — the classic heavy-industry silhouette that
+  // reads instantly even as a fog-sunk shape.
+  function drawCoolingTowers(stage) {
+    const q = bgQuality();
+    const z = 2600, s = FOCAL / (FOCAL + z);
+    bgLayerZ(z, () => {
+      for (const [sx, w, h, ph] of [[425, 620, 980, 0], [872, 700, 1080, 2.2]]) {
+        const cx = worldXAt(sx, s);
+        const base = 588, top = base - h;
+        const sunSide = sx < 640 ? 1 : -1;
+        ctx.save();
+        ctx.fillStyle = fogMix('#301430', z);
+        ctx.beginPath();
+        ctx.moveTo(cx - w / 2, base);
+        ctx.bezierCurveTo(cx - w * .16, base - h * .5, cx - w * .38, base - h * .78, cx - w * .3, top);
+        ctx.lineTo(cx + w * .3, top);
+        ctx.bezierCurveTo(cx + w * .38, base - h * .78, cx + w * .16, base - h * .5, cx + w / 2, base);
+        ctx.closePath(); ctx.fill();
+        // throat ellipse + hot rim on the sun-facing flank
+        ctx.fillStyle = fogMix('#1a0a1c', z);
+        ctx.beginPath(); ctx.ellipse(cx, top, w * .3, w * .06, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = .75; ctx.strokeStyle = hexA('#ff9f43', .5); ctx.lineWidth = 3 / s;
+        ctx.beginPath();
+        if (sunSide > 0) {
+          ctx.moveTo(cx + w / 2, base);
+          ctx.bezierCurveTo(cx + w * .16, base - h * .5, cx + w * .38, base - h * .78, cx + w * .3, top);
+        } else {
+          ctx.moveTo(cx - w / 2, base);
+          ctx.bezierCurveTo(cx - w * .16, base - h * .5, cx - w * .38, base - h * .78, cx - w * .3, top);
+        }
+        ctx.stroke();
+        // steam column drifting downwind, backlit by the low sun
+        if (q >= 1) {
+          ctx.globalCompositeOperation = 'lighter';
+          for (let i = 0; i < 4; i++) {
+            const t = (elapsed * .06 + ph + i * .25) % 1;
+            const sy = top - 30 - t * 340;
+            const sxo = Math.sin(elapsed * .5 + i * 2 + ph) * (24 + t * 60) + t * 130 * sunSide;
+            const r = w * .17 * (.6 + t);
+            const g2 = ctx.createRadialGradient(cx + sxo, sy, r * .2, cx + sxo, sy, r);
+            g2.addColorStop(0, `rgba(255,205,150,${(.1 * (1 - t)).toFixed(3)})`);
+            g2.addColorStop(1, 'rgba(255,160,90,0)');
+            ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(cx + sxo, sy, r, 0, Math.PI * 2); ctx.fill();
+          }
+        }
+        ctx.restore();
+      }
+    });
+  }
+
+  // Baked smelting shed: corrugated steel wall backlit by the sunset, with a
+  // white-hot furnace mouth under a brick arch. Live flicker goes on top.
+  function furnaceShedSprite() {
+    return bakeSprite('furnaceShed', 190, 120, bc => {
+      const g = bc.createLinearGradient(0, 0, 0, 120);
+      g.addColorStop(0, '#3a1626'); g.addColorStop(1, '#150a14');
+      bc.fillStyle = g; bc.fillRect(0, 10, 190, 110);
+      bc.fillStyle = '#4e2030'; bc.fillRect(0, 0, 190, 12);
+      bc.fillStyle = 'rgba(255,159,67,.5)'; bc.fillRect(0, 0, 190, 3);
+      bc.globalAlpha = .4; bc.fillStyle = '#0d0510';
+      for (let x = 8; x < 190; x += 14) bc.fillRect(x, 14, 4, 106);
+      bc.globalAlpha = 1;
+      const mx = 95, my = 92;
+      bc.fillStyle = '#241019';
+      bc.beginPath(); bc.moveTo(mx - 46, 120); bc.lineTo(mx - 46, my - 18);
+      bc.quadraticCurveTo(mx, my - 62, mx + 46, my - 18); bc.lineTo(mx + 46, 120); bc.closePath(); bc.fill();
+      const mg = bc.createRadialGradient(mx, 112, 4, mx, 112, 52);
+      mg.addColorStop(0, '#fff3b0'); mg.addColorStop(.4, '#ffb347'); mg.addColorStop(.75, '#ff5a36'); mg.addColorStop(1, '#7a1c14');
+      bc.fillStyle = mg;
+      bc.beginPath(); bc.moveTo(mx - 36, 120); bc.lineTo(mx - 36, my - 10);
+      bc.quadraticCurveTo(mx, my - 48, mx + 36, my - 10); bc.lineTo(mx + 36, 120); bc.closePath(); bc.fill();
+      bc.fillStyle = '#170a17'; bc.fillRect(mx - 36, 108, 72, 4); bc.fillRect(mx - 5, 84, 10, 36);
+      for (let i = 0; i < 4; i++) { bc.fillStyle = i % 2 ? '#ffe15a' : '#221018'; bc.fillRect(174, 16 + i * 12, 12, 12); }
+    });
+  }
+
+  // A rank of smelting sheds recedes past the camera in true perspective, each
+  // furnace mouth spilling flickering molten light onto the ground haze.
+  function drawFurnaceRow(stage) {
+    const q = bgQuality();
+    if (!q) return;
+    const z = 1050, s = FOCAL / (FOCAL + z), gap = 620, t0 = elapsed * 46;
+    const yBase = HORIZON_Y + 58 / s;      // projected base ≈ y618, in front of the near skyline strip
+    const half = (VW / 2 + 130) / s;
+    const k0 = Math.floor((VW / 2 - half + t0) / gap), k1 = Math.ceil((VW / 2 + half + t0) / gap);
+    const spr = furnaceShedSprite();
+    const fog = fogAmount(z);
+    for (let k = k0; k <= k1; k++) {
+      const wx = k * gap - t0;
+      const r = boxZ(wx, wx + 400, yBase - 260, yBase, z, z + 300, null, fogMix('#12060f', z), null, .9);
+      if (r.x > VW + 80 || r.x + r.w < -80) continue;
+      ctx.save();
+      ctx.globalAlpha = .9; blit(spr, r.x, r.y, r.w, r.h);
+      ctx.globalAlpha = fog * .7; ctx.fillStyle = stage.sky[1]; ctx.fillRect(r.x, r.y, r.w, r.h);
+      const mx = r.x + r.w / 2, my = r.y + r.h * .95;
+      const flick = .6 + Math.sin(elapsed * 6.3 + k * 2.1) * .25;
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5 * flick;
+      const g2 = ctx.createRadialGradient(mx, my, 3, mx, my, r.w * .3);
+      g2.addColorStop(0, 'rgba(255,240,170,.8)'); g2.addColorStop(.5, 'rgba(255,140,60,.3)'); g2.addColorStop(1, 'rgba(255,90,30,0)');
+      ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(mx, my, r.w * .3, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  }
+
   function drawFactoryBackdrop(stage) {
     bgLayer(.5, () => {
       drawMoon(640, 468, 88, '#ffb347', 'rgba(255,120,60,A)');
+      drawSunGodRays(stage);
       ctx.save(); ctx.globalAlpha = .45; ctx.fillStyle = stage.sky[1];
       for (let i = 0; i < 4; i++) ctx.fillRect(530, 448 + i * 20, 220, 5 + i * 3);
       ctx.restore();
       for (const c of clouds) drawCloud(c, '#ffd9a0', .13);
       drawFactoryFlares(stage);
     });
+    drawCoolingTowers(stage);
     // Far duplicate tank row sunk into the haze behind the main refinery.
     bgLayer(.32, () => drawRefineryTanks(stage, .55, .38, -150));
+    // Extra chimney rank deep in the haze — pure silhouettes, fog-tinted.
+    bgLayerZ(1500, () => {
+      ctx.save(); ctx.globalAlpha = .9; ctx.fillStyle = fogMix('#241028', 1500);
+      for (const [x, w, h] of CHIMNEYS) ctx.fillRect(x * 1.18 - 60, 560 - h * .82, w, h * .82);
+      ctx.restore();
+    });
     drawDepthHaze(stage, .5);
     bgLayer(.15, () => {
       drawRefineryTanks(stage);
@@ -3985,6 +4631,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // gear/hammer are intentionally screen-fixed props — keep them outside bgLayer.
     for (const p of bgProps) if (p.kind === 'gear') drawGear(p, stage);
     drawCity((elapsed * -20) % 120, 600, stage.city, 54, .8, 18);
+    drawFurnaceRow(stage);
     for (const p of bgProps) if (p.kind === 'hammer') drawHammerPress(p, stage);
     drawConveyor(stage);
     drawMoltenRiver(stage);
@@ -4045,6 +4692,21 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       fg.addColorStop(0, '#fff6a0'); fg.addColorStop(.35, '#ff9a32'); fg.addColorStop(1, 'rgba(255,60,20,0)');
       ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(x, y, 38 * flick, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#ffd45a'; ctx.beginPath(); ctx.moveTo(x, y - 30 * flick); ctx.quadraticCurveTo(x + 18, y - 4, x, y + 8); ctx.quadraticCurveTo(x - 16, y - 5, x, y - 30 * flick); ctx.fill();
+      ctx.restore();
+    }
+    // Heat shimmer wavering above the flare tips (full quality only) — soft
+    // additive blobs that wander on offset phases, no displacement filters.
+    if (bgQuality() === 2) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      for (const [x, y] of [[137, 177], [1091, 135], [845, 250]]) {
+        for (let i = 0; i < 3; i++) {
+          const wob = Math.sin(elapsed * (3.1 + i * .9) + x + i * 2) * (6 + i * 5);
+          const hy = y - 42 - i * 34;
+          const g2 = ctx.createRadialGradient(x + wob, hy, 2, x + wob, hy, 26);
+          g2.addColorStop(0, 'rgba(255,170,90,.10)'); g2.addColorStop(1, 'rgba(255,140,60,0)');
+          ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(x + wob, hy, 26, 0, Math.PI * 2); ctx.fill();
+        }
+      }
       ctx.restore();
     }
     ctx.restore();
@@ -4121,6 +4783,22 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // Molten river glowing beneath the conveyor floor grating, with drifting flow glow.
   function drawMoltenRiver(stage) {
     const y0 = 686, y1 = VH;
+    // Receding flow lines: quadratic spacing (perspective bunching) with the
+    // near rows hotter, thicker and wobblier — the river reads as a surface,
+    // not a flat glow strip.
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 4; i++) {
+      const t = i / 3, y = y0 + 3 + (y1 - y0 - 6) * t * t;
+      ctx.globalAlpha = .14 + t * .3;
+      ctx.strokeStyle = i % 2 ? '#ffb347' : '#ff7a2e'; ctx.lineWidth = 1.5 + t * 3;
+      ctx.beginPath();
+      for (let x = -40; x <= VW + 40; x += 34) {
+        const yy = y + Math.sin(x * .03 + elapsed * (1.4 + t) + i * 2) * (1 + t * 2.5);
+        x === -40 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     const off = (elapsed * 42) % 100;
     for (let x = -off; x < VW + 100; x += 100) {
@@ -4138,22 +4816,43 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
 
   function drawCranes(stage) {
-    ctx.save(); ctx.globalAlpha = .45; ctx.fillStyle = stage.far;
+    // Full black silhouettes against the sunset — backlight does the detailing
+    // via a thin hot rim on the sun-facing edges.
+    ctx.save(); ctx.globalAlpha = .82;
     for (const [x, h] of [[300, 130], [700, 100], [1150, 150]]) {
+      ctx.fillStyle = '#170a17';
       ctx.fillRect(x, 560 - h, 10, h);
       ctx.fillRect(x - 60, 560 - h, 150, 8);
       ctx.fillRect(x + 78, 560 - h + 8, 4, 36);
       ctx.fillRect(x + 68, 560 - h + 44, 24, 14);
+      ctx.fillStyle = 'rgba(255,159,67,.5)';
+      ctx.fillRect(x < 640 ? x + 8 : x, 560 - h, 2, h);
+      ctx.fillRect(x - 60, 560 - h, 150, 2);
     }
     ctx.restore();
   }
 
   function drawChimneys() {
     for (const [x, w, h] of CHIMNEYS) {
-      ctx.fillStyle = '#2b1230'; ctx.fillRect(x, 560 - h, w, h);
+      const top = 560 - h, sunSide = x + w / 2 < 640 ? 1 : -1;
+      // Cylinder shading: dark edges with the core highlight pushed toward the
+      // sun, plus an elliptical cap so the stack reads as a tube, not a plank.
+      const g = cachedGrad('chim' + x, () => {
+        const gr = ctx.createLinearGradient(x, 0, x + w, 0);
+        gr.addColorStop(0, '#1c0a20'); gr.addColorStop(.5 + sunSide * .22, '#43203f'); gr.addColorStop(1, '#150818');
+        return gr;
+      });
+      ctx.fillStyle = g; ctx.fillRect(x, top, w, h);
+      ctx.fillStyle = '#241028';
+      ctx.beginPath(); ctx.ellipse(x + w / 2, top, w / 2, w * .16, 0, 0, Math.PI * 2); ctx.fill();
+      // Backlit rim on the sun-facing edge — the low sun draws every stack's
+      // outline in hot metal.
+      ctx.save(); ctx.globalAlpha = .8; ctx.fillStyle = faceLit('#c46a3a', 'left', .2);
+      ctx.fillRect(sunSide > 0 ? x + w - 3 : x, top, 3, h);
+      ctx.restore();
       ctx.save(); ctx.globalAlpha = .5 + Math.sin(elapsed * 3 + x) * .3;
-      ctx.fillStyle = '#ff5a36'; ctx.fillRect(x + 6, 560 - h + 6, w - 12, 5); ctx.restore();
-      ctx.fillStyle = 'rgba(255,225,90,.22)'; ctx.fillRect(x, 560 - h + 20, w, 9);
+      ctx.fillStyle = '#ff5a36'; ctx.fillRect(x + 6, top + 6, w - 12, 5); ctx.restore();
+      ctx.fillStyle = 'rgba(255,225,90,.22)'; ctx.fillRect(x, top + 20, w, 9);
     }
   }
 
@@ -4182,22 +4881,142 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
+  // Bake one puffy cumulonimbus slab. All the soft radial gradients happen
+  // once here; runtime cost is a single drawImage per cloud.
+  function stormCloudSprite(v) {
+    return bakeSprite('stormCloud' + v, 320, 130, bc => {
+      const blobs = [[52, 92, 40], [122, 74, 52], [196, 88, 46], [268, 98, 34], [158, 104, 50]];
+      for (let i = 0; i < blobs.length; i++) {
+        const r = blobs[i][2] * (1 + (((v * 31 + i * 17) % 7) - 3) * .06);
+        const bx = blobs[i][0] + ((v * 53 + i * 29) % 26) - 13, by = blobs[i][1];
+        const g = bc.createRadialGradient(bx, by - r * .25, r * .12, bx, by, r);
+        g.addColorStop(0, '#16443a'); g.addColorStop(.55, '#0b2a22'); g.addColorStop(1, 'rgba(4,16,13,0)');
+        bc.fillStyle = g; bc.beginPath(); bc.arc(bx, by, r, 0, Math.PI * 2); bc.fill();
+      }
+      // Moonlit top rims give the mass a readable upper surface.
+      bc.globalCompositeOperation = 'lighter';
+      bc.globalAlpha = .2; bc.strokeStyle = '#7fdcc0'; bc.lineWidth = 3;
+      for (const [bx, by, r] of blobs) {
+        bc.beginPath(); bc.arc(bx, by - 4, r * .78, Math.PI * 1.15, Math.PI * 1.85); bc.stroke();
+      }
+    });
+  }
+
+  // Three depth ranks of drifting cloud slabs. The nearest rank can flash from
+  // the inside when a bolt lands close — intra-cloud lightning is what sells
+  // the clouds as volumes rather than cardboard.
+  function drawStormCloudRank(rank) {
+    if (bgQuality() === 0 && rank !== 2) return;   // low fps: keep only the hero rank
+    const cfg = [
+      { n: 5, y: 84, sp: 5, s: 1, a: .5 },
+      { n: 4, y: 128, sp: 11, s: 1.45, a: .68 },
+      { n: 3, y: 168, sp: 20, s: 2, a: .88 },
+    ][rank];
+    ctx.save();
+    for (let i = 0; i < cfg.n; i++) {
+      const spr = stormCloudSprite((rank * 3 + i) % 4);
+      const span = VW + 700;
+      const x = span - ((i * 397 + rank * 151 + elapsed * cfg.sp) % span) - 350;
+      const y = cfg.y + Math.sin(elapsed * .18 + i * 2 + rank) * 7 + ((i * 83) % 40);
+      const w = 320 * cfg.s, h = 130 * cfg.s;
+      ctx.globalAlpha = cfg.a;
+      blit(spr, x, y, w, h);
+      if (rank === 2 && lightning > 0 && Math.abs(x + w / 2 - lightningX) < 280) {
+        const k = Math.min(1, lightning * 2.4);
+        const cx2 = x + w / 2, cy2 = y + h * .55;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = k * .85;
+        const g = ctx.createRadialGradient(cx2, cy2, 6, cx2, cy2, w * .4);
+        g.addColorStop(0, 'rgba(224,255,242,.7)'); g.addColorStop(.5, 'rgba(120,255,190,.24)'); g.addColorStop(1, 'rgba(80,255,160,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx2, cy2, w * .4, h * .42, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+        // Re-blit the slab thinly so the glow reads as inside the cloud.
+        ctx.globalAlpha = cfg.a * .55; blit(spr, x, y, w, h);
+      }
+    }
+    ctx.restore();
+  }
+
+  // Baked server-monolith face: obsidian slab with an LED matrix frozen in a
+  // deterministic on/off pattern; live blinking dots and surge rims go on top.
+  function mainframeSprite(v) {
+    return bakeSprite('mainframe' + v, 84, 250, bc => {
+      const g = bc.createLinearGradient(0, 0, 84, 0);
+      g.addColorStop(0, '#0d3a30'); g.addColorStop(.5, '#062019'); g.addColorStop(1, '#03110d');
+      bc.fillStyle = g; bc.fillRect(0, 0, 84, 250);
+      bc.strokeStyle = 'rgba(114,255,104,.4)'; bc.lineWidth = 2; bc.strokeRect(1, 1, 82, 248);
+      let s = v * 613 + 29;
+      const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+      for (let y = 10; y < 240; y += 12) {
+        for (let x = 8; x < 76; x += 10) {
+          const r = rnd();
+          bc.fillStyle = r > .72 ? '#72ff68' : r > .6 ? '#31e8ff' : 'rgba(10,40,32,.9)';
+          bc.fillRect(x, y, 6, 7);
+        }
+      }
+      bc.fillStyle = 'rgba(114,255,104,.5)'; bc.fillRect(40, 6, 3, 238);
+    });
+  }
+
+  // Server monoliths standing in the cloud sea — genuine extruded volumes that
+  // blink idly and flare edge-lit whenever a bolt lands near them.
+  function drawMainframeRow(stage) {
+    const q = bgQuality();
+    if (!q) return;
+    const z = 1500, s = FOCAL / (FOCAL + z), gap = 560, t0 = elapsed * 40;
+    const yBase = HORIZON_Y + 42 / s;      // projected base ≈ y602, sunk toward the cloud sea
+    const half = (VW / 2 + 110) / s;
+    const k0 = Math.floor((VW / 2 - half + t0) / gap), k1 = Math.ceil((VW / 2 + half + t0) / gap);
+    const surge = Math.min(1, lightning * 2.4);
+    const fog = fogAmount(z);
+    for (let k = k0; k <= k1; k++) {
+      const wx = k * gap - t0;
+      const h = 460 + (((k * 37) % 5) + 5) % 5 * 68;
+      const r = boxZ(wx, wx + 230, yBase - h, yBase, z, z + 260, null, fogMix('#02100c', z), null, .85);
+      if (r.x > VW + 80 || r.x + r.w < -80) continue;
+      ctx.save(); ctx.globalAlpha = .85;
+      blit(mainframeSprite(((k % 3) + 3) % 3), r.x, r.y, r.w, r.h);
+      ctx.globalAlpha = fog * .72; ctx.fillStyle = stage.sky[1]; ctx.fillRect(r.x, r.y, r.w, r.h);
+      // live blinking activity LEDs
+      if (q === 2) {
+        ctx.globalAlpha = .8; ctx.fillStyle = '#d8fff0';
+        let sd = Math.abs(k * 131 + Math.floor(elapsed * 7) * 17) % 233280;
+        for (let i = 0; i < 3; i++) {
+          sd = (sd * 9301 + 49297) % 233280;
+          ctx.fillRect(r.x + 4 + (sd % 20) / 20 * (r.w - 10), r.y + 8 + ((sd >> 3) % 100) / 100 * (r.h - 20), 2.4, 2.4);
+        }
+      }
+      if (surge > 0 && Math.abs(r.x + r.w / 2 - lightningX) < 340) {
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = surge * .8;
+        ctx.strokeStyle = stage.accent; ctx.lineWidth = 2;
+        ctx.strokeRect(r.x + .5, r.y + .5, r.w - 1, r.h - 1);
+      }
+      // apex beacon
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = .4 + surge * .6; ctx.fillStyle = stage.accent2;
+      ctx.fillRect(r.x + r.w / 2 - 1.5, r.y - 7, 3, 7);
+      ctx.restore();
+    }
+  }
+
   function drawStormBackdrop(stage) {
     // Circuit seams pulse with each lightning flash for a synced "power surge".
     const surge = .32 + Math.min(1, lightning * 2.4) * .68;
     bgLayer(.5, () => {
       drawStars(26, '#8fffb0', '#4de3a0');
+      drawStormCloudRank(0);
       drawCyberVortex(stage, surge);
       drawWireRings(stage, surge);
       drawDataRoutes(stage, surge);
-      for (const c of clouds) drawCloud(c, '#03120f', .55);
     });
     bgLayer(.32, () => {
+      drawStormCloudRank(1);
       // Ultra-far third spire ridge behind the existing two.
       drawDataSpires((elapsed * -3) % 90, 520, 30, .18, surge * .3);
       drawDataSpires((elapsed * -7) % 126, 545, 44, .34, surge * .5);
     });
     drawDepthHaze(stage, .4);
+    drawMainframeRow(stage);
+    bgLayer(.22, () => drawStormCloudRank(2));
     bgLayer(.15, () => {
       for (const p of bgProps) if (p.kind === 'code') drawCodeColumn(p, stage);
       for (const p of bgProps) if (p.kind === 'panel') drawPanel(p, stage);
@@ -4343,34 +5162,101 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   function drawStormGround(stage) {
     const ground = 650;
-    const g = ctx.createLinearGradient(0, ground, 0, VH);
-    g.addColorStop(0, '#0b2a26'); g.addColorStop(1, '#040d10');
+    const g = cachedGrad('stormSeaBase', () => {
+      const gr = ctx.createLinearGradient(0, ground, 0, VH);
+      gr.addColorStop(0, '#0b2a26'); gr.addColorStop(1, '#040d10');
+      return gr;
+    });
     ctx.fillStyle = g; ctx.fillRect(0, ground, VW, VH - ground);
+    // Rolling cloud sea beneath the data plane: two ranks of baked cloud-top
+    // strips drift and bob; a nearby strike lights their crests white-green.
+    const strip = bakeSprite('stormSeaStrip', 320, 64, bc => {
+      for (let i = 0; i < 6; i++) {
+        const bx = 20 + i * 56 + (i * 37 % 18), r = 26 + (i * 29 % 14);
+        const gg = bc.createRadialGradient(bx, 54 - (i % 3) * 6 - r * .2, r * .15, bx, 54 - (i % 3) * 6, r);
+        gg.addColorStop(0, '#1b4a3e'); gg.addColorStop(.6, '#0d2c24'); gg.addColorStop(1, 'rgba(4,14,12,0)');
+        bc.fillStyle = gg; bc.beginPath(); bc.arc(bx, 54 - (i % 3) * 6, r, 0, Math.PI * 2); bc.fill();
+      }
+    });
+    ctx.save();
+    for (let row = 0; row < 2; row++) {
+      const off = (elapsed * (16 + row * 15)) % 320;
+      const y = 646 + row * 22;
+      ctx.globalAlpha = .85 - row * .3;
+      for (let x = -320; x < VW + 320; x += 320) {
+        blit(strip, x - off, y + Math.sin(elapsed * .7 + x * .01 + row * 2) * 4);
+      }
+    }
+    if (lightning > 0) {
+      const k = Math.min(1, lightning * 2.4);
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = k * .5;
+      const lg = ctx.createRadialGradient(lightningX, 652, 6, lightningX, 652, 180);
+      lg.addColorStop(0, 'rgba(216,255,240,.6)'); lg.addColorStop(1, 'rgba(120,255,170,0)');
+      ctx.fillStyle = lg; ctx.beginPath(); ctx.ellipse(lightningX, 652, 180, 40, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
     ctx.fillStyle = stage.accent; ctx.fillRect(0, ground, VW, 3);
     ctx.save(); ctx.globalAlpha = .2; ctx.fillStyle = stage.accent;
     const off = (elapsed * 140) % 160;
     for (let x = -off; x < VW; x += 160) ctx.fillRect(x, ground + 16, 60, 3);
-    ctx.globalAlpha = .12;
-    for (let x = -off * .6; x < VW; x += 220) ctx.fillRect(x, ground + 38, 90, 4);
     ctx.restore();
   }
 
-  function drawLightningBolt(stage) {
-    if (lightning <= 0) return;
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, lightning * 2.4) * .22;
-    ctx.fillStyle = '#d8fff0'; ctx.fillRect(-30, -30, VW + 60, VH + 60);
-    ctx.globalAlpha = Math.min(1, lightning * 2.4) * .9;
-    ctx.strokeStyle = '#eaffff'; ctx.lineWidth = 4; ctx.shadowColor = stage.accent; ctx.shadowBlur = 22;
-    ctx.beginPath();
-    let x = lightningX, y = -20, seed = Math.floor(lightningX * 7);
-    ctx.moveTo(x, y);
-    while (y < 560) { seed = (seed * 9301 + 49297) % 233280; x += (seed / 233280 - .5) * 96; y += 42 + seed % 38; ctx.lineTo(x, y); }
+  // One jagged descent from (x, -20) to maxY using the same LCG as before, so a
+  // given strike keeps its shape across frames. Optionally sprouts up to two
+  // thinner child branches partway down.
+  function strokeBolt(x, seed, maxY, width, branching) {
+    let y = -20;
+    const branches = [];
+    ctx.lineWidth = width;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    while (y < maxY) {
+      seed = (seed * 9301 + 49297) % 233280;
+      x += (seed / 233280 - .5) * 96; y += 42 + seed % 38;
+      ctx.lineTo(x, y);
+      if (branching && seed % 5 === 0 && y < maxY - 140) branches.push([x, y, seed * 3 + 11]);
+    }
     ctx.stroke();
+    for (const [bx, by, bs] of branches.slice(0, 2)) {
+      let sx = bx, sy = by, s = bs;
+      ctx.lineWidth = width * .45;
+      ctx.beginPath(); ctx.moveTo(sx, sy);
+      for (let k = 0; k < 4 && sy < maxY; k++) {
+        s = (s * 9301 + 49297) % 233280;
+        sx += (s / 233280 - .3) * 110; sy += 30 + s % 40;
+        ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function drawLightningBolt(stage) {
+    // After-images of recent strikes linger briefly, like retinal ghosts.
+    boltGhosts = boltGhosts.filter(g2 => elapsed - g2.born >= 0 && elapsed - g2.born < 1.1);
+    ctx.save();
+    for (const g2 of boltGhosts) {
+      if (lightning > 0 && g2.x === lightningX) continue;
+      ctx.globalAlpha = (1 - (elapsed - g2.born) / 1.1) * .15;
+      ctx.strokeStyle = stage.accent;
+      strokeBolt(g2.x, Math.floor(g2.x * 7), 560, 2.5, false);
+    }
+    if (lightning > 0) {
+      if (!boltGhosts.some(g2 => g2.x === lightningX)) boltGhosts.push({ x: lightningX, born: elapsed });
+      const k = Math.min(1, lightning * 2.4);
+      ctx.globalAlpha = k * .22;
+      ctx.fillStyle = '#d8fff0'; ctx.fillRect(-30, -30, VW + 60, VH + 60);
+      ctx.globalAlpha = k * .9;
+      ctx.strokeStyle = '#eaffff'; ctx.shadowColor = stage.accent; ctx.shadowBlur = 22;
+      strokeBolt(lightningX, Math.floor(lightningX * 7), 560, 4, true);
+    }
     ctx.restore();
   }
 
   function drawPalaceBackdrop(stage) {
+    // Ease toward battle lighting while the queen is on stage, back to the
+    // serene cathedral after. Reset in resetGame with the other stage state.
+    const wantBossLight = stageIndex === 4 && ['active', 'transition', 'final'].includes(bossState) ? 1 : 0;
+    palaceBossMix += (wantBossLight - palaceBossMix) * .02;
     // The queen's last act stains the whole sky. Fades in once and is reset by
     // resetGame / leaveShop / doContinue so it never leaks into another run.
     if (bossCrit > 0) {
@@ -4392,18 +5278,136 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       for (let i = 0; i < 4; i++) { const bx = 120 + i * 300 + Math.sin(elapsed * .4 + i) * 30; ctx.beginPath(); ctx.moveTo(bx, -30); ctx.lineTo(bx + 120, -30); ctx.lineTo(bx + 300, 660); ctx.lineTo(bx + 180, 660); ctx.closePath(); ctx.fill(); }
       ctx.restore();
     });
-    bgLayer(.32, () => {
-      drawPalaceTowers(stage);
-      // Middle colonnade row between the towers and the hero colonnade.
-      drawColonnade(.6, .4, 34);
-    });
-    drawDepthHaze(stage, .45);
-    bgLayer(.15, () => {
-      drawPalaceThrone(stage);
-      drawColonnade();
-    });
+    // The cathedral proper interleaves in depth — windows behind rays behind
+    // the far colonnade, chandeliers hanging between the column rows — so the
+    // palace is the one stage that uses the painter's queue.
+    volPush(1600, () => bgLayer(.32, () => drawPalaceTowers(stage)));
+    volPush(1300, () => bgLayer(.28, () => drawStainedGlassWall(stage)));
+    volPush(1280, () => drawPalaceNave(stage, 1280, .5, false));
+    volPush(1150, () => bgLayer(.2, () => drawGodRays(stage)));
+    volPush(850, () => drawDepthHaze(stage, .45));
+    volPush(700, () => bgLayer(.24, () => drawChandelier(stage, 985, 96, .62)));
+    volPush(620, () => drawPalaceNave(stage, 620, .8, true));
+    volPush(400, () => bgLayer(.15, () => drawPalaceThrone(stage)));
+    volPush(160, () => bgLayer(.12, () => drawChandelier(stage, 300, 74, 1)));
+    volFlush();
     drawPalaceFloor(stage);
     drawGroundPlane(stage, { horizonY: 652, bottom: 716, color: '#ff9ccf', alpha: .12, speed: 150, gap: 128 });
+  }
+
+  // --- Stained glass, god rays and chandeliers (palace) -------------------
+  const PALACE_WINDOWS = [[190, 238], [398, 256], [828, 256], [1036, 238]];
+
+  // Pointed gothic window baked once: lead mullions, jewel glass and a heart
+  // medallion. Runtime cost is one drawImage + one soft glow.
+  function palaceWindowSprite(v) {
+    return bakeSprite('palWin' + v, 68, 150, bc => {
+      const w = 64, h = 146, cxw = w / 2 + 2;
+      const arch = () => {
+        bc.beginPath(); bc.moveTo(2, h); bc.lineTo(2, 52);
+        bc.quadraticCurveTo(2, 16, cxw, 5);
+        bc.quadraticCurveTo(w + 2, 16, w + 2, 52);
+        bc.lineTo(w + 2, h); bc.closePath();
+      };
+      bc.save(); arch(); bc.clip();
+      const cols = ['#ff5a9d', '#c2277e', '#ffb3d4', '#ffd76a', '#a51c58', '#ff8bc0'];
+      bc.globalAlpha = .85;
+      for (let ry = 0; ry < 9; ry++) for (let cxi = 0; cxi < 4; cxi++) {
+        bc.fillStyle = cols[(ry * 4 + cxi + v * 7) % cols.length];
+        bc.fillRect(2 + cxi * 16, 5 + ry * 16, 16, 16);
+      }
+      bc.globalAlpha = .95; bc.fillStyle = '#ff2f6d';
+      bc.beginPath();
+      bc.moveTo(cxw, 74); bc.bezierCurveTo(cxw - 20, 52, cxw - 32, 80, cxw, 102);
+      bc.bezierCurveTo(cxw + 32, 80, cxw + 20, 52, cxw, 74);
+      bc.fill();
+      bc.restore();
+      bc.globalAlpha = 1;
+      bc.strokeStyle = '#2a1c0a'; bc.lineWidth = 2;
+      for (let ry = 1; ry < 9; ry++) { bc.beginPath(); bc.moveTo(4, 5 + ry * 16); bc.lineTo(w, 5 + ry * 16); bc.stroke(); }
+      bc.beginPath(); bc.moveTo(cxw, 7); bc.lineTo(cxw, h); bc.stroke();
+      bc.strokeStyle = '#3a2a10'; bc.lineWidth = 3; arch(); bc.stroke();
+      bc.strokeStyle = '#ffe15a'; bc.lineWidth = 1.5; arch(); bc.stroke();
+    });
+  }
+
+  function drawStainedGlassWall(stage) {
+    ctx.save();
+    for (let i = 0; i < PALACE_WINDOWS.length; i++) {
+      const [wx, wy] = PALACE_WINDOWS[i];
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = .12 + Math.sin(elapsed * .8 + i * 1.7) * .05 + palaceBossMix * .08;
+      const g = ctx.createRadialGradient(wx + 37, wy + 80, 8, wx + 37, wy + 80, 120);
+      g.addColorStop(0, '#ff9ccf'); g.addColorStop(1, 'rgba(255,60,120,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(wx + 37, wy + 80, 120, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.globalAlpha = .85;
+      blit(palaceWindowSprite(i % 3), wx, wy, 75, 165);
+    }
+    ctx.restore();
+  }
+
+  // Coloured light shafts falling from each window toward the nave centre.
+  // Pink at peace, deep crimson while the queen fights, blood red at her end.
+  function drawGodRays(stage) {
+    const q = bgQuality();
+    if (!q) return;
+    const idx = q === 2 ? [0, 1, 2, 3] : [0, 3];
+    const mix = Math.max(palaceBossMix * .6, Math.min(1, bossCrit));
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    for (const i of idx) {
+      const [wx, wy] = PALACE_WINDOWS[i];
+      const fx = wx + 37 + (640 - wx - 37) * .5;
+      const g = ctx.createLinearGradient(wx + 37, wy + 60, fx, 700);
+      g.addColorStop(0, mixHexA('#ff9ccf', '#ff2a3c', mix, .2));
+      g.addColorStop(1, mixHexA('#ff9ccf', '#ff2a3c', mix, 0));
+      ctx.fillStyle = g;
+      ctx.globalAlpha = .55 + Math.sin(elapsed * .5 + i * 2.1) * .18;
+      ctx.beginPath();
+      ctx.moveTo(wx + 10, wy + 46); ctx.lineTo(wx + 66, wy + 52);
+      ctx.lineTo(fx + 130, 704); ctx.lineTo(fx - 130, 704);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Twin-tier gold chandelier. The pivot sits at the ceiling so the whole body
+  // sways as a pendulum; candles dim during the boss fight (readability) and
+  // the sway trebles in the queen's last act while the gold keeps shining.
+  function drawChandelier(stage, x, topY, s) {
+    const crit = Math.min(1, bossCrit);
+    const sway = Math.sin(elapsed * (0.55 + crit * .9) + x) * (.035 + crit * .075);
+    const candleA = 1 - palaceBossMix * .45;
+    ctx.save();
+    ctx.translate(x, -24); ctx.rotate(sway);
+    ctx.strokeStyle = '#8a6a1f'; ctx.lineWidth = 3 * s;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, topY + 24); ctx.stroke();
+    ctx.translate(0, topY + 24); ctx.scale(s, s);
+    ctx.fillStyle = '#b3862d'; ctx.fillRect(-3, 0, 6, 84);
+    ctx.beginPath(); ctx.arc(0, 92, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffe15a'; ctx.fillRect(-3, 0, 6, 3);
+    for (const [ty, r, n] of [[26, 34, 3], [58, 62, 5]]) {
+      for (let i = 0; i < n; i++) {
+        const cxi = -r + (2 * r * i) / (n - 1);
+        ctx.strokeStyle = '#b3862d'; ctx.lineWidth = 3.5;
+        ctx.beginPath(); ctx.moveTo(0, ty - 22); ctx.quadraticCurveTo(cxi * .85, ty + 6, cxi, ty); ctx.stroke();
+        ctx.globalAlpha = candleA; ctx.fillStyle = '#f7ead0'; ctx.fillRect(cxi - 2, ty - 13, 4, 13);
+        const flick = Math.sin(elapsed * (5.3 + crit * 6) + cxi + x) * 2.5;
+        ctx.fillStyle = i % 2 ? '#ff9ccf' : '#ffd76a';
+        ctx.beginPath(); ctx.ellipse(cxi, ty - 17 + flick * .4, 3, 6 + flick * .5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.strokeStyle = '#7a5c1a'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.ellipse(0, ty, r + 7, 9, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = faceLit('#c9a13b', 'top', crit * .5); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(0, ty - 2, r + 7, 8, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .18 * candleA;
+    const g = ctx.createRadialGradient(0, 44, 6, 0, 44, 110);
+    g.addColorStop(0, '#ffd76a'); g.addColorStop(1, 'rgba(255,150,60,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 44, 110, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.restore();
   }
 
   // A distant heart-backed throne closes the central perspective and gives the
@@ -4438,6 +5442,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function drawRoseWindow(stage) {
     const cx = 640, cy = 300, r = 164;
     ctx.save(); ctx.globalAlpha = .56; ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 5;
+    // Heartbeat while the queen fights: the rose window pulses like the organ
+    // it stands for. Imperceptible at rest (palaceBossMix eases to 0).
+    const beat = 1 + palaceBossMix * .02 * Math.sin(elapsed * 3.4);
+    ctx.translate(cx, cy); ctx.scale(beat, beat); ctx.translate(-cx, -cy);
     ctx.shadowColor = stage.accent2; ctx.shadowBlur = 18;
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
     ctx.lineWidth = 2;
@@ -4450,7 +5458,49 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.lineWidth = 4;
     for (const rr of [42, 92, 132]) { ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.stroke(); }
     ctx.fillStyle = '#ff5a9d'; heartPath(cx, cy + 5, 38); ctx.fill();
+    // Gilded sunburst tracery — spiked gold rays and pearl bosses around the
+    // rim, with a crowned finial on top. Regalia, not just a window.
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#c9a13b';
+    for (let i = 0; i < 24; i++) {
+      const a = i * Math.PI / 12 + Math.PI / 24;
+      const len = i % 3 === 0 ? 30 : 16;
+      const x0 = cx + Math.cos(a) * (r + 4), y0 = cy + Math.sin(a) * (r + 4);
+      const x1 = cx + Math.cos(a) * (r + 4 + len), y1 = cy + Math.sin(a) * (r + 4 + len);
+      ctx.beginPath();
+      ctx.moveTo(x0 + Math.sin(a) * 5, y0 - Math.cos(a) * 5);
+      ctx.lineTo(x1, y1);
+      ctx.lineTo(x0 - Math.sin(a) * 5, y0 + Math.cos(a) * 5);
+      ctx.closePath(); ctx.fill();
+    }
+    for (let i = 0; i < 12; i++) {
+      const a = i * Math.PI / 6;
+      ctx.fillStyle = i % 3 ? '#ffd76a' : '#ff9ccf';
+      ctx.beginPath(); ctx.arc(cx + Math.cos(a) * (r + 14), cy + Math.sin(a) * (r + 14), 4.5, 0, Math.PI * 2); ctx.fill();
+    }
+    const fy = cy - r - 26;
+    ctx.fillStyle = '#c9a13b'; ctx.fillRect(cx - 30, fy, 60, 12);
+    ctx.fillStyle = '#ffe15a';
+    for (const [ox, hh] of [[-24, 18], [-12, 26], [0, 34], [12, 26], [24, 18]]) {
+      ctx.beginPath(); ctx.moveTo(cx + ox - 5, fy); ctx.lineTo(cx + ox, fy - hh); ctx.lineTo(cx + ox + 5, fy); ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle = '#ff5a9d';
+    for (const ox of [-24, 0, 24]) { ctx.beginPath(); ctx.arc(cx + ox, fy - 4, 3, 0, Math.PI * 2); ctx.fill(); }
     ctx.restore();
+    // Twin lesser roses flank the great window.
+    for (const mx of [cx - 340, cx + 340]) {
+      ctx.save(); ctx.globalAlpha = .42; ctx.strokeStyle = '#ffd76a'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(mx, 208, 56, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4;
+        ctx.beginPath(); ctx.moveTo(mx + Math.cos(a) * 14, 208 + Math.sin(a) * 14); ctx.lineTo(mx + Math.cos(a) * 56, 208 + Math.sin(a) * 56); ctx.stroke();
+        ctx.fillStyle = i % 2 ? hexA(stage.accent2, .14) : 'rgba(255,225,90,.09)';
+        ctx.beginPath(); ctx.moveTo(mx, 208); ctx.arc(mx, 208, 50, a, a + Math.PI / 4); ctx.closePath(); ctx.fill();
+      }
+      ctx.fillStyle = '#ff5a9d'; heartPath(mx, 211, 15); ctx.fill();
+      ctx.restore();
+    }
     ctx.save(); ctx.globalAlpha = .46; ctx.strokeStyle = '#8b4770'; ctx.lineWidth = 4;
     for (const x of [205, 1075]) {
       ctx.beginPath(); ctx.moveTo(x, -20); ctx.lineTo(x, 168); ctx.stroke();
@@ -4475,19 +5525,240 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
-  // scale/alpha/speed allow a smaller, slower duplicate row deeper in the scene;
-  // the transform keeps the columns anchored to their y=652 base line.
-  function drawColonnade(scale = 1, alpha = .85, speed = 60) {
-    const off = (elapsed * -speed) % 260;
-    ctx.save(); ctx.globalAlpha = alpha;
-    ctx.translate(0, 652 * (1 - scale)); ctx.scale(scale, scale);
-    for (let i = -1; i < Math.ceil(VW / scale / 260) + 1; i++) {
-      const x = i * 260 + off;
-      ctx.fillStyle = '#2c0a24'; ctx.fillRect(x, 470, 40, 180);
-      ctx.fillRect(x - 8, 462, 56, 14); ctx.fillRect(x - 8, 638, 56, 14);
-      ctx.fillStyle = 'rgba(255,62,157,.3)'; ctx.fillRect(x + 6, 476, 6, 162);
+  // Fluted rose-marble column with a gilded two-tier capital and base, baked
+  // once and blitted into whatever perspective rect boxZ returns.
+  function palaceColumnSprite() {
+    return bakeSprite('palColumn', 72, 460, bc => {
+      const g = bc.createLinearGradient(8, 0, 64, 0);
+      g.addColorStop(0, '#1c0618'); g.addColorStop(.3, '#5d1a50'); g.addColorStop(.52, '#3a0f33'); g.addColorStop(1, '#0e030c');
+      bc.fillStyle = g; bc.fillRect(12, 34, 48, 396);
+      bc.globalAlpha = .5; bc.fillStyle = '#0d020c';
+      for (const fx of [22, 34, 46]) bc.fillRect(fx, 40, 3.5, 384);
+      bc.globalAlpha = 1;
+      bc.fillStyle = 'rgba(255,180,220,.16)'; bc.fillRect(26, 34, 6, 396);
+      const gold = bc.createLinearGradient(0, 6, 0, 34);
+      gold.addColorStop(0, '#ffdf7e'); gold.addColorStop(.5, '#c9a13b'); gold.addColorStop(1, '#7a5c1a');
+      bc.fillStyle = gold; bc.fillRect(2, 18, 68, 16); bc.fillRect(8, 6, 56, 12);
+      bc.fillStyle = '#ffe9a8'; bc.fillRect(2, 18, 68, 3); bc.fillRect(8, 6, 56, 2);
+      bc.fillStyle = '#8a6a1f';
+      for (let i = 0; i < 6; i++) bc.fillRect(8 + i * 11, 24, 5, 8);
+      const gold2 = bc.createLinearGradient(0, 430, 0, 456);
+      gold2.addColorStop(0, '#ffdf7e'); gold2.addColorStop(.6, '#b3862d'); gold2.addColorStop(1, '#5c420f');
+      bc.fillStyle = gold2; bc.fillRect(4, 430, 64, 12); bc.fillRect(0, 442, 72, 14);
+      bc.fillStyle = '#ffe9a8'; bc.fillRect(4, 430, 64, 3);
+    });
+  }
+
+  // Crimson velvet banner with gold trim, fringe and the queen's crest.
+  function palaceBannerSprite(v) {
+    return bakeSprite('palBanner' + v, 90, 170, bc => {
+      const g = bc.createLinearGradient(0, 0, 90, 0);
+      g.addColorStop(0, '#5b0a26'); g.addColorStop(.45, '#9e1440'); g.addColorStop(1, '#3f0619');
+      bc.fillStyle = g;
+      bc.beginPath();
+      bc.moveTo(4, 0); bc.lineTo(86, 0); bc.lineTo(86, 128); bc.lineTo(45, 156); bc.lineTo(4, 128);
+      bc.closePath(); bc.fill();
+      bc.globalAlpha = .35; bc.fillStyle = '#2a0311';
+      for (const fx of [22, 45, 66]) bc.fillRect(fx, 6, 6, 118 + (fx === 45 ? 26 : 0));
+      bc.globalAlpha = 1;
+      bc.fillStyle = '#c9a13b'; bc.fillRect(0, 0, 90, 7);
+      bc.strokeStyle = '#c9a13b'; bc.lineWidth = 3;
+      bc.beginPath(); bc.moveTo(4, 128); bc.lineTo(45, 156); bc.lineTo(86, 128); bc.stroke();
+      bc.fillStyle = '#ffe15a';
+      for (let i = 0; i < 5; i++) {
+        const t = i / 4, fx = 8 + t * 74, fy = 131 + (1 - Math.abs(t - .5) * 2) * 26;
+        bc.beginPath(); bc.moveTo(fx - 3, fy); bc.lineTo(fx, fy + 10); bc.lineTo(fx + 3, fy); bc.closePath(); bc.fill();
+      }
+      // crest: gold ring around a heart, or a crown
+      bc.strokeStyle = '#ffd76a'; bc.lineWidth = 3.5;
+      bc.beginPath(); bc.arc(45, 62, 26, 0, Math.PI * 2); bc.stroke();
+      if (v === 0) {
+        bc.fillStyle = '#ff5a9d';
+        bc.beginPath();
+        bc.moveTo(45, 52); bc.bezierCurveTo(31, 40, 24, 58, 45, 78);
+        bc.bezierCurveTo(66, 58, 59, 40, 45, 52);
+        bc.fill();
+      } else {
+        bc.fillStyle = '#ffd76a'; bc.fillRect(31, 66, 28, 8);
+        for (const [ox, hh] of [[-10, 12], [0, 18], [10, 12]]) {
+          bc.beginPath(); bc.moveTo(45 + ox - 4, 66); bc.lineTo(45 + ox, 66 - hh); bc.lineTo(45 + ox + 4, 66); bc.closePath(); bc.fill();
+        }
+      }
+    });
+  }
+
+  // Colossal gilded guardian effigy: crowned queen figure with thorn wings and
+  // a greatsword planted point-down. Baked once; the halo, aura and wartime
+  // ember eyes are applied live so the statues answer the fight.
+  function palaceStatueSprite() {
+    return bakeSprite('palStatue', 200, 430, bc => {
+      const cx = 100;
+      bc.strokeStyle = 'rgba(255,215,106,.55)'; bc.lineWidth = 5;
+      bc.beginPath(); bc.arc(cx, 96, 36, 0, Math.PI * 2); bc.stroke();
+      bc.strokeStyle = 'rgba(255,215,106,.22)'; bc.lineWidth = 10;
+      bc.beginPath(); bc.arc(cx, 96, 46, 0, Math.PI * 2); bc.stroke();
+      // folded thorn wings, drawn behind the body
+      for (const dir of [-1, 1]) {
+        const g = bc.createLinearGradient(cx, 60, cx + dir * 95, 240);
+        g.addColorStop(0, '#a87c22'); g.addColorStop(1, '#2e1f0a');
+        bc.fillStyle = g;
+        bc.beginPath();
+        bc.moveTo(cx + dir * 20, 160);
+        bc.quadraticCurveTo(cx + dir * 90, 116, cx + dir * 94, 34);
+        bc.quadraticCurveTo(cx + dir * 62, 98, cx + dir * 52, 122);
+        bc.quadraticCurveTo(cx + dir * 80, 172, cx + dir * 58, 236);
+        bc.quadraticCurveTo(cx + dir * 38, 202, cx + dir * 18, 198);
+        bc.closePath(); bc.fill();
+        bc.strokeStyle = 'rgba(255,225,144,.3)'; bc.lineWidth = 2;
+        for (let i = 0; i < 3; i++) {
+          bc.beginPath();
+          bc.moveTo(cx + dir * (26 + i * 5), 172 + i * 10);
+          bc.quadraticCurveTo(cx + dir * (64 + i * 8), 128 - i * 8, cx + dir * (86 - i * 5), 54 + i * 24);
+          bc.stroke();
+        }
+      }
+      // robe: tall tapered gold gown with fold shadows
+      const robe = bc.createLinearGradient(0, 190, 0, 372);
+      robe.addColorStop(0, '#e8c766'); robe.addColorStop(.55, '#b3862d'); robe.addColorStop(1, '#5c420f');
+      bc.fillStyle = robe;
+      bc.beginPath(); bc.moveTo(cx - 20, 196); bc.lineTo(cx + 20, 196);
+      bc.lineTo(cx + 56, 372); bc.lineTo(cx - 56, 372); bc.closePath(); bc.fill();
+      bc.globalAlpha = .35; bc.strokeStyle = '#3a2a10'; bc.lineWidth = 3;
+      for (const fx of [-30, -12, 8, 26]) {
+        bc.beginPath(); bc.moveTo(cx + fx * .4, 206); bc.lineTo(cx + fx, 368); bc.stroke();
+      }
+      bc.globalAlpha = 1;
+      // armored torso, spiked pauldrons, chest heart gem
+      const chest = bc.createLinearGradient(0, 140, 0, 200);
+      chest.addColorStop(0, '#f5dc8a'); chest.addColorStop(1, '#9a7420');
+      bc.fillStyle = chest;
+      bc.beginPath(); bc.moveTo(cx - 26, 142); bc.lineTo(cx + 26, 142);
+      bc.lineTo(cx + 20, 200); bc.lineTo(cx - 20, 200); bc.closePath(); bc.fill();
+      bc.fillStyle = '#c9a13b';
+      for (const dir of [-1, 1]) {
+        bc.beginPath(); bc.moveTo(cx + dir * 20, 148);
+        bc.lineTo(cx + dir * 52, 132); bc.lineTo(cx + dir * 30, 168); bc.closePath(); bc.fill();
+      }
+      bc.fillStyle = '#8a6a1f'; bc.beginPath(); bc.arc(cx, 172, 13, 0, Math.PI * 2); bc.fill();
+      bc.fillStyle = '#ff5a9d';
+      bc.beginPath();
+      bc.moveTo(cx, 166); bc.bezierCurveTo(cx - 9, 158, cx - 14, 170, cx, 181);
+      bc.bezierCurveTo(cx + 14, 170, cx + 9, 158, cx, 166);
+      bc.fill();
+      // gauntlets + greatsword planted point-down
+      bc.fillStyle = '#c9a13b'; bc.fillRect(cx - 22, 208, 44, 12);
+      bc.fillStyle = '#e8c766'; bc.fillRect(cx - 7, 196, 14, 14);
+      const blade = bc.createLinearGradient(cx - 5, 0, cx + 5, 0);
+      blade.addColorStop(0, '#d8cfae'); blade.addColorStop(.5, '#fdf6d8'); blade.addColorStop(1, '#8f8560');
+      bc.fillStyle = blade;
+      bc.beginPath(); bc.moveTo(cx - 5, 220); bc.lineTo(cx + 5, 220);
+      bc.lineTo(cx + 5, 350); bc.lineTo(cx, 368); bc.lineTo(cx - 5, 350); bc.closePath(); bc.fill();
+      // stern visored head under a five-spike crown
+      bc.fillStyle = '#e8c766'; bc.fillRect(cx - 13, 100, 26, 40);
+      bc.fillStyle = '#1a0812'; bc.fillRect(cx - 13, 112, 26, 9);
+      bc.fillStyle = '#ffd76a'; bc.fillRect(cx - 18, 88, 36, 12);
+      for (const [ox, hh] of [[-15, 20], [-7.5, 30], [0, 42], [7.5, 30], [15, 20]]) {
+        bc.beginPath(); bc.moveTo(cx + ox - 4, 90); bc.lineTo(cx + ox, 90 - hh); bc.lineTo(cx + ox + 4, 90); bc.closePath(); bc.fill();
+      }
+      // two-tier stone pedestal with gold trims
+      bc.fillStyle = '#2c0a26'; bc.fillRect(cx - 58, 372, 116, 28);
+      bc.fillStyle = '#1c0618'; bc.fillRect(cx - 70, 400, 140, 30);
+      bc.fillStyle = '#c9a13b'; bc.fillRect(cx - 58, 372, 116, 4); bc.fillRect(cx - 70, 400, 140, 4);
+    });
+  }
+
+  // Two colossal effigies flank the nave ahead of the throne — fixed guardians
+  // at the end of the hall that make the approach feel ceremonial. Their eyes
+  // smoulder red while the queen fights.
+  function drawPalaceStatues(stage) {
+    const z = 1180, s = FOCAL / (FOCAL + z);
+    const spr = palaceStatueSprite();
+    const h = 780 * s, w = h * 200 / 430;
+    for (const side of [-1, 1]) {
+      const wx = worldXAt(VW / 2 + side * 452, s);
+      const p = proj3(wx, HORIZON_Y + 92 / s, z);   // feet on the marble's leading edge
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(p.x, p.y - h * .55, 10, p.x, p.y - h * .55, h * .6);
+      g.addColorStop(0, 'rgba(255,215,106,.16)'); g.addColorStop(1, 'rgba(255,180,60,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y - h * .55, h * .6, 0, Math.PI * 2); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      blit(spr, p.x - w / 2, p.y - h, w, h);
+      // gold bloom: a faint additive re-blit keeps the effigies luminous even
+      // through the nave haze and the queen's battle lighting
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .26;
+      blit(spr, p.x - w / 2, p.y - h, w, h);
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+      if (palaceBossMix > .02) {
+        const ey = p.y - h + h * .27, ew = w * .13;
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = palaceBossMix * (.55 + Math.sin(elapsed * 2.6 + side) * .2);
+        ctx.fillStyle = '#ff2a3c';
+        ctx.fillRect(p.x - ew / 2, ey, ew, Math.max(2, h * .02));
+        const g2 = ctx.createRadialGradient(p.x, ey + 2, 1, p.x, ey + 2, ew * 1.6);
+        g2.addColorStop(0, 'rgba(255,42,60,.5)'); g2.addColorStop(1, 'rgba(255,42,60,0)');
+        ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(p.x, ey + 2, ew * 1.6, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  // True-3D nave arcade: extruded marble columns march down the hall through
+  // the shared camera, tied by gold arches. The dressed (near) rank hangs the
+  // queen's velvet banners between arches and burns a torchère at every base.
+  function drawPalaceNave(stage, z, alpha, dressed) {
+    const q = bgQuality();
+    const s = FOCAL / (FOCAL + z), gap = 330, t0 = elapsed * 96, colW = 54;
+    const dim = 1 - palaceBossMix * .28;
+    const crit = Math.min(1, bossCrit);
+    const yBase = HORIZON_Y + 92 / s, yTop = yBase - 430;   // bases pinned to the y=652 marble edge
+    const half = (VW / 2 + 170) / s;
+    const k0 = Math.floor((VW / 2 - half + t0) / gap), k1 = Math.ceil((VW / 2 + half + t0) / gap);
+    const spr = palaceColumnSprite();
+    // gold arches spring between neighbouring capitals, behind the columns
+    ctx.save(); ctx.globalAlpha = alpha * dim * .9;
+    for (let k = k0; k < k1; k++) {
+      const a = proj3(k * gap - t0 + colW / 2, yTop + 8, z);
+      const b = proj3((k + 1) * gap - t0 + colW / 2, yTop + 8, z);
+      if (Math.max(a.x, b.x) < -80 || Math.min(a.x, b.x) > VW + 80) continue;
+      const apexY = Math.min(a.y, b.y) - 92 * s;
+      ctx.strokeStyle = '#2b0a22'; ctx.lineWidth = 17 * s;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.quadraticCurveTo((a.x + b.x) / 2, apexY, b.x, b.y); ctx.stroke();
+      ctx.strokeStyle = faceLit('#c9a13b', 'top', crit * .4); ctx.lineWidth = 3.5 * s;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y - 5 * s); ctx.quadraticCurveTo((a.x + b.x) / 2, apexY - 5 * s, b.x, b.y - 5 * s); ctx.stroke();
     }
     ctx.restore();
+    for (let k = k0; k <= k1; k++) {
+      const wx = k * gap - t0;
+      const r = boxZ(wx, wx + colW, yTop, yBase, z, z + 150, null, hexA('#0c020a', .9), null, alpha * dim);
+      if (r.x > VW + 90 || r.x + r.w < -90) continue;
+      ctx.save(); ctx.globalAlpha = alpha * dim;
+      blit(spr, r.x, r.y, r.w, r.h);
+      ctx.restore();
+      if (dressed && q >= 1) {
+        // velvet banner hanging from the arch midpoint, swaying gently
+        const bp = proj3(wx + gap / 2 + colW / 2, yTop + 30, z);
+        const bw = 96 * s, bh = 180 * s;
+        ctx.save(); ctx.globalAlpha = alpha * (1 - palaceBossMix * .35);
+        ctx.translate(bp.x, bp.y); ctx.rotate(Math.sin(elapsed * .7 + k * 1.9) * .05);
+        blit(palaceBannerSprite(((k % 2) + 2) % 2), -bw / 2, 0, bw, bh);
+        ctx.restore();
+        // torchère at the column base; candles dim while the queen fights
+        const fp = proj3(wx + colW / 2, yBase, z);
+        const candleA = (1 - palaceBossMix * .45) * alpha;
+        const flick = Math.sin(elapsed * 5.7 + k * 2.3) * 2 * s;
+        ctx.save();
+        ctx.fillStyle = '#8a6a1f'; ctx.fillRect(fp.x - 2 * s, fp.y - 46 * s, 4 * s, 46 * s);
+        ctx.fillStyle = '#c9a13b'; ctx.fillRect(fp.x - 7 * s, fp.y - 52 * s, 14 * s, 7 * s);
+        ctx.globalAlpha = candleA; ctx.fillStyle = '#ffd76a';
+        ctx.beginPath(); ctx.ellipse(fp.x, fp.y - 58 * s + flick * .4, 4 * s, 9 * s + flick, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = candleA * .3;
+        const g2 = ctx.createRadialGradient(fp.x, fp.y - 56 * s, 2, fp.x, fp.y - 56 * s, 44 * s);
+        g2.addColorStop(0, '#ffd76a'); g2.addColorStop(1, 'rgba(255,150,60,0)');
+        ctx.fillStyle = g2; ctx.beginPath(); ctx.arc(fp.x, fp.y - 56 * s, 44 * s, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
   }
 
   function drawPalaceFloor(stage) {
@@ -4507,10 +5778,32 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const a of ambient) {
       ctx.save();
       if (a.kind === 'bubble') { ctx.globalAlpha = .3 + Math.sin(a.a) * .15; ctx.strokeStyle = '#bfefff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.stroke(); }
-      else if (a.kind === 'smoke') { ctx.globalAlpha = Math.max(0, Math.min(.2, a.life * .09)); ctx.fillStyle = '#c9b8c9'; ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.fill(); }
+      else if (a.kind === 'smoke') {
+        // Backlit volumetric puff: dark two-lobe body with a thin hot rim on
+        // the crescent that faces the low sun.
+        const al = Math.max(0, Math.min(.22, a.life * .09));
+        ctx.globalAlpha = al; ctx.fillStyle = '#3a2038';
+        ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(a.x - a.r * .55, a.y + a.r * .4, a.r * .66, 0, Math.PI * 2); ctx.fill();
+        const th = Math.atan2(468 - a.y, 640 - a.x);
+        ctx.globalAlpha = al * 1.7; ctx.strokeStyle = 'rgba(255,170,80,.9)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(a.x, a.y, a.r - 1, th - .95, th + .95); ctx.stroke();
+      }
       else if (a.kind === 'spark') { ctx.globalAlpha = Math.max(0, Math.min(1, a.life * 1.6)); ctx.fillStyle = '#ffe15a'; ctx.fillRect(a.x, a.y, 4, 4); ctx.fillStyle = 'rgba(255,138,53,.6)'; ctx.fillRect(a.x - a.vx * .02, a.y - a.vy * .02, 3, 3); }
-      else if (a.kind === 'rain') { ctx.globalAlpha = .32; ctx.strokeStyle = '#9fe8d8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x + a.vx * .022, a.y + a.vy * .022); ctx.stroke(); }
-      else { ctx.globalAlpha = .28 + Math.sin(a.a) * .16; ctx.fillStyle = '#ff9ccf'; heartPath(a.x, a.y, a.s); ctx.fill(); }
+      else if (a.kind === 'rain') { ctx.globalAlpha = .32 + Math.min(1, lightning * 2.4) * .3; ctx.strokeStyle = '#9fe8d8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x + a.vx * .022, a.y + a.vy * .022); ctx.stroke(); }
+      else if (a.kind === 'dust') {
+        // Gold motes twinkling inside the god rays.
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = Math.max(0, Math.min(.5, a.life * .14)) * (.6 + Math.sin(elapsed * 3 + a.x) * .4);
+        ctx.fillStyle = '#ffe6a0'; ctx.fillRect(a.x, a.y, 2.5, 2.5);
+      }
+      else {
+        // Petal-like tumbling hearts; they bruise dark red in the last act.
+        ctx.globalAlpha = .28 + Math.sin(a.a) * .16;
+        ctx.fillStyle = bossCrit > 0 ? '#c22a4e' : '#ff9ccf';
+        ctx.translate(a.x, a.y); ctx.rotate(Math.sin(a.a * .7) * .5);
+        heartPath(0, 0, a.s); ctx.fill();
+      }
       ctx.restore();
     }
   }
