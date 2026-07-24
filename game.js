@@ -35,10 +35,14 @@
   // the hard-clear flag is set. The page itself is meta-noindexed and the
   // anchors carry rel="nofollow"; robots.txt deliberately does NOT name the
   // path (a Disallow line would advertise it and stop the noindex being read).
-  const soundtrackLinks = document.querySelectorAll('#titleSoundtrackLink, #resultSoundtrackLink');
-  function refreshSoundtrackLinks() {
+  // The result-screen link only shows on a clear -- a GAME OVER result is no
+  // place to advertise it; the title link stays available for repeat visits.
+  const titleSoundtrackLink = document.querySelector('#titleSoundtrackLink');
+  const resultSoundtrackLink = document.querySelector('#resultSoundtrackLink');
+  function refreshSoundtrackLinks(cleared = false) {
     const unlocked = !!localStorage.getItem('grochan-hard-clear');
-    soundtrackLinks.forEach(a => a.classList.toggle('is-hidden', !unlocked));
+    titleSoundtrackLink?.classList.toggle('is-hidden', !unlocked);
+    resultSoundtrackLink?.classList.toggle('is-hidden', !(unlocked && cleared));
   }
   refreshSoundtrackLinks();
   const soundButton = document.querySelector('#soundButton');
@@ -2791,7 +2795,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       localStorage.setItem('grochan-hard-clear', '1');
       soundtrackJustUnlocked = true;
     }
-    refreshSoundtrackLinks();
+    refreshSoundtrackLinks(cleared);
     document.querySelector('#soundtrackUnlockNote')?.classList.toggle('is-hidden', !soundtrackJustUnlocked);
     resultTitle.textContent = cleared ? 'ALL CLEAR!' : 'GAME OVER';
     statKills.textContent = String(totalKills);
