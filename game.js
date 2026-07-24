@@ -238,6 +238,8 @@
   let ammoMax = 170;
   let ammoBanner = 0;    // "弾切れ!" rising tag timer, armed on the shot that empties the gun
   let lifeDropsSpawned = 0;  // per-run cap on the rare max-HP capsule drop
+  let ammoPackStock = 0;  // stocked full-reload packs (shop only), auto-used when the mag hits empty
+  let reloadFlash = 0;    // "フルリロード!" rising tag timer, armed when a pack auto-fires
   let bossCrit = 0;      // 0..1 fade of the palace's blood-red sky in the queen's last act
   let bgCam = 0;
   let bgCamX = 0;        // horizontal camera yaw, eased from player.x (parallax)
@@ -262,9 +264,9 @@
     // safe corridor in px (beams use it inversely for thickness), telMul stretches every
     // telegraph, hazardDmg scales beam damage. hard keeps gapW at .85 rather than .8 so
     // the corridor stays wider than the player's 148px-tall grounded hitbox.
-    easy: { spawn: 1.08, speed: .8, damage: .55, timeScale: 1.06, bossHp: 300, score: .8, midHp: 90, bulletSpeed: .68, fireGap: 2.2, barrage: .72, gapW: 1.5, telMul: 1.3, hazardDmg: .6, ammo: 220 },
-    normal: { spawn: .72, speed: 1.05, damage: 1.05, timeScale: 1, bossHp: 560, score: 1, midHp: 170, bulletSpeed: 1, fireGap: 1, barrage: 1, gapW: 1, telMul: 1, hazardDmg: 1, ammo: 170 },
-    hard: { spawn: .55, speed: 1.28, damage: 1.35, timeScale: .92, bossHp: 800, score: 1.45, midHp: 240, bulletSpeed: 1.08, fireGap: .9, barrage: 1.28, gapW: .85, telMul: .92, hazardDmg: 1.15, ammo: 140 }
+    easy: { spawn: 1.08, speed: .8, damage: .55, timeScale: 1.06, bossHp: 480, score: .8, midHp: 170, bulletSpeed: .68, fireGap: 2.2, barrage: .72, gapW: 1.5, telMul: 1.3, hazardDmg: .6, ammo: 220 },
+    normal: { spawn: .72, speed: 1.05, damage: 1.05, timeScale: 1, bossHp: 900, score: 1, midHp: 320, bulletSpeed: 1, fireGap: 1, barrage: 1, gapW: 1, telMul: 1, hazardDmg: 1, ammo: 170 },
+    hard: { spawn: .55, speed: 1.28, damage: 1.35, timeScale: .92, bossHp: 1300, score: 1.45, midHp: 460, bulletSpeed: 1.08, fireGap: .9, barrage: 1.28, gapW: .85, telMul: .92, hazardDmg: 1.15, ammo: 140 }
   };
   const stages = [
     {
@@ -697,6 +699,7 @@
     continuesLeft = 3; continueBanner = 0; powerDownBanner = 0;
     bombStock = 0; charmStock = 0; charmFlash = 0;
     ammo = ammoMax = difficulties[difficultyKey].ammo; ammoBanner = 0; lifeDropsSpawned = 0;
+    ammoPackStock = 0; reloadFlash = 0;
     bullets = []; clearEnemyFire(); enemies = []; particles = []; pickups = []; shockwaves = [];
     setupStage();
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
@@ -1327,7 +1330,10 @@
   }
 
   function spawnBoss() {
-    const bossHp = Math.round(difficulties[difficultyKey].bossHp * (1 + stageIndex * .55));
+    // The last stage's boss is the whole game's climax, so it gets an extra
+    // tankiness bonus on top of the normal per-stage ramp.
+    const isFinalBoss = stageIndex === stages.length - 1;
+    const bossHp = Math.round(difficulties[difficultyKey].bossHp * (1 + stageIndex * .65) * (isFinalBoss ? 1.3 : 1));
     // With a loaded sprite the hitbox takes the art's aspect ratio at a large
     // fixed height, so the visual and the collision box stay in sync (tall
     // sprites no longer get an invisible wide hitbox). 460×380 is the
@@ -1352,7 +1358,7 @@
 
   function spawnMidBoss() {
     const baseHp = difficulties[difficultyKey].midHp;
-    const hp = Math.round(baseHp * 1.12 * (1 + stageIndex * .38));
+    const hp = Math.round(baseHp * 1.5 * (1 + stageIndex * .48));
     const midSprite = frameReady(midSets[stageIndex].idle[0]) ? midSets[stageIndex].idle[0] : wardenSprite;
     let w = 280, h = 230;
     if (midSprite.complete && midSprite.naturalWidth) {
@@ -1379,40 +1385,41 @@
     if (engaged && e.beamT <= 0) {
       const D = difficulties[difficultyKey];
       hazards.push({
-        kind: 'beam', x: e.x + 26, y: e.y + e.h * .45, w: 1100, h: 44 / D.gapW, ang: Math.PI,
-        warn: 1.0 * D.telMul, live: .22, fade: .18, lock: .6 * D.telMul, aim: true, t: 0,
-        damage: 22, color: stages[stageIndex].accent2,
+        kind: 'beam', x: e.x + 26, y: e.y + e.h * .45, w: 1100, h: 50 / D.gapW, ang: Math.PI,
+        warn: 1.0 * D.telMul, live: .24, fade: .18, lock: .6 * D.telMul, aim: true, t: 0,
+        damage: 28, color: stages[stageIndex].accent2,
       });
-      e.attackT = .5; sfx('boss');
-      e.beamT = rage ? 5 : 6.5;
+      e.attackT = .5; sfx('boss'); shake = Math.max(shake, 6);
+      e.beamT = rage ? 4.4 : 6;
     }
     if (engaged && e.fire <= 0) {
       const ox = e.x + 12, oy = e.y + e.h / 2;
       const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
-      const count = Math.max(3, Math.round((rage ? 7 : 5) * difficulties[difficultyKey].barrage));
+      const count = Math.max(4, Math.round((rage ? 9 : 6) * difficulties[difficultyKey].barrage));
       for (let i = 0; i < count; i++) {
         const a = aim + (i - (count - 1) / 2) * .17;
-        enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * (270 + stageIndex * 22), vy: Math.sin(a) * (270 + stageIndex * 22), r: 10, life: 6.5, damage: 16 + stageIndex, boss: true, volt: stageIndex === 3, fire: stageIndex === 2, heart: stageIndex === 4, bubble: stageIndex === 1 });
+        enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * (270 + stageIndex * 22), vy: Math.sin(a) * (270 + stageIndex * 22), r: 10, life: 6.5, damage: 21 + stageIndex * 2, boss: true, volt: stageIndex === 3, fire: stageIndex === 2, heart: stageIndex === 4, bubble: stageIndex === 1 });
       }
-      burst(ox, oy, stages[stageIndex].accent2, 10, 190); e.fire = rage ? .42 : .58;
-      e.attackT = .45;
+      burst(ox, oy, stages[stageIndex].accent2, 16, 230); e.fire = rage ? .38 : .54;
+      e.attackT = .45; shake = Math.max(shake, 5);
     }
     if (engaged && e.sp <= 0) {
       e.attackT = .55;
       const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
-      const count = Math.max(8, Math.round((rage ? 16 : 12) * difficulties[difficultyKey].barrage));
+      const count = Math.max(10, Math.round((rage ? 20 : 14) * difficulties[difficultyKey].barrage));
       for (let i = 0; i < count; i++) {
         const a = i / count * Math.PI * 2 + e.t * .4;
-        enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 195, vy: Math.sin(a) * 195, r: 9, life: 6, damage: 15 + stageIndex, boss: true });
+        enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 195, vy: Math.sin(a) * 195, r: 9, life: 6, damage: 19 + stageIndex * 2, boss: true });
       }
       // Side cannons
       for (const side of [-1, 1]) {
-        for (let i = 0; i < 3; i++) {
-          enemyBullets.push({ x: cx + side * 55, y: cy, vx: -210, vy: (i - 1) * 90, r: 8, life: 5.5, damage: 14 + stageIndex, boss: true });
+        for (let i = 0; i < 4; i++) {
+          enemyBullets.push({ x: cx + side * 55, y: cy, vx: -210, vy: (i - 1.5) * 80, r: 8, life: 5.5, damage: 18 + stageIndex * 2, boss: true });
         }
       }
-      shockwaves.push({ x: cx, y: cy, r: 16, speed: 340, life: .6, max: .6, color: stages[stageIndex].accent2 });
-      sfx('boss'); e.sp = rage ? 2.4 : 3.3;
+      shockwaves.push({ x: cx, y: cy, r: 20, speed: 400, life: .7, max: .7, color: stages[stageIndex].accent2 });
+      shockwaves.push({ x: cx, y: cy, r: 8, speed: 260, life: .5, max: .5, color: '#fff' });
+      sfx('boss'); shake = Math.max(shake, 9); e.sp = rage ? 2.1 : 2.9;
     }
   }
 
@@ -1757,7 +1764,7 @@
       e.y = bobY(e.baseY + 35, 75);
       e.spiral = (e.spiral || 0) + dt * [2.4, 3.0, 3.4, 3.9][e.tier || 0];
       if (engaged && e.fire <= 0) {
-        bossHeartSpiral(e, e.tier >= 2 ? 4 : 2);
+        bossHeartSpiral(e, e.tier >= 2 ? 5 : e.tier >= 1 ? 3 : 2);
         e.fire = [.26, .20, .17, .15][e.tier || 0];
       }
       if (engaged && e.sp <= 0 && !(e.tel > 0)) {
@@ -1813,13 +1820,13 @@
   function bossFan(e, n) {
     e.attackT = .45;
     const ox = e.x + 18, oy = e.y + e.h / 2;
-    n = Math.max(4, Math.round(n * difficulties[difficultyKey].barrage));
+    n = Math.max(5, Math.round((n + 2) * difficulties[difficultyKey].barrage));
     const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
     for (let i = 0; i < n; i++) {
       const a = aim + (i - (n - 1) / 2) * .19;
-      enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 285, vy: Math.sin(a) * 285, r: 10, life: 6, damage: 18, boss: true });
+      enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 285, vy: Math.sin(a) * 285, r: 10, life: 6, damage: 24, boss: true });
     }
-    burst(ox, oy, '#ff3e9d', 9, 190);
+    burst(ox, oy, '#ff3e9d', 15, 240); shake = Math.max(shake, 4);
   }
 
   function bossBubbles(e) {
@@ -1828,7 +1835,7 @@
     const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
     for (let i = -1; i <= 1; i++) {
       const a = aim + i * .3;
-      enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 190, vy: Math.sin(a) * 190, r: 11, life: 7, damage: 13, bubble: true, drift: 220 });
+      enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 190, vy: Math.sin(a) * 190, r: 11, life: 7, damage: 17, bubble: true, drift: 220 });
     }
     sfx('bubble');
   }
@@ -1840,7 +1847,7 @@
     for (let i = 0; i < 8; i++) {
       const y = 60 + i * 85;
       if (Math.abs(y - gapY) < half) continue;
-      enemyBullets.push({ x: e.x - 30, y, vx: -235, vy: 0, r: 13, life: 8, damage: 15, bubble: true, grazeMul: .4 });
+      enemyBullets.push({ x: e.x - 30, y, vx: -235, vy: 0, r: 13, life: 8, damage: 20, bubble: true, grazeMul: .4 });
     }
     sfx('boss');
   }
@@ -1848,10 +1855,10 @@
   function bossFireball(e) {
     e.attackT = .45;
     const ox = e.x + 20, oy = e.y + e.h / 2;
-    for (const lead of [0, 90]) {
-      enemyBullets.push({ x: ox, y: oy, vx: (player.x + lead - ox) / 1.3, vy: -300 - Math.random() * 110, gravity: 430, r: 12, life: 6, damage: 17, fire: true });
+    for (const lead of [0, 90, -90]) {
+      enemyBullets.push({ x: ox, y: oy, vx: (player.x + lead - ox) / 1.3, vy: -300 - Math.random() * 110, gravity: 430, r: 12, life: 6, damage: 22, fire: true });
     }
-    sfx('fireball');
+    burst(ox, oy, '#ff8a35', 10, 200); sfx('fireball');
   }
 
   function bossFlameSweep(e) {
@@ -1859,14 +1866,14 @@
     e.sweep = (e.sweep || 2.6) + .13;
     const a = Math.PI - Math.sin(e.sweep) * .85;
     const ox = e.x + 20, oy = e.y + e.h / 2;
-    enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 330, vy: Math.sin(a) * 330, r: 10, life: 4, damage: 13, fire: true });
+    enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 330, vy: Math.sin(a) * 330, r: 10, life: 4, damage: 17, fire: true });
   }
 
   function bossPillar(x) {
-    for (let i = 0; i < 7; i++) {
-      enemyBullets.push({ x: x + (Math.random() - .5) * 26, y: 690 + i * 42, vx: 0, vy: -560, r: 12, life: 3.2, damage: 16, fire: true });
+    for (let i = 0; i < 8; i++) {
+      enemyBullets.push({ x: x + (Math.random() - .5) * 26, y: 690 + i * 38, vx: 0, vy: -580, r: 13, life: 3.2, damage: 21, fire: true });
     }
-    burst(x, 655, '#ff8a35', 18, 300); shake = 10; sfx('fireball');
+    burst(x, 655, '#ff8a35', 26, 360); shake = Math.max(shake, 12); sfx('fireball');
   }
 
   function bossVoltShot(e) {
@@ -1875,23 +1882,24 @@
     const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
     for (let i = -1; i <= 1; i++) {
       const a = aim + i * .22;
-      enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 360, vy: Math.sin(a) * 360, r: 8, life: 5, damage: 14, volt: true });
+      enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 360, vy: Math.sin(a) * 360, r: 8, life: 5, damage: 18, volt: true });
     }
   }
 
   function bossStrike(x) {
-    for (let i = 0; i < 8; i++) enemyBullets.push({ x: x + (Math.random() - .5) * 20, y: -30 - i * 46, vx: 0, vy: 640, r: 9, life: 2.6, damage: 16, volt: true });
-    lightning = .4; lightningX = x; shake = 12; sfx('thunder');
+    for (let i = 0; i < 9; i++) enemyBullets.push({ x: x + (Math.random() - .5) * 20, y: -30 - i * 42, vx: 0, vy: 660, r: 9, life: 2.6, damage: 21, volt: true });
+    lightning = .45; lightningX = x; shake = Math.max(shake, 15); sfx('thunder');
   }
 
   function bossVoltRing(e) {
     e.attackT = .45;
     const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
-    const n = Math.max(8, Math.round(12 * difficulties[difficultyKey].barrage));
+    const n = Math.max(10, Math.round(15 * difficulties[difficultyKey].barrage));
     for (let i = 0; i < n; i++) {
       const a = i / n * Math.PI * 2;
-      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 240, vy: Math.sin(a) * 240, r: 8, life: 4, damage: 13, volt: true });
+      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 240, vy: Math.sin(a) * 240, r: 8, life: 4, damage: 17, volt: true });
     }
+    burst(cx, cy, '#72ff68', 10, 200);
   }
 
   function bossHeartSpiral(e, arms = 2) {
@@ -1899,7 +1907,7 @@
     const cx = e.x + 40, cy = e.y + e.h / 2;
     for (let i = 0; i < arms; i++) {
       const a = e.spiral + i / arms * Math.PI * 2;
-      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, r: 10, life: 6, damage: 16, heart: true, grazeMul: .7 });
+      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, r: 10, life: 6, damage: 21, heart: true, grazeMul: .7 });
     }
   }
 
@@ -1911,19 +1919,19 @@
     for (let i = 0; i < 8; i++) {
       const y = 60 + i * 85;
       if (Math.abs(y - gapY) < half) continue;
-      enemyBullets.push({ x: e.x - 30, y, vx: -245, vy: 0, r: 11, life: 8, damage: 18, heart: true, grazeMul: .4 });
+      enemyBullets.push({ x: e.x - 30, y, vx: -245, vy: 0, r: 11, life: 8, damage: 24, heart: true, grazeMul: .4 });
     }
     sfx('boss');
   }
 
   function bossHeartRing(e) {
     const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
-    const n = Math.max(6, Math.round(10 * difficulties[difficultyKey].barrage));
+    const n = Math.max(8, Math.round(13 * difficulties[difficultyKey].barrage));
     for (let i = 0; i < n; i++) {
       const a = i / n * Math.PI * 2;
-      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, r: 10, life: 7, damage: 18, heart: true, homing: .5 });
+      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, r: 10, life: 7, damage: 23, heart: true, homing: .5 });
     }
-    sfx('boss');
+    burst(cx, cy, '#ff9ccf', 12, 210); sfx('boss');
   }
 
   // A full-height wall of shot with one corridor, opened at the height the
@@ -1941,7 +1949,7 @@
               : stageIndex === 2 ? { fire: true } : stageIndex === 3 ? { volt: true } : {};
     for (let y = 45; y <= 665; y += pitch) {
       if (Math.abs(y - cy) < half) continue;
-      enemyBullets.push({ x: VW + 26, y, vx: -sp, vy: 0, r: 12, life: 9, damage: 15, grazeMul: .4, ...tag });
+      enemyBullets.push({ x: VW + 26, y, vx: -sp, vy: 0, r: 12, life: 9, damage: 20, grazeMul: .4, ...tag });
     }
     e.curtainY = cy;
     sfx('boss');
@@ -1960,30 +1968,30 @@
       if (Math.abs(off) < half + 45) continue;
       bossPillar(x);
     }
-    const rollers = Math.max(3, Math.round(5 * D.barrage));
+    const rollers = Math.max(4, Math.round(6 * D.barrage));
     for (let i = 0; i < rollers; i++) {
-      enemyBullets.push({ x: e.x - 20, y: 604 + i * 14, vx: -260, vy: 0, r: 14, life: 6, damage: 16, fire: true, grazeMul: .4 });
+      enemyBullets.push({ x: e.x - 20, y: 604 + i * 14, vx: -260, vy: 0, r: 14, life: 6, damage: 21, fire: true, grazeMul: .4 });
     }
   }
 
   function golemGeyser(x) {
-    for (let i = 0; i < 9; i++) {
-      enemyBullets.push({ x: x + (Math.random() - .5) * 34, y: 700 + i * 40, vx: 0, vy: -520, r: 14, life: 3.2, damage: 16, bubble: true, grazeMul: .4 });
+    for (let i = 0; i < 10; i++) {
+      enemyBullets.push({ x: x + (Math.random() - .5) * 34, y: 700 + i * 36, vx: 0, vy: -540, r: 14, life: 3.2, damage: 21, bubble: true, grazeMul: .4 });
     }
-    burst(x, 660, '#65fff2', 20, 300); shake = 9; sfx('bubble');
+    burst(x, 660, '#65fff2', 26, 340); shake = Math.max(shake, 11); sfx('bubble');
   }
 
   // Three screen-wide bands staggered by .8s. The first lands on the player's
   // own row, so the opening move is always forced.
   function bossDataFlood(e) {
     const D = difficulties[difficultyKey];
-    const h = 70 / D.gapW;
+    const h = 78 / D.gapW;
     const py = clamp(player.y + 55, 70, 640);
     const rows = [py, clamp(py - 240, 70, 640), clamp(py + 240, 70, 640)];
     rows.forEach((y, i) => hazards.push({
       kind: 'beam', x: 0, y, w: VW, h, ang: 0,
-      warn: telFor(h / 2 + 34) + i * .8, live: .45, fade: .22, lock: 0, t: 0,
-      damage: 26, color: '#65fff2',
+      warn: telFor(h / 2 + 34) + i * .8, live: .48, fade: .24, lock: 0, t: 0,
+      damage: 33, color: '#65fff2',
     }));
     sfx('boss');
   }
@@ -1996,11 +2004,12 @@
     const aim = Math.atan2(player.y + 55 - cy, player.x + 56 - cx);
     for (const off of [-.35, .35]) {
       hazards.push({
-        kind: 'beam', x: cx, y: cy, w: 1500, h: 60 / D.gapW, ang: aim + off,
-        warn: 1.1 * D.telMul, live: .3, fade: .2, lock: .65 * D.telMul, aim: false, t: 0,
-        damage: 26, color: '#ff3e9d',
+        kind: 'beam', x: cx, y: cy, w: 1500, h: 68 / D.gapW, ang: aim + off,
+        warn: 1.1 * D.telMul, live: .32, fade: .22, lock: .65 * D.telMul, aim: false, t: 0,
+        damage: 33, color: '#ff3e9d',
       });
     }
+    burst(cx, cy, '#ff3e9d', 14, 260); shake = Math.max(shake, 6);
     sfx('boss');
   }
 
@@ -2014,12 +2023,12 @@
     for (const y of [py - gap - h / 2, py + gap + h / 2]) {
       hazards.push({
         kind: 'beam', x: 0, y, w: VW, h, ang: 0,
-        warn: telFor(h / 2 + 34), live: .5, fade: .25, lock: 0, t: 0,
-        damage: 27, color: '#ff8a35',
+        warn: telFor(h / 2 + 34), live: .52, fade: .26, lock: 0, t: 0,
+        damage: 34, color: '#ff8a35',
       });
     }
-    for (let i = 0; i < 2; i++) delayedBursts.push({ x: e.x + 30, y: e.y + e.h * .4, t: .2 + i * .3, color: '#ffb347' });
-    sfx('boss');
+    for (let i = 0; i < 3; i++) delayedBursts.push({ x: e.x + 30, y: e.y + e.h * .4, t: .18 + i * .26, color: '#ffb347' });
+    shake = Math.max(shake, 6); sfx('boss');
   }
 
   // Tracks the player, then commits. The freeze is the whole mechanic: dodge
@@ -2029,13 +2038,13 @@
     const cx = e.x + 30, cy = e.y + e.h * .42;
     for (let i = 0; i < shots; i++) {
       hazards.push({
-        kind: 'beam', x: cx, y: cy, w: 1500, h: 56 / D.gapW, ang: Math.PI,
-        warn: 1.15 * D.telMul + i * .62, live: .26, fade: .2,
+        kind: 'beam', x: cx, y: cy, w: 1500, h: 62 / D.gapW, ang: Math.PI,
+        warn: 1.15 * D.telMul + i * .62, live: .28, fade: .22,
         lock: (i === 0 ? .72 : .62) * D.telMul, aim: true, t: 0,
-        damage: 28, color: '#72ff68',
+        damage: 35, color: '#72ff68',
       });
     }
-    lightning = .3; lightningX = e.x; sfx('thunder');
+    lightning = .35; lightningX = e.x; shake = Math.max(shake, 8); sfx('thunder');
   }
 
   // The queen's signature: a band thick enough to own a third of the screen.
@@ -2043,29 +2052,30 @@
   // real top speed, so instead a second band answers on the opposite side.
   function bossHeartCannon(e) {
     const D = difficulties[difficultyKey];
-    const h = D.gapW > 1.2 ? 190 : D.gapW < .9 ? 300 : 260;
+    const h = D.gapW > 1.2 ? 200 : D.gapW < .9 ? 320 : 280;
     const py = clamp(player.y + 55, 60, 660);
     hazards.push({
       kind: 'beam', x: e.x + 20, y: py, w: 1400, h, ang: Math.PI,
-      warn: telFor(h / 2 + 34), live: .6, fade: .3, lock: 0, t: 0,
-      damage: 30, color: '#ff3e9d',
+      warn: telFor(h / 2 + 34), live: .62, fade: .32, lock: 0, t: 0,
+      damage: 38, color: '#ff3e9d',
     });
-    for (let i = 0; i < 3; i++) delayedBursts.push({ x: e.x + 40, y: e.y + e.h * .4, t: .3 + i * .32, color: '#ff9ccf' });
-    sfx('bossSuperHit');
+    for (let i = 0; i < 4; i++) delayedBursts.push({ x: e.x + 40, y: e.y + e.h * .4, t: .26 + i * .28, color: '#ff9ccf' });
+    shake = Math.max(shake, 10); sfx('bossSuperHit');
   }
 
   // Four arms whose bullets leave at staggered speeds, so the volley unrolls
   // into a rose instead of a flat ring.
   function bossRoseLattice(e) {
     const D = difficulties[difficultyKey];
-    const arms = 4, per = Math.max(6, Math.round(8 * D.barrage));
+    const arms = 4, per = Math.max(7, Math.round(9 * D.barrage));
     const cx = e.x + 40, cy = e.y + e.h * .45;
     for (let a = 0; a < arms; a++) {
       const ang = (e.spiral || 0) + a / arms * Math.PI * 2;
       for (let i = 0; i < per; i++) {
-        enemyBullets.push({ x: cx, y: cy, vx: Math.cos(ang) * (120 + i * 26), vy: Math.sin(ang) * (120 + i * 26), r: 10, life: 7, damage: 14, heart: true, grazeMul: .4 });
+        enemyBullets.push({ x: cx, y: cy, vx: Math.cos(ang) * (120 + i * 26), vy: Math.sin(ang) * (120 + i * 26), r: 10, life: 7, damage: 18, heart: true, grazeMul: .4 });
       }
     }
+    burst(cx, cy, '#ff5a9d', 12, 220);
     sfx('boss');
   }
 
@@ -2098,6 +2108,7 @@
     powerDownBanner = Math.max(0, powerDownBanner - dt);
     charmFlash = Math.max(0, charmFlash - dt);
     ammoBanner = Math.max(0, ammoBanner - dt);
+    reloadFlash = Math.max(0, reloadFlash - dt);
     const phaseInfo = currentPhase(stageTime);
     activePhase = phaseInfo.phase; activeTIn = phaseInfo.tIn;
     if (activePhase.id !== lastPhaseId) { lastPhaseId = activePhase.id; setpieceStep = 0; }
@@ -2250,6 +2261,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     player.frame += dt * (player.grounded ? 8 : 10);
     player.fire -= dt; player.missileFire -= dt;
     if (canShoot && player.fire <= 0) {
+      // A stocked full-reload pack (shop only) fires automatically the instant
+      // the mag would run dry, refilling to max before the pea-shot ever shows.
+      if (ammo <= 0 && ammoPackStock > 0) {
+        ammoPackStock--; ammo = ammoMax; reloadFlash = 1.6;
+        const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
+        burst(cx, cy, '#a8ffa0', 30, 340); shockwaves.push({ x: cx, y: cy, r: 10, speed: 640, life: .6, max: .6, color: '#72ff68' });
+        shake = Math.max(shake, 6); sfx('power');
+      }
       if (ammo > 0) {
         ammo--;
         shoot();
@@ -2681,6 +2700,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     { id: 'buyHeal', price: () => 600, can: () => health < maxHealth, apply: () => { health = Math.min(maxHealth, health + 40); }, status: () => `HP ${Math.ceil(health)}/${maxHealth}` },
     // The stage-transition top-up only reaches 60% — a full magazine is a purchase.
     { id: 'buyAmmo', price: () => 900, can: () => ammo < ammoMax, apply: () => { ammo = Math.min(ammoMax, ammo + 120); }, status: () => `${ammo}/${ammoMax}` },
+    // Stocked emergency full reloads (up to 5): auto-fire the instant the mag
+    // hits empty, refilling to max before the pea-shot fallback ever shows —
+    // same "buy a stock, it saves you automatically" shape as the charm.
+    { id: 'buyAmmoPack', price: () => 1200, can: () => ammoPackStock < 5, apply: () => ammoPackStock++, status: () => `のこり ${ammoPackStock}/5` },
     // Consumed automatically in hurt() to cancel one power-down — cheap
     // insurance against the Gradius-style demotion on getting hit.
     { id: 'buyCharm', price: () => 2200, can: () => charmStock < 3, apply: () => charmStock++, status: () => `のこり ${charmStock}/3` },
@@ -8107,6 +8130,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.fillStyle = ammoLow ? (Math.floor(elapsed * 10) % 2 ? '#ff5a36' : '#ffb347') : '#72ff68';
     ctx.fillRect(91, 139, 152 * ammo / ammoMax, 10);
     ctx.fillStyle = ammoLow ? '#ff8a6a' : '#fff'; ctx.font = '7px "Press Start 2P", monospace'; ctx.fillText('AMMO', 34, 148);
+    if (ammoPackStock > 0) {
+      // Stocked full-reload packs: a small badge in the panel's top-right
+      // corner, clear of the bar, the AMMO label and the numeric readout.
+      ctx.fillStyle = '#a8ffa0'; ctx.font = '6px "Press Start 2P", monospace';
+      ctx.textAlign = 'right'; ctx.fillText(`PACK×${ammoPackStock}`, 304, 138); ctx.textAlign = 'left';
+    }
+    ctx.fillStyle = ammoLow ? '#ff8a6a' : '#fff'; ctx.font = '7px "Press Start 2P", monospace';
     ctx.textAlign = 'right'; ctx.fillText(String(ammo), 298, 148); ctx.textAlign = 'left';
     ctx.fillStyle = '#fff'; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText('HP', VW - 336, 48);
     ctx.fillStyle = '#21163f'; ctx.fillRect(VW - 336, 57, 286, 18);
@@ -8181,6 +8211,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.save(); ctx.globalAlpha = a; ctx.textAlign = 'center';
       ctx.fillStyle = '#ff5a36'; ctx.font = '10px "Press Start 2P", monospace';
       ctx.fillText('POWER DOWN', player.x + player.w / 2, player.y - 18 - (1.4 - powerDownBanner) * 40);
+      ctx.restore(); ctx.textAlign = 'left';
+    }
+    if (reloadFlash > 0) {
+      // A stocked pack auto-fired: celebrate the save so it reads as a reward,
+      // not a silent number change.
+      const a = Math.min(1, reloadFlash * 2.2);
+      ctx.save(); ctx.globalAlpha = a; ctx.textAlign = 'center';
+      ctx.fillStyle = '#72ff68'; ctx.font = '15px "DotGothic16", monospace';
+      ctx.fillText('フルリロード！', player.x + player.w / 2, player.y - 40 - (1.6 - reloadFlash) * 30);
       ctx.restore(); ctx.textAlign = 'left';
     }
     if (ammoBanner > 0) {
@@ -8533,7 +8572,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, bombStock, charmStock, ammo, ammoMax, musicReactive, hardClear: !!localStorage.getItem('grochan-hard-clear'), stageTime, phaseId: activePhase.id, enemies: enemies.length, blocks: enemies.filter(en => en.type === 'block').length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, bombStock, charmStock, ammo, ammoMax, ammoPackStock, musicReactive, hardClear: !!localStorage.getItem('grochan-hard-clear'), stageTime, phaseId: activePhase.id, enemies: enemies.length, blocks: enemies.filter(en => en.type === 'block').length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
   // Boss-fight test hooks, alongside the Shift+N/M/B keys and ?boss=N above:
   // they let a headless run drive a boss to any state without playing the fight.
   // Local only — these can set a boss's HP directly, which has no place on the
@@ -8547,6 +8586,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     window.__wall = () => spawnBlockWall();
     window.__drop = (type, kind = null) => { pickups.push({ type, kind, x: player.x + 260, y: player.y + 40, r: 19, t: 0 }); };
     window.__setAmmo = n => { ammo = clamp(n, 0, ammoMax); };
+    window.__grantAmmoPack = () => { ammoPackStock = Math.min(5, ammoPackStock + 1); };
+    window.__bossMaxHp = () => { const b = enemies.find(en => en.type === 'boss' || en.type === 'midboss'); return b ? b.maxHp : null; };
     window.__setSpecial = n => { special = clamp(n, 0, 100); updateSpecialButton(); };
     window.__grantBomb = () => { bombStock = Math.min(3, bombStock + 1); updateBombButton(); };
     window.__grantCharm = () => { charmStock = Math.min(3, charmStock + 1); };
