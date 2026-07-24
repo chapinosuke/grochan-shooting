@@ -224,15 +224,22 @@
   let bombStock = 0;
   let charmStock = 0;
   let charmFlash = 0;
+  let ammo = 170;        // main-gun magazine: one round per volley, pea-shot fallback at 0
+  let ammoMax = 170;
+  let ammoBanner = 0;    // "弾切れ!" rising tag timer, armed on the shot that empties the gun
   let bossCrit = 0;      // 0..1 fade of the palace's blood-red sky in the queen's last act
   let bgCam = 0;
   let bgCamX = 0;        // horizontal camera yaw, eased from player.x (parallax)
   let bokeh = [];        // front-of-camera defocused light orbs
   let shoppers = [];     // pedestrians walking the shopping street (neon stage)
   let formationTimer = 3;
+  let blockWallTimer = 0;  // personal cooldown for destructible wall spawns
   let fpsShow = false;   // F1 toggles a verification-only FPS readout
   let fpsAvg = 60;       // EMA of 1/rawDt
   const padInput = { x: 0, y: 0, fire: false, special: false, bomb: false };
+  const motionBuf = [];   // recent 8-way input directions (numpad encoding) for command moves
+  let lastMotionDir = 5;
+  let wasFiring = false;  // previous-frame fire state → rising-edge detection
   let padStartWasDown = false;
   let padActionWasDown = false;
   let padSpecialWasDown = false;
@@ -244,9 +251,9 @@
     // safe corridor in px (beams use it inversely for thickness), telMul stretches every
     // telegraph, hazardDmg scales beam damage. hard keeps gapW at .85 rather than .8 so
     // the corridor stays wider than the player's 148px-tall grounded hitbox.
-    easy: { spawn: 1.08, speed: .8, damage: .55, timeScale: 1.06, bossHp: 300, score: .8, midHp: 90, bulletSpeed: .68, fireGap: 2.2, barrage: .72, gapW: 1.5, telMul: 1.3, hazardDmg: .6 },
-    normal: { spawn: .72, speed: 1.05, damage: 1.05, timeScale: 1, bossHp: 560, score: 1, midHp: 170, bulletSpeed: 1, fireGap: 1, barrage: 1, gapW: 1, telMul: 1, hazardDmg: 1 },
-    hard: { spawn: .55, speed: 1.28, damage: 1.35, timeScale: .92, bossHp: 800, score: 1.45, midHp: 240, bulletSpeed: 1.08, fireGap: .9, barrage: 1.28, gapW: .85, telMul: .92, hazardDmg: 1.15 }
+    easy: { spawn: 1.08, speed: .8, damage: .55, timeScale: 1.06, bossHp: 300, score: .8, midHp: 90, bulletSpeed: .68, fireGap: 2.2, barrage: .72, gapW: 1.5, telMul: 1.3, hazardDmg: .6, ammo: 220 },
+    normal: { spawn: .72, speed: 1.05, damage: 1.05, timeScale: 1, bossHp: 560, score: 1, midHp: 170, bulletSpeed: 1, fireGap: 1, barrage: 1, gapW: 1, telMul: 1, hazardDmg: 1, ammo: 170 },
+    hard: { spawn: .55, speed: 1.28, damage: 1.35, timeScale: .92, bossHp: 800, score: 1.45, midHp: 240, bulletSpeed: 1.08, fireGap: .9, barrage: 1.28, gapW: .85, telMul: .92, hazardDmg: 1.15, ammo: 140 }
   };
   const stages = [
     {
@@ -678,6 +685,7 @@
     special = 35; specialFlash = 0; formationTimer = 2.8;
     continuesLeft = 3; continueBanner = 0; powerDownBanner = 0;
     bombStock = 0; charmStock = 0; charmFlash = 0;
+    ammo = ammoMax = difficulties[difficultyKey].ammo; ammoBanner = 0;
     bullets = []; clearEnemyFire(); enemies = []; particles = []; pickups = []; shockwaves = [];
     setupStage();
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
@@ -989,6 +997,16 @@
     sfx('shoot');
   }
 
+  // Empty-magazine fallback: a slow, weak but infinite pea-shot so running dry
+  // is a setback, never a softlock — every boss stays killable.
+  function shootPea() {
+    const muzzleX = player.x + (player.grounded ? 114 : 116);
+    const muzzleY = player.y + (player.grounded ? 80 : 72 + Math.sin(player.frame * .65) * 3);
+    bullets.push({ x: muzzleX, y: muzzleY, vx: 780, vy: player.grounded ? -12 : 0, life: 1.7, r: 5, damage: .6, pea: true });
+    burst(muzzleX, muzzleY, '#c9d6ec', 3, 90);
+    sfx('shoot');
+  }
+
   function shootMissile() {
     const x = player.x + (player.grounded ? 100 : 88);
     const y = player.y + (player.grounded ? 78 : 76);
@@ -1048,6 +1066,63 @@
     bombButton.textContent = `BOMB ×${bombStock}`;
   }
 
+  // --- Motion-input command moves -----------------------------------------
+  // checkMotion walks the recent direction history (numpad encoding, oldest
+  // first) and reports whether `seq` appears in order inside the input window.
+  // Intermediate neutrals/extra directions are ignored, so a rolled ↓↘→ on
+  // keys or a swept stick both register.
+  function checkMotion(seq, window = .45) {
+    let i = 0;
+    for (const m of motionBuf) {
+      if (elapsed - m.t > window) continue;
+      if (m.dir === seq[i]) i++;
+      if (i === seq.length) return true;
+    }
+    return false;
+  }
+
+  // Called on a fresh fire press, before the normal shot. Returns true when a
+  // command consumed the press. The two sequences are mutually exclusive
+  // (2,3,6 vs 6,2,3), so order of the checks doesn't matter.
+  function tryCommandMove() {
+    if (state !== 'playing' || paused || ['transition', 'final'].includes(bossState)) return false;
+    if (checkMotion([2, 3, 6])) return commandHeartWave();
+    if (checkMotion([6, 2, 3])) return commandSparkRiser();
+    return false;
+  }
+
+  // ハートウェーブ (↓↘→+shot, 35% gauge): one giant piercing heart that sails
+  // through every enemy in its path, ticking each of them as it passes.
+  function commandHeartWave() {
+    if (special < 35) { sfx('shield'); return false; }
+    special -= 35; updateSpecialButton(); motionBuf.length = 0;
+    const x = player.x + 110, y = player.y + (player.grounded ? 70 : 60);
+    bullets.push({ x, y, vx: 620, vy: 0, life: 2.4, r: 34, damage: 3, pierce: true, hue: Math.random() * 360 });
+    shockwaves.push({ x, y, r: 12, speed: 620, life: .5, max: .5, color: '#ff3e9d' });
+    burst(x, y, '#ff9ccf', 24, 320);
+    shake = Math.max(shake, 8); sfx('missile'); sfx('power');
+    return true;
+  }
+
+  // スパークライザー (→↓↘+shot, 40% gauge): a climbing volt pillar plus a
+  // close-range bullet sweep and a breath of invulnerability — the panic
+  // uppercut of the pair.
+  function commandSparkRiser() {
+    if (special < 40) { sfx('shield'); return false; }
+    special -= 40; updateSpecialButton(); motionBuf.length = 0;
+    const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
+    for (let i = 0; i < 10; i++) {
+      bullets.push({ x: cx + 20 + i * 30, y: cy + 36 + i * 15, vx: 150, vy: -760, life: 1.15, r: 10, damage: 2, spark: true });
+    }
+    for (const b of enemyBullets) {
+      if (Math.hypot(b.x - cx, b.y - cy) < 200) { b.life = 0; burst(b.x, b.y, '#72ff68', 2, 90); }
+    }
+    player.inv = Math.max(player.inv, .6);
+    shockwaves.push({ x: cx, y: cy, r: 10, speed: 700, life: .6, max: .6, color: '#72ff68' });
+    shake = Math.max(shake, 10); sfx('boom'); sfx('power');
+    return true;
+  }
+
   function pickSpawnType() {
     const table = stages[stageIndex].spawnTable;
     let total = 0;
@@ -1095,7 +1170,8 @@
       burst(30, e.y + e.h / 2, stages[stageIndex].accent2, 10, 200);
     }
     const canDive = ['bat', 'racer', 'cupid', 'knight'].includes(e.type);
-    e.behavior = flank ? 'cruise' : formation ? 'formation' : canDive && Math.random() < .48 ? 'dive' : Math.random() < .24 ? 'stagger' : 'cruise';
+    e.behavior = flank ? 'cruise' : formation ? (formation.shape === 'snake' ? 'snake' : 'formation') : canDive && Math.random() < .48 ? 'dive' : Math.random() < .24 ? 'stagger' : 'cruise';
+    if (e.behavior === 'snake') e.wave = false;   // the chain sine replaces the solo bob
     e.fireMax = e.fire;
     enemies.push(e);
   }
@@ -1112,15 +1188,54 @@
   function spawnFormation(elite = false) {
     const type = pickSpawnType();
     const groundType = ['tank', 'turret', 'ember', 'walker'].includes(type);
-    const count = groundType ? 2 : (Math.random() < .35 ? 4 : 3);
-    const shape = Math.random() < .5 ? 'vee' : 'column';
+    // Stage 1 mostly keeps the classic vee/column; the complex shapes (vertical
+    // picket, slithering chain, staggered parallel rows) take over later.
+    const pool = groundType ? ['column']
+      : Math.random() < (stageIndex === 0 ? .7 : .42) ? ['vee', 'column']
+        : ['wall', 'snake', 'rows'];
+    const shape = pool[Math.floor(Math.random() * pool.length)];
     const centerY = 140 + Math.random() * 300;
-    for (let i = 0; i < count; i++) {
-      const offset = i - (count - 1) / 2;
-      const y = groundType ? 560 : clamp(centerY + (shape === 'vee' ? Math.abs(offset) * 58 : offset * 64), 75, 535);
-      spawnEnemy(type, { y, xOffset: i * 82 + (shape === 'vee' ? Math.abs(offset) * 35 : 0), shape, slot: i, elite });
+    if (shape === 'wall') {
+      // Vertical picket: five abreast filling most of the lane height.
+      for (let i = 0; i < 5; i++) spawnEnemy(type, { y: 95 + i * 100, xOffset: 0, shape, slot: i, elite });
+    } else if (shape === 'snake') {
+      // Chain sharing one sine, phase-offset per slot — slithers as a body.
+      for (let i = 0; i < 7; i++) spawnEnemy(type, { y: clamp(centerY, 190, 420), xOffset: i * 72, shape, slot: i, elite });
+    } else if (shape === 'rows') {
+      // Two staggered parallel rows sweeping in together.
+      for (let row = 0; row < 2; row++) for (let i = 0; i < 4; i++) {
+        spawnEnemy(type, { y: clamp(centerY + (row ? 115 : -115), 75, 535), xOffset: i * 96 + (row ? 48 : 0), shape, slot: i, elite });
+      }
+    } else {
+      const count = groundType ? 2 : (Math.random() < .35 ? 4 : 3);
+      for (let i = 0; i < count; i++) {
+        const offset = i - (count - 1) / 2;
+        const y = groundType ? 560 : clamp(centerY + (shape === 'vee' ? Math.abs(offset) * 58 : offset * 64), 75, 535);
+        spawnEnemy(type, { y, xOffset: i * 82 + (shape === 'vee' ? Math.abs(offset) * 35 : 0), shape, slot: i, elite });
+      }
     }
     formationTimer = 3.2 + Math.random() * 2.4;
+  }
+
+  // A destructible wall zone: a vertical column of stage-themed blocks with a
+  // pass-through gap the player either threads or shoots open. Blocks are
+  // ordinary `enemies` entities, so bullets, contact damage, combo chains and
+  // the money payout all flow through the normal paths.
+  function spawnBlockWall() {
+    const cell = 92, cells = 6, top = 70;
+    const gapSize = difficulties[difficultyKey].gapW >= 1.2 ? 2 : 1;   // easy gets a wider door
+    const gapAt = 1 + Math.floor(Math.random() * (cells - gapSize - 1));
+    for (let i = 0; i < cells; i++) {
+      if (i >= gapAt && i < gapAt + gapSize) continue;
+      const hp = 3 + stageIndex;
+      enemies.push({
+        type: 'block', x: VW + 80, y: top + i * cell, baseY: top + i * cell, w: cell, h: cell,
+        hp, maxHp: hp, vx: 130, t: Math.random() * 4, wave: false, points: 90,
+        fire: 999, fireMax: 999, behavior: 'cruise', variant: 'standard',
+        seed: Math.floor(Math.random() * 999)
+      });
+    }
+    blockWallTimer = 6;
   }
 
   // Big scripted formations for the 'setpiece' phase — each stage uses its own
@@ -1131,7 +1246,18 @@
     const air = table.filter(([t]) => !GROUND_TYPES.includes(t));
     const ground = table.filter(([t]) => GROUND_TYPES.includes(t));
     const airType = air.length ? air[step % air.length][0] : 'drone';
-    const pattern = step % 3;
+    const pattern = step % 5;
+    if (pattern === 3) {
+      // Snake chain slithering through mid-screen.
+      for (let i = 0; i < 8; i++) spawnEnemy(airType, { y: 300, xOffset: i * 72, shape: 'snake', slot: i });
+      return;
+    }
+    if (pattern === 4) {
+      // Wall zone: a destructible barrier arrives with three escorts behind it.
+      spawnBlockWall();
+      for (let i = 0; i < 3; i++) spawnEnemy(airType, { y: 140 + i * 160, xOffset: 220 + i * 60, shape: 'column', slot: i });
+      return;
+    }
     if (pattern === 0) {
       // Double vee: one wing high, one wing low.
       for (const cy of [150, 420]) for (let i = 0; i < 5; i++) {
@@ -1177,7 +1303,7 @@
 
   function spawnMidBoss() {
     const baseHp = difficulties[difficultyKey].midHp;
-    const hp = Math.round(baseHp * (1 + stageIndex * .38));
+    const hp = Math.round(baseHp * 1.12 * (1 + stageIndex * .38));
     const midSprite = frameReady(midSets[stageIndex].idle[0]) ? midSets[stageIndex].idle[0] : wardenSprite;
     let w = 280, h = 230;
     if (midSprite.complete && midSprite.naturalWidth) {
@@ -1198,10 +1324,23 @@
     e.fire -= dt / fg; e.sp -= dt / fg;
     const engaged = e.x <= midPark + 20;
     const rage = e.hp < e.maxHp * .45;
+    // Mini-beam on its own clock: one thin aimed beam that teaches the
+    // beam-dodge grammar before the stage boss uses the wide ones.
+    e.beamT = (e.beamT === undefined ? 4.5 : e.beamT - dt / fg);
+    if (engaged && e.beamT <= 0) {
+      const D = difficulties[difficultyKey];
+      hazards.push({
+        kind: 'beam', x: e.x + 26, y: e.y + e.h * .45, w: 1100, h: 44 / D.gapW, ang: Math.PI,
+        warn: 1.0 * D.telMul, live: .22, fade: .18, lock: .6 * D.telMul, aim: true, t: 0,
+        damage: 22, color: stages[stageIndex].accent2,
+      });
+      e.attackT = .5; sfx('boss');
+      e.beamT = rage ? 5 : 6.5;
+    }
     if (engaged && e.fire <= 0) {
       const ox = e.x + 12, oy = e.y + e.h / 2;
       const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
-      const count = rage ? 7 : 5;
+      const count = Math.max(3, Math.round((rage ? 7 : 5) * difficulties[difficultyKey].barrage));
       for (let i = 0; i < count; i++) {
         const a = aim + (i - (count - 1) / 2) * .17;
         enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * (270 + stageIndex * 22), vy: Math.sin(a) * (270 + stageIndex * 22), r: 10, life: 6.5, damage: 16 + stageIndex, boss: true, volt: stageIndex === 3, fire: stageIndex === 2, heart: stageIndex === 4, bubble: stageIndex === 1 });
@@ -1212,7 +1351,7 @@
     if (engaged && e.sp <= 0) {
       e.attackT = .55;
       const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
-      const count = rage ? 16 : 12;
+      const count = Math.max(8, Math.round((rage ? 16 : 12) * difficulties[difficultyKey].barrage));
       for (let i = 0; i < count; i++) {
         const a = i / count * Math.PI * 2 + e.t * .4;
         enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 195, vy: Math.sin(a) * 195, r: 9, life: 6, damage: 15 + stageIndex, boss: true });
@@ -1513,7 +1652,11 @@
         e.y = bobY(e.baseY + 40, 70);
         if (engaged && e.fire <= 0) { bossFan(e, e.phase2 ? 9 : 6); e.fire = e.phase2 ? .48 : .62; }
         if (engaged && e.sp <= 0 && !(e.tel > 0)) {
-          const pick = e.tier >= 1 && Math.random() < .5 ? 'curtain' : 'dash';
+          // From act two the mask adds the crossbeam scissors to the deck.
+          const roll = Math.random();
+          const pick = e.tier >= 1
+            ? (roll < .34 ? 'crossbeam' : roll < .67 ? 'curtain' : 'dash')
+            : 'dash';
           bossTelegraph(e, pick, telFor(pick === 'curtain' ? 90 : 70), {
             y: pick === 'curtain' ? clamp(player.y + 55, 130, 590) : clamp(player.y - 30, 40, 480),
           });
@@ -1534,7 +1677,11 @@
         if (e.phase2) { bossFlameSweep(e); e.fire = .12; } else { bossFireball(e); e.fire = .85; }
       }
       if (engaged && e.sp <= 0 && !(e.tel > 0)) {
-        const pick = e.tier >= 1 && Math.random() < .5 ? 'heatwall' : 'pillar';
+        // Act two adds the horizontal heat press to the wall/pillar deck.
+        const roll = Math.random();
+        const pick = e.tier >= 1
+          ? (roll < .34 ? 'heatbeam' : roll < .67 ? 'heatwall' : 'pillar')
+          : 'pillar';
         bossTelegraph(e, pick, telFor(60), { x: clamp(player.x + 56, 90, VW - 140) });
         e.sp = [4.0, 2.8, 2.2][e.tier || 0];
       }
@@ -1606,6 +1753,8 @@
     else if (type === 'curtain') { bossCurtain(e, 0); e.followUp = .95; e.followType = 'curtain2'; }
     else if (type === 'curtain2') bossCurtain(e, 1);
     else if (type === 'heatwall') bossHeatWall(e);
+    else if (type === 'crossbeam') bossCrossBeam(e);
+    else if (type === 'heatbeam') bossHeatBeam(e);
     else if (type === 'flood') bossDataFlood(e);
     else if (type === 'railgun') bossRailgun(e, e.phase2 ? 3 : 2);
     else if (type === 'cannon') bossHeartCannon(e);
@@ -1790,6 +1939,40 @@
     sfx('boss');
   }
 
+  // MASQUERADE's scissors: two aimed diagonal beams crossing in an X — the
+  // safe spot is the wedge between the blades.
+  function bossCrossBeam(e) {
+    const D = difficulties[difficultyKey];
+    const cx = e.x + 30, cy = e.y + e.h * .4;
+    const aim = Math.atan2(player.y + 55 - cy, player.x + 56 - cx);
+    for (const off of [-.35, .35]) {
+      hazards.push({
+        kind: 'beam', x: cx, y: cy, w: 1500, h: 60 / D.gapW, ang: aim + off,
+        warn: 1.1 * D.telMul, live: .3, fade: .2, lock: .65 * D.telMul, aim: false, t: 0,
+        damage: 26, color: '#ff3e9d',
+      });
+    }
+    sfx('boss');
+  }
+
+  // INFERNO DJINN's press: two horizontal flame bands that leave a corridor at
+  // the player's row — hold the line to survive.
+  function bossHeatBeam(e) {
+    const D = difficulties[difficultyKey];
+    const h = 90 / D.gapW;
+    const py = clamp(player.y + 55, 130, 590);
+    const gap = 105 * D.gapW;
+    for (const y of [py - gap - h / 2, py + gap + h / 2]) {
+      hazards.push({
+        kind: 'beam', x: 0, y, w: VW, h, ang: 0,
+        warn: telFor(h / 2 + 34), live: .5, fade: .25, lock: 0, t: 0,
+        damage: 27, color: '#ff8a35',
+      });
+    }
+    for (let i = 0; i < 2; i++) delayedBursts.push({ x: e.x + 30, y: e.y + e.h * .4, t: .2 + i * .3, color: '#ffb347' });
+    sfx('boss');
+  }
+
   // Tracks the player, then commits. The freeze is the whole mechanic: dodge
   // after the lock, not before.
   function bossRailgun(e, shots) {
@@ -1865,6 +2048,7 @@
     continueBanner = Math.max(0, continueBanner - dt);
     powerDownBanner = Math.max(0, powerDownBanner - dt);
     charmFlash = Math.max(0, charmFlash - dt);
+    ammoBanner = Math.max(0, ammoBanner - dt);
     const phaseInfo = currentPhase(stageTime);
     activePhase = phaseInfo.phase; activeTIn = phaseInfo.tIn;
     if (activePhase.id !== lastPhaseId) { lastPhaseId = activePhase.id; setpieceStep = 0; }
@@ -1926,6 +2110,18 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (keys.has('ArrowRight') || keys.has('KeyD')) ax++;
     if (keys.has('ArrowUp') || keys.has('KeyW')) ay--;
     if (keys.has('ArrowDown') || keys.has('KeyS')) ay++;
+    // Motion-command buffer: log 8-way direction *changes* (numpad encoding,
+    // 5 = neutral) with timestamps. checkMotion consumes this for ↓↘→ etc.
+    {
+      const mdx = Math.abs(ax) > .35 ? Math.sign(ax) : 0;
+      const mdy = Math.abs(ay) > .35 ? Math.sign(ay) : 0;
+      const dir = 5 + mdx - mdy * 3;
+      if (dir !== lastMotionDir) {
+        lastMotionDir = dir;
+        motionBuf.push({ dir, t: elapsed });
+        if (motionBuf.length > 12) motionBuf.shift();
+      }
+    }
     const speedBoost = 1 + (player.speed - 1) * .32;
     player.takeoff = Math.max(0, player.takeoff - dt);
     // Clear vertical intent (ignore tiny stick noise so walking is not cancelled).
@@ -1986,6 +2182,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // retreat-and-fire pose. The backward flip only applies when she isn't shooting.
     if (firing) player.facing = 1;
     const canShoot = firing && !['transition', 'final', 'warning', 'midboss-warning'].includes(bossState);
+    // A fresh fire press first offers itself to the motion commands; on a
+    // successful special the normal shot sits out a beat.
+    const firePressed = firing && !wasFiring;
+    wasFiring = firing;
+    if (firePressed && tryCommandMove()) player.fire = Math.max(player.fire, .16);
     // Drive the gait by distance travelled, not by a fixed clock. This keeps the
     // boots planted instead of skating at low speed, and standing fire stays idle.
     const walking = player.grounded && Math.abs(player.vx) > 24;
@@ -2000,8 +2201,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     player.frame += dt * (player.grounded ? 8 : 10);
     player.fire -= dt; player.missileFire -= dt;
     if (canShoot && player.fire <= 0) {
-      shoot();
-      player.fire = player.grounded ? .12 : .13;
+      if (ammo > 0) {
+        ammo--;
+        shoot();
+        player.fire = player.grounded ? .12 : .13;
+        if (ammo === 0) { ammoBanner = 2; sfx('shield'); }
+      } else {
+        shootPea();
+        player.fire = .28;
+      }
     }
     if (canShoot && player.power >= 2 && player.missileFire <= 0) {
       shootMissile();
@@ -2010,6 +2218,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
     spawnTimer -= dt;
     formationTimer -= dt;
+    blockWallTimer -= dt;
     if (bossState === 'waiting' && stageBanner <= 1.2 && spawnTimer <= 0) {
       const inten = activePhase.intensity ?? .5;
       const mode = activePhase.mode;
@@ -2034,6 +2243,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       } else { // assault
         // Hot phases also roll rear flankers so the player has to watch their back.
         if (inten >= .5 && Math.random() < .1 + .2 * inten) spawnFlanker();
+        // From stage 2 on, hot phases occasionally drop a destructible wall
+        // zone in the lane (personal cooldown keeps them an event, not a wallpaper).
+        if (stageIndex >= 1 && blockWallTimer <= 0 && Math.random() < .12) spawnBlockWall();
         const cap = Math.round(6 + 4 * inten) + stageIndex;
         if (formationTimer <= 0 && enemies.length < cap) {
           spawnFormation();
@@ -2132,6 +2344,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         e.baseY += (targetY - e.baseY) * dt * (e.type === 'racer' ? 2.8 : 1.55);
       } else if (e.behavior === 'stagger') {
         e.x += Math.sin(e.t * 5 + (e.formationSlot || 0)) * 70 * dt;
+      } else if (e.behavior === 'snake') {
+        // Whole-chain sine with a per-slot phase lag → the formation slithers
+        // like one body instead of bobbing individually.
+        e.y = clamp(e.baseY + Math.sin(e.t * 2.2 - (e.formationSlot || 0) * .55) * 130, 60, 600);
       }
       if (e.type === 'ember') {
         e.vy += 820 * dt; e.y += e.vy * dt;
@@ -2197,7 +2413,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const b of bullets) {
       for (const e of enemies) {
         if (b.life > 0 && e.hp > 0 && !e.ghost && circleRect(b.x, b.y, b.r, e.x, e.y, e.w, e.h)) {
-          b.life = 0;
+          // Piercing shots pass through: each enemy takes a tick at most every
+          // .3s (absolute-time stamp, no per-frame bookkeeping) and the bullet
+          // keeps flying to hit whoever stands behind.
+          if (b.pierce) {
+            if ((e.pierceCd || 0) > elapsed) continue;
+            e.pierceCd = elapsed + .3;
+          } else b.life = 0;
           let damage = b.damage || 1;
           if (e.shield > 0) {
             const absorbed = Math.min(e.shield, damage); e.shield -= absorbed; damage -= absorbed;
@@ -2210,7 +2432,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
             burstDebris(b.x, b.y, [BOSS_TINT[stageIndex].hit, '#ffffff'], 2, 200);
           }
           if (e.hp <= 0) destroyEnemy(e); else hitStop = Math.max(hitStop, .02);
-          break;
+          if (!b.pierce) break;
         }
       }
     }
@@ -2221,6 +2443,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       let struck = false;
       for (const e of enemies) {
         if (e.hp > 0 && !e.ghost && rects(hitX, hitY, hitW, hitH, e.x + (e.hitInset || 0), e.y + (e.hitInsetY || 0), e.w - (e.hitInset || 0) * 2, e.h - (e.hitInsetY || 0) * 2)) {
+          if (e.type === 'block') {
+            // Body-slamming a wall chips the block but hurts less than an
+            // enemy ram — bulldozing through is possible, just costly.
+            e.hp -= 4; e.hit = .2;
+            if (e.hp <= 0) destroyEnemy(e);
+            hurt(18); struck = true; break;
+          }
           if (e.type !== 'boss' && e.type !== 'midboss') { e.hp = 0; destroyEnemy(e); }
           hurt(e.type === 'boss' ? 38 : e.type === 'midboss' ? 32 : 28); struck = true; break;
         }
@@ -2258,6 +2487,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const mult = Math.min(5, 1 + Math.floor(combo / 5));
     // Money scale: points are legacy score values, paid out at 1/10 as yen.
     score += Math.round(e.points * mult * difficulties[difficultyKey].score / 10);
+    if (e.type === 'block') {
+      // Rubble reward: walls occasionally feed the ammo/heal economy.
+      if (Math.random() < .14) {
+        const t = Math.random() < .6 ? 'ammo' : 'heal';
+        pickups.push({ type: t, kind: t === 'heal' ? (Math.random() < .5 ? 'drink' : 'burger') : null, x: e.x + e.w / 2, y: e.y + e.h / 2, r: 19, t: 0 });
+      }
+      burstDebris(e.x + e.w / 2, e.y + e.h / 2, ['#8fa3c8', '#5b6f94'], 6, 220);
+    }
     if (e.type === 'jelly') {
       for (let i = 0; i < 4; i++) {
         const a = Math.PI / 4 + i * Math.PI / 2;
@@ -2348,6 +2585,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function doContinue() {
     continuesLeft--;
     health = maxHealth;
+    ammo = ammoMax;   // a revive never strands the player dry
     continueBanner = 3;
     player.inv = 4;
     bossCrit = 0;
@@ -2433,6 +2671,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // (in-stage drops or the shop's onigiri).
     stageIndex++; stageTime = 0; stageBanner = 3; bossState = 'waiting'; midBossDone = false; spawnTimer = 1.2; pickupTimer = 4;
     player.inv = 2;
+    // Stage transition tops the magazine up to 60% — the shop's ammo pack is
+    // the way to launch with a full one.
+    ammo = Math.max(ammo, Math.round(ammoMax * .6));
     stageResult = null; bossCrit = 0; tintCache.clear(); setupStage(); musicStep = 0; musicClock = 0;
     state = 'playing';
     pauseButton.classList.add('is-visible');
@@ -6209,6 +6450,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     curtain: '鏡のカーテン', heatwall: 'ヒートウォール', flood: 'データ・フラッド',
     railgun: 'チャージ・レールガン', cannon: 'ハートブレイク・キャノン', lattice: 'ローズ・ラティス',
     pillar: '火柱', strike: '雷撃', dash: '突進', wave: '波', fan: '扇', ring: 'リング',
+    crossbeam: 'クロスシザー', heatbeam: 'ヒートプレス',
   };
 
   // Drawn over the boss rather than under it: a charge orb at the muzzle, rings
@@ -6427,6 +6669,49 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = '#f4f0ff'; ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(-8, -7); ctx.lineTo(-8, 7); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#ff3e9d'; ctx.fillRect(-7, -8, 6, 16); ctx.fillStyle = '#ffe15a'; ctx.fillRect(-12, -3, 7, 6); ctx.restore(); return;
     }
+    if (b.pierce) {
+      // ハートウェーブ: hue-cycling giant heart with an additive halo and a
+      // white core so it still reads as friendly fire.
+      const hue = ((b.hue || 0) + elapsed * 300) % 360;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = `hsla(${hue},100%,70%,.25)`;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 18, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `hsla(${(hue + 120) % 360},100%,70%,.14)`;
+      ctx.beginPath(); ctx.arc(b.x - b.r * 1.3, b.y, b.r + 6, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.save();
+      const pulse = 1 + Math.sin(elapsed * 10 + (b.hue || 0)) * .08;
+      ctx.translate(b.x, b.y); ctx.scale(pulse, pulse);
+      ctx.fillStyle = `hsl(${hue},100%,62%)`; heartPath(0, 2, b.r); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.9)'; heartPath(-b.r * .12, -b.r * .1, b.r * .44); ctx.fill();
+      ctx.restore();
+      return;
+    }
+    if (b.spark) {
+      // スパークライザー: crackling green volt bolt (player-side flavor).
+      b.seed ??= Math.floor(Math.random() * 1000);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = 'rgba(114,255,104,.35)'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 8, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#d6ffd0'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+      const t0 = elapsed * 11 + b.seed;
+      ctx.beginPath();
+      for (let i = 0; i < 4; i++) {
+        const ang = t0 + i * Math.PI / 2, rr = b.r + 3 + Math.abs(Math.sin(t0 * 1.7 + i)) * 6;
+        ctx.moveTo(b.x, b.y); ctx.lineTo(b.x + Math.cos(ang) * rr, b.y + Math.sin(ang) * rr);
+      }
+      ctx.stroke();
+      ctx.fillStyle = '#f2fff0'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * .6, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      return;
+    }
+    if (b.pea) {
+      // Empty-mag fallback pellet: small, pale, short tail — visibly weaker.
+      ctx.fillStyle = 'rgba(201,214,236,.3)';
+      ctx.beginPath(); ctx.moveTo(b.x - 16, b.y); ctx.lineTo(b.x + 3, b.y - size * .7); ctx.lineTo(b.x + 3, b.y + size * .7); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#c9d6ec'; ctx.beginPath(); ctx.arc(b.x + 3, b.y, size, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(b.x + 4, b.y - 1, size * .45, 0, Math.PI * 2); ctx.fill();
+      return;
+    }
     // Velocity-oriented three-layer comet trail (pink → yellow → white) + star head.
     const a = Math.atan2(b.vy || 0, b.vx || 1);
     const spd = Math.hypot(b.vx || 0, b.vy || 0) || 600;
@@ -6595,6 +6880,64 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     heartPath(e.w / 2 - 3, e.h / 2 - 4, e.w * .12); ctx.fill();
   }
 
+  // Destructible wall cell, drawn in local (0,0)-(w,h) space. One themed face
+  // per stage; damage reads as two stages of procedural cracks.
+  function drawBlock(e) {
+    const stage = stages[stageIndex];
+    const theme = stage.theme, w = e.w, h = e.h;
+    const flash = e.hit > 0 ? Math.min(1, e.hit * 6) : 0;
+    ctx.save();
+    if (theme === 'neon') {
+      // ビル看板ブロック: dark tower chunk with a glowing ad panel.
+      drawBox3D(0, 4, w - 8, h - 8, '#241a57', 8);
+      ctx.fillStyle = '#08051d'; ctx.fillRect(10, 16, w - 28, h - 34);
+      ctx.strokeStyle = stage.accent; ctx.lineWidth = 2.5; ctx.strokeRect(10, 16, w - 28, h - 34);
+      ctx.fillStyle = hexA(stage.accent2, .85); ctx.font = '17px "DotGothic16", monospace'; ctx.textAlign = 'center';
+      ctx.fillText(e.seed % 2 ? '危' : '止', 10 + (w - 28) / 2, 16 + (h - 34) / 2 + 7);
+      ctx.textAlign = 'left';
+    } else if (theme === 'aqua') {
+      // 錆コンテナ: corrugated shipping box with rivets.
+      drawBox3D(0, 4, w - 8, h - 8, '#8f4a2c', 8);
+      ctx.globalAlpha = .4; ctx.fillStyle = '#3a1c10';
+      for (let x = 10; x < w - 14; x += 12) ctx.fillRect(x, 10, 4, h - 20);
+      ctx.globalAlpha = 1; ctx.fillStyle = '#d8b08a';
+      for (const [rx, ry] of [[8, 10], [w - 16, 10], [8, h - 18], [w - 16, h - 18]]) { ctx.beginPath(); ctx.arc(rx, ry, 2.5, 0, Math.PI * 2); ctx.fill(); }
+    } else if (theme === 'factory') {
+      // 耐熱ブロック: dark slab with molten seams.
+      drawBox3D(0, 4, w - 8, h - 8, '#3a1626', 8);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = hexA('#ff8a35', .5 + Math.sin(elapsed * 3 + e.seed) * .25); ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(8, h * .38); ctx.lineTo(w * .4, h * .46); ctx.lineTo(w * .55, h * .3); ctx.lineTo(w - 12, h * .4); ctx.stroke();
+      ctx.restore();
+    } else if (theme === 'storm') {
+      // データキューブ: wireframe cube with a scrolling glyph column.
+      drawBox3D(0, 4, w - 8, h - 8, '#062019', 8);
+      ctx.strokeStyle = hexA(stage.accent, .7); ctx.lineWidth = 2; ctx.strokeRect(6, 10, w - 20, h - 20);
+      ctx.fillStyle = stage.accent;
+      const off = Math.floor(elapsed * 6 + e.seed) % 4;
+      for (let i = 0; i < 4; i++) ctx.globalAlpha = i === off ? .9 : .3, ctx.fillRect(w / 2 - 4, 16 + i * 16, 8, 10);
+      ctx.globalAlpha = 1;
+    } else {
+      // 薔薇レンガ: velvet-toned brick with a gold-heart inlay.
+      drawBox3D(0, 4, w - 8, h - 8, '#5b123d', 8);
+      ctx.strokeStyle = 'rgba(255,225,90,.4)'; ctx.lineWidth = 2;
+      ctx.strokeRect(8, 12, w - 24, h - 24);
+      ctx.fillStyle = '#ffe15a'; heartPath(w / 2 - 4, h / 2, 11); ctx.fill();
+    }
+    // Damage cracks: two stages keyed to remaining HP.
+    const ratio = e.hp / e.maxHp;
+    if (ratio < .7) {
+      ctx.strokeStyle = 'rgba(10,6,20,.75)'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(w * .3, 8); ctx.lineTo(w * .42, h * .34); ctx.lineTo(w * .28, h * .58); ctx.stroke();
+      if (ratio < .35) {
+        ctx.beginPath(); ctx.moveTo(w * .72, h * .2); ctx.lineTo(w * .58, h * .5); ctx.lineTo(w * .74, h * .82); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(w * .42, h * .34); ctx.lineTo(w * .66, h * .4); ctx.stroke();
+      }
+    }
+    if (flash > 0) { ctx.globalAlpha = flash * .5; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w - 4, h); }
+    ctx.restore();
+  }
+
   function drawEnemy(e) {
     const stage = stages[stageIndex];
     // A boss that has left the field is neither drawn nor collidable; the
@@ -6604,6 +6947,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (e.fade !== undefined && e.fade < 1) ctx.globalAlpha = Math.max(0, e.fade);
     if (e.type === 'mirage') { drawMirage(e); ctx.restore(); return; }
     if (e.type === 'consort') { drawConsort(e); ctx.restore(); return; }
+    if (e.type === 'block') { drawBlock(e); ctx.restore(); return; }
     // Flankers travel rightward — mirror the sprite so they face their heading.
     if (e.flank) { ctx.translate(e.w, 0); ctx.scale(-1, 1); }
     if (e.type !== 'boss' && e.type !== 'midboss') {
@@ -7573,6 +7917,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.fillStyle = 'rgba(10,6,31,.84)'; ctx.fillRect(24, 99, 286, 26); ctx.strokeStyle = 'rgba(255,225,90,.55)'; ctx.strokeRect(24.5, 99.5, 286, 26);
     ctx.fillStyle = '#2d2144'; ctx.fillRect(91, 107, 207, 10); ctx.fillStyle = special >= 100 ? '#ffe15a' : '#ff3e9d'; ctx.fillRect(91, 107, 207 * special / 100, 10);
     ctx.fillStyle = special >= 100 ? '#ffe15a' : '#fff'; ctx.font = '7px "Press Start 2P", monospace'; ctx.fillText('SPECIAL', 34, 116);
+    // Magazine strip mirrors the SPECIAL bar; goes red and blinks when nearly dry.
+    const ammoLow = ammo <= ammoMax * .25;
+    ctx.fillStyle = 'rgba(10,6,31,.84)'; ctx.fillRect(24, 131, 286, 26); ctx.strokeStyle = 'rgba(114,255,104,.5)'; ctx.strokeRect(24.5, 131.5, 286, 26);
+    ctx.fillStyle = '#1d3122'; ctx.fillRect(91, 139, 152, 10);
+    ctx.fillStyle = ammoLow ? (Math.floor(elapsed * 10) % 2 ? '#ff5a36' : '#ffb347') : '#72ff68';
+    ctx.fillRect(91, 139, 152 * ammo / ammoMax, 10);
+    ctx.fillStyle = ammoLow ? '#ff8a6a' : '#fff'; ctx.font = '7px "Press Start 2P", monospace'; ctx.fillText('AMMO', 34, 148);
+    ctx.textAlign = 'right'; ctx.fillText(String(ammo), 298, 148); ctx.textAlign = 'left';
     ctx.fillStyle = '#fff'; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText('HP', VW - 336, 48);
     ctx.fillStyle = '#21163f'; ctx.fillRect(VW - 336, 57, 286, 18);
     const hpWidth = 286 * health / maxHealth;
@@ -7646,6 +7998,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.save(); ctx.globalAlpha = a; ctx.textAlign = 'center';
       ctx.fillStyle = '#ff5a36'; ctx.font = '10px "Press Start 2P", monospace';
       ctx.fillText('POWER DOWN', player.x + player.w / 2, player.y - 18 - (1.4 - powerDownBanner) * 40);
+      ctx.restore(); ctx.textAlign = 'left';
+    }
+    if (ammoBanner > 0) {
+      // Rising "弾切れ!" tag over Gro-chan the moment the magazine empties.
+      const a = Math.min(1, ammoBanner * 2.5);
+      ctx.save(); ctx.globalAlpha = a; ctx.textAlign = 'center';
+      ctx.fillStyle = '#ff5a36'; ctx.font = '16px "DotGothic16", monospace';
+      ctx.fillText('弾切れ! AMMO EMPTY', player.x + player.w / 2, player.y - 40 - (2 - ammoBanner) * 26);
       ctx.restore(); ctx.textAlign = 'left';
     }
     if (charmFlash > 0) {
@@ -7944,7 +8304,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, bombStock, charmStock, stageTime, phaseId: activePhase.id, enemies: enemies.length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, bombStock, charmStock, ammo, ammoMax, stageTime, phaseId: activePhase.id, enemies: enemies.length, blocks: enemies.filter(en => en.type === 'block').length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
   // Boss-fight test hooks, alongside the Shift+N/M/B keys and ?boss=N above:
   // they let a headless run drive a boss to any state without playing the fight.
   // Local only — these can set a boss's HP directly, which has no place on the
@@ -7953,6 +8313,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   if (LOCAL_DEV) {
     window.__hz = () => hazards.length;
     window.__grant = n => { score += n; };
+    window.__wall = () => spawnBlockWall();
+    window.__setAmmo = n => { ammo = clamp(n, 0, ammoMax); };
+    window.__setSpecial = n => { special = clamp(n, 0, 100); updateSpecialButton(); };
     window.__grantBomb = () => { bombStock = Math.min(3, bombStock + 1); updateBombButton(); };
     window.__grantCharm = () => { charmStock = Math.min(3, charmStock + 1); };
     window.__setPower = n => { player.power = clamp(n, 1, 3); };
