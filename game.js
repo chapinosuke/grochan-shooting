@@ -227,6 +227,7 @@
   let ammo = 170;        // main-gun magazine: one round per volley, pea-shot fallback at 0
   let ammoMax = 170;
   let ammoBanner = 0;    // "弾切れ!" rising tag timer, armed on the shot that empties the gun
+  let lifeDropsSpawned = 0;  // per-run cap on the rare max-HP capsule drop
   let bossCrit = 0;      // 0..1 fade of the palace's blood-red sky in the queen's last act
   let bgCam = 0;
   let bgCamX = 0;        // horizontal camera yaw, eased from player.x (parallax)
@@ -685,7 +686,7 @@
     special = 35; specialFlash = 0; formationTimer = 2.8;
     continuesLeft = 3; continueBanner = 0; powerDownBanner = 0;
     bombStock = 0; charmStock = 0; charmFlash = 0;
-    ammo = ammoMax = difficulties[difficultyKey].ammo; ammoBanner = 0;
+    ammo = ammoMax = difficulties[difficultyKey].ammo; ammoBanner = 0; lifeDropsSpawned = 0;
     bullets = []; clearEnemyFire(); enemies = []; particles = []; pickups = []; shockwaves = [];
     setupStage();
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
@@ -2270,16 +2271,27 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     }
     pickupTimer -= dt;
     if (pickupTimer <= 0 && (bossState === 'waiting' || bossState === 'active' || bossState === 'midboss-active')) {
-      const roll = Math.random();
-      // Once all upgrades are maxed, mostly drop heals so 5-minute stages don't
-      // shower the player with dead pickups.
-      const allMaxed = player.power >= 3 && player.spread >= 3 && player.speed >= 3;
-      const bombRoom = bombStock < 3;
-      // Bomb carves a small slice out of the tail of each branch, falling back
-      // to heal once stocked up so the drop pool doesn't waste rolls on it.
-      const type = allMaxed
-        ? (roll < .74 ? 'heal' : roll < .81 ? 'power' : roll < .88 ? 'spread' : roll < .95 ? 'speed' : bombRoom ? 'bomb' : 'heal')
-        : roll < .26 ? 'heal' : roll < .49 ? 'power' : roll < .70 ? 'spread' : roll < .91 ? 'speed' : bombRoom ? 'bomb' : 'heal';
+      // Ammo carves a need-weighted slice off the front of the pool — a dry
+      // player sees crates often, a full one rarely. A rare life capsule sits
+      // behind it on stages 2+ (hard-capped per run).
+      const ammoSlice = .10 + .25 * (1 - ammo / ammoMax);
+      const lifeOk = stageIndex >= 1 && lifeDropsSpawned < 3;
+      const roll0 = Math.random();
+      let type;
+      if (roll0 < ammoSlice) type = 'ammo';
+      else if (lifeOk && roll0 < ammoSlice + .025) { type = 'life'; lifeDropsSpawned++; }
+      else {
+        const roll = Math.random();
+        // Once all upgrades are maxed, mostly drop heals so 5-minute stages don't
+        // shower the player with dead pickups.
+        const allMaxed = player.power >= 3 && player.spread >= 3 && player.speed >= 3;
+        const bombRoom = bombStock < 3;
+        // Bomb carves a small slice out of the tail of each branch, falling back
+        // to heal once stocked up so the drop pool doesn't waste rolls on it.
+        type = allMaxed
+          ? (roll < .74 ? 'heal' : roll < .81 ? 'power' : roll < .88 ? 'spread' : roll < .95 ? 'speed' : bombRoom ? 'bomb' : 'heal')
+          : roll < .26 ? 'heal' : roll < .49 ? 'power' : roll < .70 ? 'spread' : roll < .91 ? 'speed' : bombRoom ? 'bomb' : 'heal';
+      }
       pickups.push({ type, kind: type === 'heal' ? (Math.random() < .5 ? 'drink' : 'burger') : null, x: VW + 30, y: 100 + Math.random() * (VH - 240), r: 19, t: 0 });
       pickupTimer = (8 + Math.random() * 7) * (activePhase.mode === 'calm' ? 1.6 : 1);
     }
@@ -2474,8 +2486,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         else if (p.type === 'spread') player.spread = Math.min(3, player.spread + 1);
         else if (p.type === 'speed') player.speed = Math.min(3, player.speed + 1);
         else if (p.type === 'bomb') { bombStock = Math.min(3, bombStock + 1); updateBombButton(); }
+        else if (p.type === 'ammo') { ammo = Math.min(ammoMax, ammo + 40); }
+        else if (p.type === 'life') { maxHealth += 15; health = Math.min(maxHealth, health + 15); voice('heal'); }
         else { health = Math.min(maxHealth, health + 32); voice('heal'); }
-        burst(p.x, p.y, p.type === 'power' ? '#ff8a35' : p.type === 'spread' ? '#31e8ff' : p.type === 'speed' ? '#72ff68' : p.type === 'bomb' ? '#c9d6ec' : '#ffe15a', 22, 260); sfx('power');
+        burst(p.x, p.y, p.type === 'power' ? '#ff8a35' : p.type === 'spread' ? '#31e8ff' : p.type === 'speed' ? '#72ff68' : p.type === 'bomb' ? '#c9d6ec' : p.type === 'ammo' ? '#a8ffa0' : p.type === 'life' ? '#ffd76a' : '#ffe15a', 22, 260); sfx('power');
       }
     }
   }
@@ -2544,6 +2558,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       pickups.push({ type: 'power', x: e.x + e.w / 2, y: e.y + e.h / 2, r: 19, t: 0 });
       const drop = Math.random() < .5 ? 'spread' : 'heal';
       pickups.push({ type: drop, kind: drop === 'heal' ? (Math.random() < .5 ? 'drink' : 'burger') : null, x: e.x + e.w / 2 + 40, y: e.y + e.h / 2 - 20, r: 19, t: 0 });
+      // The stage-3 mid boss guards the run's one guaranteed life capsule.
+      if (stageIndex === 2) pickups.push({ type: 'life', x: e.x + e.w / 2 - 44, y: e.y + e.h / 2 + 16, r: 19, t: 0 });
       playBgm(`stage${stageIndex}`, true);
       stageBanner = 2.2;
     }
@@ -2615,6 +2631,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     { id: 'buyWide', price: () => 2600, can: () => player.spread < 3, apply: () => player.spread++, status: () => `Lv ${player.spread}/3` },
     { id: 'buySpeed', price: () => 1800, can: () => player.speed < 3, apply: () => player.speed++, status: () => `Lv ${player.speed}/3` },
     { id: 'buyHeal', price: () => 600, can: () => health < maxHealth, apply: () => { health = Math.min(maxHealth, health + 40); }, status: () => `HP ${Math.ceil(health)}/${maxHealth}` },
+    // The stage-transition top-up only reaches 60% — a full magazine is a purchase.
+    { id: 'buyAmmo', price: () => 900, can: () => ammo < ammoMax, apply: () => { ammo = Math.min(ammoMax, ammo + 120); }, status: () => `${ammo}/${ammoMax}` },
     // Consumed automatically in hurt() to cancel one power-down — cheap
     // insurance against the Gradius-style demotion on getting hit.
     { id: 'buyCharm', price: () => 2200, can: () => charmStock < 3, apply: () => charmStock++, status: () => `のこり ${charmStock}/3` },
@@ -7733,7 +7751,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.save(); ctx.translate(p.x, p.y + bob); ctx.scale(s, s);
     // Soft ground glow only — no hard circle/frame.
     ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .28;
-    const aura = p.type === 'heal' ? '#72ff68' : p.type === 'power' ? '#ff8a35' : p.type === 'spread' ? '#31e8ff' : p.type === 'bomb' ? '#c9d6ec' : '#ffe15a';
+    const aura = p.type === 'heal' ? '#72ff68' : p.type === 'power' ? '#ff8a35' : p.type === 'spread' ? '#31e8ff' : p.type === 'bomb' ? '#c9d6ec' : p.type === 'ammo' ? '#a8ffa0' : p.type === 'life' ? '#ffd76a' : '#ffe15a';
     const ag = ctx.createRadialGradient(0, 8, 2, 0, 8, 26);
     ag.addColorStop(0, hexA(aura, .55)); ag.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = ag; ctx.beginPath(); ctx.ellipse(0, 10, 20, 8, 0, 0, Math.PI * 2); ctx.fill();
@@ -7744,7 +7762,47 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     } else if (p.type === 'power') drawPowerPickup(p.t);
     else if (p.type === 'spread') drawSpreadPickup(p.t);
     else if (p.type === 'bomb') drawBombPickup(p.t);
+    else if (p.type === 'ammo') drawAmmoPickup(p.t);
+    else if (p.type === 'life') drawLifePickup(p.t);
     else drawSpeedPickup(p.t);
+    ctx.restore();
+  }
+
+  // 弾薬クレート: boxy magazine with brass rounds peeking out.
+  function drawAmmoPickup(t) {
+    ctx.save();
+    ctx.fillStyle = '#c8a25a';
+    for (let i = 0; i < 3; i++) {
+      const bx = -9 + i * 9;
+      ctx.beginPath(); ctx.moveTo(bx, -18); ctx.lineTo(bx + 3, -12); ctx.lineTo(bx - 3, -12); ctx.closePath(); ctx.fill();
+      ctx.fillRect(bx - 3, -12, 6, 5);
+    }
+    drawBox3D(-15, -8, 30, 22, '#3f7a4f', 6);
+    ctx.fillStyle = '#eafff0'; ctx.font = '6px "Press Start 2P", monospace'; ctx.textAlign = 'center';
+    ctx.fillText('AMMO', 0, 6);
+    ctx.textAlign = 'left';
+    ctx.restore();
+  }
+
+  // 金のハートカプセル: the rare max-HP-up. A stronger pulse and gold trim
+  // sell the rarity next to the everyday food drops.
+  function drawLifePickup(t) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .35 + Math.sin(t * 6) * .18;
+    const g = ctx.createRadialGradient(0, 0, 2, 0, 0, 27);
+    g.addColorStop(0, '#ffe15a'); g.addColorStop(1, 'rgba(255,215,90,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 27, 0, Math.PI * 2); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    ctx.fillStyle = 'rgba(255,255,255,.92)';
+    ctx.beginPath(); ctx.roundRect(-12, -17, 24, 34, 12); ctx.fill();
+    ctx.strokeStyle = '#c9a13b'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.roundRect(-12, -17, 24, 34, 12); ctx.stroke();
+    ctx.fillStyle = '#ffd76a'; heartPath(0, 1, 10); ctx.fill();
+    ctx.fillStyle = '#ff5a9d'; heartPath(0, 1, 5.5); ctx.fill();
+    // orbiting sparkle
+    const sa = t * 3;
+    ctx.fillStyle = '#fff';
+    starPath(Math.cos(sa) * 17, Math.sin(sa) * 19, 3.5, 1.6, 4); ctx.fill();
     ctx.restore();
   }
 
@@ -8314,6 +8372,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     window.__hz = () => hazards.length;
     window.__grant = n => { score += n; };
     window.__wall = () => spawnBlockWall();
+    window.__drop = (type, kind = null) => { pickups.push({ type, kind, x: player.x + 260, y: player.y + 40, r: 19, t: 0 }); };
     window.__setAmmo = n => { ammo = clamp(n, 0, ammoMax); };
     window.__setSpecial = n => { special = clamp(n, 0, 100); updateSpecialButton(); };
     window.__grantBomb = () => { bombStock = Math.min(3, bombStock + 1); updateBombButton(); };

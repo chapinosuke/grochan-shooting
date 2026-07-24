@@ -350,8 +350,7 @@ kbd {
 .shop-lead strong { margin-left: 8px; color: var(--yellow); font: 15px "Press Start 2P", monospace; }
 .shop-items {
   display: grid;
-  /* 7 items: 4 attack/recovery on row 1, 3 run-long insurance items on row 2 —
-     repeat(6, ...) used to leave a lone orphan on its own row. */
+  /* 8 items: attack/recovery/ammo on row 1, run-long insurance on row 2. */
   grid-template-columns: repeat(4, minmax(108px, 150px));
   gap: 12px;
   margin: 20px 0 8px;
