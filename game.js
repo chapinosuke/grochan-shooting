@@ -795,6 +795,7 @@
         const token = ++bgmFadeToken;
         next.volume = 0;
         next.play().catch(() => { /* starts on the next user gesture */ });
+        ensureBgmAnalyser(next);
         const started = performance.now(), duration = 900;
         const fadeIn = now => {
           if (token !== bgmFadeToken) return;
@@ -815,6 +816,7 @@
     next.volume = 0;
     if (!soundOn) { if (previous) previous.pause(); return; }
     next.play().catch(() => { /* starts on the next user gesture */ });
+    ensureBgmAnalyser(next);
     const started = performance.now(), duration = 900, previousVolume = previous ? previous.volume : 0;
     const fade = now => {
       if (token !== bgmFadeToken) return;
@@ -873,6 +875,10 @@
     if (theme === 'neon') {
       bgProps = Array.from({ length: 3 }, (_, i) => ({ kind: 'car', x: Math.random() * VW, y: 150 + i * 90 + Math.random() * 40, v: 60 + Math.random() * 90, dir: Math.random() < .5 ? -1 : 1 }));
       bgProps.push({ kind: 'searchlight', x: 260, phase: 0, speed: .5 }, { kind: 'searchlight', x: 940, phase: 2.4, speed: .38 });
+      // Festival fireworks over the Shibuya skyline + giant club speakers that
+      // pump with the BGM, flanking the shopping street.
+      bgProps.push({ kind: 'firework', x: 330, timer: 2 + Math.random() * 3 }, { kind: 'firework', x: 950, timer: 5 + Math.random() * 3 });
+      bgProps.push({ kind: 'speaker', x: 96, ringT: -9 }, { kind: 'speaker', x: 1112, ringT: -9 });
       // Shoppers strolling the sidewalk in front of the storefronts. Farther ones
       // sit higher and smaller for depth; each carries an optional shopping bag.
       const coats = ['#ff5a8a', '#4a9cff', '#ffd24a', '#8a6cff', '#3ad6a0', '#ff8a3a'];
@@ -908,6 +914,8 @@
       lightning = 0; lightningX = VW * .5;
     } else if (theme === 'palace') {
       for (let i = 0; i < 20; i++) ambient.push(makeAmbient('heart'));
+      // Royal fireworks — they turn into a celebratory volley when the queen falls.
+      bgProps.push({ kind: 'firework', x: 260, timer: 3 + Math.random() * 4 }, { kind: 'firework', x: 1010, timer: 6 + Math.random() * 4 });
     }
     // Stable scene dressing gives every run a busy, inhabited world without
     // affecting collision or gameplay readability.
@@ -941,6 +949,7 @@
       a.x += (a.vx || 0) * dt - 26 * dt * gameSpeed;
       a.y += (a.vy || 0) * dt;
       if (a.kind === 'spark') a.vy += 480 * dt;
+      if (a.kind === 'fwspark') { a.vy += 250 * dt; a.vx *= Math.pow(.4, dt); }  // firework glitter falls and brakes
       if (a.kind === 'smoke') { a.r += dt * 6; a.x -= dt * (560 - a.y) * .05; }  // wind shear grows with altitude
       if (a.a !== undefined) a.a += dt * 3;
       if (a.life !== undefined) a.life -= dt;
@@ -970,6 +979,34 @@
         }
       }
       else if (p.kind === 'code') { p.y += p.v * dt; if (p.y > 620) { p.y = -80; p.x = Math.random() * VW; } }
+      else if (p.kind === 'firework') {
+        if (p.rise) {
+          p.riseY -= 540 * dt;
+          // Short-lived streak sparks trace the ascent (skipped at low quality).
+          if (bgQuality() > 0 && Math.random() < .7) ambient.push({ kind: 'fwspark', x: p.bx + (Math.random() - .5) * 3, y: p.riseY, vx: 0, vy: 40, life: .3, color: '#ffe9a8' });
+          if (p.riseY <= p.burstY) {
+            p.rise = false;
+            const n = [12, 24, 40][bgQuality()];
+            const pal = stages[stageIndex].theme === 'palace' ? ['#ff9ccf', '#ffe15a', '#ff5a9d'] : ['#31e8ff', '#ff3e9d', '#ffe15a'];
+            ambient.push({ kind: 'fwflash', x: p.bx, y: p.burstY, life: .3, color: pal[Math.floor(Math.random() * 3)] });
+            for (let i = 0; i < n; i++) {
+              const a2 = i / n * Math.PI * 2 + Math.random() * .2;
+              const sp = 90 + Math.random() * 140;
+              ambient.push({ kind: 'fwspark', x: p.bx, y: p.burstY, vx: Math.cos(a2) * sp, vy: Math.sin(a2) * sp, life: .9 + Math.random() * .5, color: pal[i % 3] });
+            }
+            // The queen's downfall earns a celebratory volley cadence.
+            const festival = stages[stageIndex].theme === 'palace' && ['transition', 'final'].includes(bossState);
+            p.timer = festival ? .7 + Math.random() : 4 + Math.random() * 5;
+          }
+        } else {
+          p.timer -= dt;
+          if (p.timer <= 0) {
+            p.rise = true; p.riseY = 600;
+            p.burstY = 100 + Math.random() * 160;
+            p.bx = p.x + (Math.random() - .5) * 180;
+          }
+        }
+      }
       else if (p.kind === 'gear' || p.kind === 'searchlight' || p.kind === 'panel' || p.kind === 'lighthouse') p.phase = (p.phase || 0) + dt * (p.speed || 1);
     }
     if (theme === 'storm') {
@@ -987,7 +1024,8 @@
     // Ground run-and-gun: mostly horizontal out of the walk blaster (asset already aims forward).
     const aimBias = player.grounded ? -12 : 0;
     for (const vy of lanes) {
-      bullets.push({ x: muzzleX, y: muzzleY, vx: 860, vy: vy + aimBias, life: 1.7, r: 7 + player.power * 2, damage: player.power, fromGround: player.grounded });
+      // hue seeds the max-power rainbow orbs; harmless below power 3.
+      bullets.push({ x: muzzleX, y: muzzleY, vx: 860, vy: vy + aimBias, life: 1.7, r: 7 + player.power * 2, damage: player.power, fromGround: player.grounded, hue: Math.random() * 360 });
     }
     // Visible muzzle flash so walk-shoot reads clearly.
     burst(muzzleX, muzzleY, '#ffe15a', player.grounded ? 8 : 5, player.grounded ? 200 : 150);
@@ -3833,6 +3871,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawCity((elapsed * -20) % 120, 600, stage.city, 54, .78, 18);
       drawTokyoExpressway(stage);
       drawNeonRail(stage);
+      for (const p of bgProps) if (p.kind === 'speaker') drawSpeaker(p, stage);
       drawStorefronts(stage);
       drawShibuyaScreen(stage);
     });
@@ -3841,6 +3880,48 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawGroundPlane(stage, { horizonY: 606, bottom: 704, alpha: .1, speed: 90, gap: 110 });
     drawTokyoRoadLights(stage);
     drawShoppers();
+  }
+
+  // Giant club-speaker stack pumping with the BGM: two cabinets, cones that
+  // swell with the bass level (real AnalyserNode over http, sin-pulse on
+  // file://) and a dust ring that pops on each hard beat.
+  function drawSpeaker(p, stage) {
+    const level = musicLevel();
+    const base = 648;
+    if (level > .8 && elapsed - p.ringT > .35) p.ringT = elapsed;
+    ctx.save();
+    ctx.translate(p.x, 0);
+    for (let c = 0; c < 2; c++) {
+      const cy = base - 118 - c * 122, cw = 118, ch = 118;
+      drawVolumeBox(-cw / 2, cy, cw, ch, 12, '#120b30', '#07051d', '#2a1e5e', .92, hexA(stage.accent2, .3 + level * .35));
+      // woofer + tweeter, scaled by the live bass level
+      const cones = [[cy + ch * .62, 34], [cy + ch * .24, 17]];
+      for (const [wy, wr] of cones) {
+        const s = 1 + level * .12;
+        ctx.save(); ctx.translate(0, wy); ctx.scale(s, s);
+        ctx.fillStyle = '#07051d'; ctx.beginPath(); ctx.arc(0, 0, wr, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = hexA(stage.accent, .55 + level * .4); ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(0, 0, wr - 2, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(0, 0, wr * .55, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = hexA(stage.accent2, .5 + level * .5);
+        ctx.beginPath(); ctx.arc(0, 0, wr * .2, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
+    // beat ring: a fast additive pulse leaving the woofer on hard beats
+    const ringAge = elapsed - p.ringT;
+    if (ringAge >= 0 && ringAge < .4 && bgQuality() > 0) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = (1 - ringAge / .4) * .5;
+      ctx.strokeStyle = stage.accent; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, base - 118 + 118 * .62 - 122, 36 + ringAge * 190, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+    // grounding shadow
+    ctx.fillStyle = 'rgba(5,2,18,.5)';
+    ctx.beginPath(); ctx.ellipse(0, base, 66, 9, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 
   // A compact neon commuter train threads between the high-rises. The repeating
@@ -6298,6 +6379,22 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }
       else if (a.kind === 'spark') { ctx.globalAlpha = Math.max(0, Math.min(1, a.life * 1.6)); ctx.fillStyle = '#ffe15a'; ctx.fillRect(a.x, a.y, 4, 4); ctx.fillStyle = 'rgba(255,138,53,.6)'; ctx.fillRect(a.x - a.vx * .02, a.y - a.vy * .02, 3, 3); }
       else if (a.kind === 'rain') { ctx.globalAlpha = .32 + Math.min(1, lightning * 2.4) * .3; ctx.strokeStyle = '#9fe8d8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x + a.vx * .022, a.y + a.vy * .022); ctx.stroke(); }
+      else if (a.kind === 'fwspark') {
+        // Firework glitter: additive dots with a twinkle, fading with life.
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = Math.max(0, Math.min(1, a.life * 1.6)) * (.6 + Math.sin(elapsed * 14 + a.x) * .4);
+        ctx.fillStyle = a.color || '#ffe15a';
+        ctx.fillRect(a.x - 2, a.y - 2, 4, 4);
+      }
+      else if (a.kind === 'fwflash') {
+        // The burst's initial bloom: one soft additive sphere that pops the
+        // whole shell before the glitter takes over.
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = Math.max(0, a.life / .3) * .8;
+        const fg = ctx.createRadialGradient(a.x, a.y, 3, a.x, a.y, 70);
+        fg.addColorStop(0, '#fff'); fg.addColorStop(.35, a.color || '#ffe15a'); fg.addColorStop(1, 'rgba(255,200,120,0)');
+        ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(a.x, a.y, 70, 0, Math.PI * 2); ctx.fill();
+      }
       else if (a.kind === 'dust') {
         // Gold motes twinkling inside the god rays.
         ctx.globalCompositeOperation = 'lighter';
@@ -6741,7 +6838,16 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.beginPath(); ctx.moveTo(-len * .58, 0); ctx.lineTo(9, -size * .62); ctx.lineTo(9, size * .62); ctx.closePath(); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,.9)';
     ctx.beginPath(); ctx.moveTo(-len * .3, 0); ctx.lineTo(10, -size * .34); ctx.lineTo(10, size * .34); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = b.damage >= 3 ? '#ff8a35' : '#ffe15a';
+    if (b.damage >= 3) {
+      // Max power: hue-cycling rainbow orb. The white core and the directional
+      // comet tail stay — they're what keeps friendly fire unmistakable.
+      const hue = ((b.hue || 0) + elapsed * 420) % 360;
+      ctx.fillStyle = `hsla(${hue},100%,70%,.3)`;
+      ctx.beginPath(); ctx.arc(8, 0, size * 1.15, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `hsl(${hue},100%,64%)`;
+    } else {
+      ctx.fillStyle = '#ffe15a';
+    }
     ctx.beginPath(); ctx.arc(8, 0, size * .72, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(9, 0, size * .34, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
@@ -8120,6 +8226,52 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     } catch (_) { /* audio is optional */ }
   }
 
+  // --- BGM analyser (music-reactive scenery) -------------------------------
+  // Only attempted over http(s): on file:// createMediaElementSource reroutes
+  // the element through a CORS-silenced graph and the BGM goes mute forever.
+  // Each Audio element may be wrapped in a source exactly once (a second call
+  // throws), hence the Map. Any failure flips musicReactive off for good and
+  // the procedural sin-pulse below takes over — same visual grammar, no audio
+  // dependency.
+  let bgmAnalyser = null, bgmAnalyserData = null;
+  let musicReactive = location.protocol.startsWith('http');
+  const bgmSources = new Map();
+  function ensureBgmAnalyser(audioEl) {
+    if (!musicReactive || !audioEl || !soundOn) return;
+    try {
+      ensureAudio();
+      if (!audioCtx) return;
+      if (!bgmAnalyser) {
+        bgmAnalyser = audioCtx.createAnalyser();
+        bgmAnalyser.fftSize = 256;
+        bgmAnalyserData = new Uint8Array(bgmAnalyser.frequencyBinCount);
+        bgmAnalyser.connect(audioCtx.destination);
+      }
+      if (!bgmSources.has(audioEl)) {
+        const src = audioCtx.createMediaElementSource(audioEl);
+        src.connect(bgmAnalyser);
+        bgmSources.set(audioEl, src);
+      }
+    } catch (_) {
+      musicReactive = false;
+    }
+  }
+  // Bass level 0..1, computed at most once per frame (elapsed-keyed cache).
+  let musicLevelT = -1, musicLevelVal = 0;
+  function musicLevel() {
+    if (musicLevelT === elapsed) return musicLevelVal;
+    musicLevelT = elapsed;
+    if (musicReactive && bgmAnalyser && audioCtx && audioCtx.state === 'running' && soundOn) {
+      bgmAnalyser.getByteFrequencyData(bgmAnalyserData);
+      let sum = 0;
+      for (let i = 0; i < 9; i++) sum += bgmAnalyserData[i];
+      musicLevelVal = Math.min(1, sum / (9 * 190));
+    } else {
+      musicLevelVal = .5 + .5 * Math.sin(elapsed * 7.4);
+    }
+    return musicLevelVal;
+  }
+
   function playMusicNote() {
     if (!soundOn || !audioCtx) return;
     const stage = stages[stageIndex];
@@ -8362,7 +8514,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, bombStock, charmStock, ammo, ammoMax, stageTime, phaseId: activePhase.id, enemies: enemies.length, blocks: enemies.filter(en => en.type === 'block').length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, bombStock, charmStock, ammo, ammoMax, musicReactive, stageTime, phaseId: activePhase.id, enemies: enemies.length, blocks: enemies.filter(en => en.type === 'block').length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
   // Boss-fight test hooks, alongside the Shift+N/M/B keys and ?boss=N above:
   // they let a headless run drive a boss to any state without playing the fight.
   // Local only — these can set a boss's HP directly, which has no place on the
@@ -8370,6 +8522,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   const LOCAL_DEV = ['localhost', '127.0.0.1', '::1', ''].includes(location.hostname);
   if (LOCAL_DEV) {
     window.__hz = () => hazards.length;
+    window.__fwCount = () => ambient.filter(a => a.kind === 'fwspark').length;
+    window.__bgm = () => ({ key: currentBgmKey, paused: currentBgmKey ? bgmTracks[currentBgmKey].paused : null, t: currentBgmKey ? bgmTracks[currentBgmKey].currentTime : 0, reactive: musicReactive, wired: bgmSources.size });
     window.__grant = n => { score += n; };
     window.__wall = () => spawnBlockWall();
     window.__drop = (type, kind = null) => { pickups.push({ type, kind, x: player.x + 260, y: player.y + 40, r: 19, t: 0 }); };
