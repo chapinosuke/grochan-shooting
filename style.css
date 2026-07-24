@@ -395,6 +395,30 @@ kbd {
 .new-record { color: var(--yellow); font: 13px "Press Start 2P", monospace; animation: blink .7s steps(1) infinite; }
 .new-record.is-hidden { visibility: hidden; }
 
+/* Secret soundtrack reward: hidden until the hard-clear flag unlocks it. */
+.soundtrack-link.is-hidden, .soundtrack-note.is-hidden { display: none; }
+#titleSoundtrackLink {
+  position: absolute;
+  right: 26px;
+  bottom: 70px;   /* clear of the corner sound toggle */
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  color: var(--yellow, #ffe15a);
+  text-decoration: none;
+  padding: 8px 12px;
+  border: 2px solid rgba(255, 225, 90, .55);
+  background: rgba(10, 6, 31, .78);
+  text-shadow: 0 0 8px rgba(255, 225, 90, .6);
+  pointer-events: auto;
+}
+#titleSoundtrackLink:hover { color: #fff; border-color: #fff; }
+#resultSoundtrackLink { text-decoration: none; display: inline-block; }
+.soundtrack-note {
+  margin-top: 10px;
+  color: #ffe15a;
+  text-shadow: 0 0 10px rgba(255, 225, 90, .55);
+}
+
 .pause-label {
   position: absolute;
   z-index: 6;

@@ -31,6 +31,16 @@
   const newRecord = document.querySelector('#newRecord');
   const resultTitle = document.querySelector('#resultTitle');
   const menuHighScore = document.querySelector('#menuHighScore');
+  // Secret soundtrack page: the links exist in the DOM but stay hidden until
+  // the hard-clear flag is set. The page itself is meta-noindexed and the
+  // anchors carry rel="nofollow"; robots.txt deliberately does NOT name the
+  // path (a Disallow line would advertise it and stop the noindex being read).
+  const soundtrackLinks = document.querySelectorAll('#titleSoundtrackLink, #resultSoundtrackLink');
+  function refreshSoundtrackLinks() {
+    const unlocked = !!localStorage.getItem('grochan-hard-clear');
+    soundtrackLinks.forEach(a => a.classList.toggle('is-hidden', !unlocked));
+  }
+  refreshSoundtrackLinks();
   const soundButton = document.querySelector('#soundButton');
   const pauseButton = document.querySelector('#pauseButton');
   const specialButton = document.querySelector('#specialButton');
@@ -2751,6 +2761,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     bombButton.classList.remove('is-visible', 'is-ready');
     pauseLabel.classList.remove('is-visible');
     if (cleared) score += 2500 * difficulties[difficultyKey].score;
+    // Hard-mode clear unlocks the secret soundtrack page. The flag persists in
+    // localStorage; links on the title/result screens follow it from then on.
+    let soundtrackJustUnlocked = false;
+    if (cleared && difficultyKey === 'hard' && !localStorage.getItem('grochan-hard-clear')) {
+      localStorage.setItem('grochan-hard-clear', '1');
+      soundtrackJustUnlocked = true;
+    }
+    refreshSoundtrackLinks();
+    document.querySelector('#soundtrackUnlockNote')?.classList.toggle('is-hidden', !soundtrackJustUnlocked);
     resultTitle.textContent = cleared ? 'ALL CLEAR!' : 'GAME OVER';
     statKills.textContent = String(totalKills);
     statStage.textContent = cleared ? 'ALL' : `${stageIndex + 1} / ${stages.length}`;
@@ -8514,7 +8533,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, bombStock, charmStock, ammo, ammoMax, musicReactive, stageTime, phaseId: activePhase.id, enemies: enemies.length, blocks: enemies.filter(en => en.type === 'block').length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, bombStock, charmStock, ammo, ammoMax, musicReactive, hardClear: !!localStorage.getItem('grochan-hard-clear'), stageTime, phaseId: activePhase.id, enemies: enemies.length, blocks: enemies.filter(en => en.type === 'block').length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
   // Boss-fight test hooks, alongside the Shift+N/M/B keys and ?boss=N above:
   // they let a headless run drive a boss to any state without playing the fight.
   // Local only — these can set a boss's HP directly, which has no place on the
@@ -8575,6 +8594,12 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // sequence, bypassing gameplay entirely.
   {
     const q = new URLSearchParams(location.search);
+    // Dev switch for the soundtrack unlock: ?unlock=1 sets the flag, ?unlock=0 clears it.
+    if (q.get('unlock') !== null) {
+      if (q.get('unlock') === '0') localStorage.removeItem('grochan-hard-clear');
+      else localStorage.setItem('grochan-hard-clear', '1');
+      refreshSoundtrackLinks();
+    }
     const bossN = parseInt(q.get('boss'), 10);
     const midN = parseInt(q.get('mid'), 10);
     const directStageN = parseInt(q.get('stage'), 10);
