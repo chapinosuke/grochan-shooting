@@ -1,5 +1,15 @@
 # Third-party audio assets
 
+## プレイヤー衣装（ビキニ）
+
+2026-07-25 にユーザーから提供。元PNGを `cwebp -q 88 -alpha_q 100` でwebp化したもの。
+
+| ゲーム内ファイル | 出典 | ライセンス・利用許諾 |
+| --- | --- | --- |
+| `assets/images/player-bikini-sheet.webp` | ユーザー提供（1672x941 / 待機・ジャンプ・飛行射撃） | 本プロジェクト内で使用する素材としてユーザーから提供 |
+| `assets/images/player-bikini-ground.webp` | ユーザー提供（2170x725 / 待機+歩行x4） | 同上 |
+| `assets/images/player-bikini-hurt.webp` | ユーザー提供（2508x627 / 被弾x4） | 同上 |
+
 ## エンディングBGM
 
 | ゲーム内ファイル | 出典 | ライセンス・利用許諾 |

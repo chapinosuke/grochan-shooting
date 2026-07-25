@@ -246,6 +246,13 @@
   // dry. START is the opening cushion handed out by resetGame(); MAX caps both
   // the shop and the debug grant, so the two never drift apart.
   const AMMO_PACK_START = 3, AMMO_PACK_MAX = 5;
+  // Bikini costume: a one-off shop purchase that only takes effect from stage 2
+  // (it is sold in the stage-1 rest stop, so it is always "next stage onward").
+  // While worn it trickles HP and ammo back, which is the whole reason to buy it.
+  let bikiniOwned = false;
+  let bikiniRegenHp = 0, bikiniRegenAmmo = 0;   // fractional carry, applied at 1.0
+  const BIKINI_HP_PER_SEC = 0.9, BIKINI_AMMO_PER_SEC = 2.2;
+  const bikiniOn = () => bikiniOwned && stageIndex >= 1;
   let ammoPackStock = AMMO_PACK_START;  // stocked full-reload packs, auto-used when the mag hits empty
   let reloadFlash = 0;    // "スペアマガジン!" rising tag timer, armed when a spare auto-fires
   let bossCrit = 0;      // 0..1 fade of the palace's blood-red sky in the queen's last act
@@ -708,6 +715,115 @@
   groundSheet.src = 'assets/images/player-ground.webp?v=1';
   if (groundSheet.complete) buildGroundFrames();
 
+  // --- Bikini costume (shop unlock) --------------------------------------
+  // The bikini art was authored with different padding and cell aspect than the
+  // originals (its walk cell is 434x725 against the original 298x308), so the
+  // sheets are NOT drop-in. Each cell is trimmed to its actual artwork and
+  // re-drawn into a cell of the original's aspect — bottom-anchored, centred —
+  // so drawPlayer's fixed draw sizes keep working untouched for both costumes.
+  //
+  // The union box across a strip (not a per-frame box) is what gets normalised:
+  // per-frame trimming would re-centre every cell and make a walk cycle jitter.
+  function alphaBox(ctx2, x, y, w, h) {
+    const d = ctx2.getImageData(x, y, w, h).data;
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let py = 0; py < h; py++) {
+      for (let px = 0; px < w; px++) {
+        if (d[(py * w + px) * 4 + 3] > 16) {
+          if (px < x0) x0 = px; if (px > x1) x1 = px;
+          if (py < y0) y0 = py; if (py > y1) y1 = py;
+        }
+      }
+    }
+    return x1 < 0 ? null : { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+  }
+
+  // Slice `img` into `n` equal cells, then refit them into `aspect`-shaped
+  // frames of `outH` px tall. Returns an array of canvases.
+  function refitStrip(img, n, aspect, outH = 320) {
+    const cw = img.naturalWidth / n, ch = img.naturalHeight;
+    const probe = document.createElement('canvas');
+    probe.width = Math.ceil(cw); probe.height = ch;
+    const pctx = probe.getContext('2d', { willReadFrequently: true });
+    const boxes = [];
+    for (let i = 0; i < n; i++) {
+      pctx.clearRect(0, 0, probe.width, probe.height);
+      pctx.drawImage(img, i * cw, 0, cw, ch, 0, 0, cw, ch);
+      boxes.push(alphaBox(pctx, 0, 0, probe.width, ch));
+    }
+    const live = boxes.filter(Boolean);
+    if (!live.length) return [];
+    // Union box: shared crop window, so relative motion between frames survives.
+    const ux0 = Math.min(...live.map(b => b.x)), uy0 = Math.min(...live.map(b => b.y));
+    const ux1 = Math.max(...live.map(b => b.x + b.w)), uy1 = Math.max(...live.map(b => b.y + b.h));
+    const uw = ux1 - ux0, uh = uy1 - uy0;
+    const outW = Math.round(outH * aspect);
+    // Fit the union box inside the target cell, bottom-anchored and centred.
+    const scale = Math.min(outW / uw, outH / uh);
+    const dw = uw * scale, dh = uh * scale;
+    const dx = (outW - dw) / 2, dy = outH - dh;
+    const frames = [];
+    for (let i = 0; i < n; i++) {
+      const c = document.createElement('canvas');
+      c.width = outW; c.height = outH;
+      c.getContext('2d').drawImage(img, i * cw + ux0, uy0, uw, uh, dx, dy, dw, dh);
+      frames.push(c);
+    }
+    return frames;
+  }
+
+  // Fit one explicit box into a cell of `aspect`. The box is drawn AS GIVEN —
+  // no re-trimming: BIKINI_SHEET_BOXES are already exact, and re-trimming would
+  // re-centre each frame individually and make the flight cycle jitter.
+  function refitBox(img, box, aspect, outH = 320) {
+    const outW = Math.round(outH * aspect);
+    const scale = Math.min(outW / box.w, outH / box.h);
+    const dw = box.w * scale, dh = box.h * scale;
+    const c = document.createElement('canvas');
+    c.width = outW; c.height = outH;
+    c.getContext('2d').drawImage(img, box.x, box.y, box.w, box.h,
+      (outW - dw) / 2, outH - dh, dw, dh);
+    return c;
+  }
+
+  // Frame boxes measured off the delivered sheet. Two things make this fiddly:
+  // the muzzle-flash streak bridges the last two flight cells (so equal-width
+  // slicing cannot separate them), and loose hair strands are only a few pixels
+  // deep (so a "tall column" body scan clips them). These boxes were derived by
+  // finding the bodies, then growing outward over the thin hair columns with a
+  // 34px cap — enough for the hair, short of the ~110px flash.
+  // The three flight cells share one y/h so the pose keeps its relative height
+  // through the cycle; each is centred on its own body.
+  const BIKINI_SHEET_BOXES = {
+    idle: { x: 205, y: 60, w: 221, h: 375 },
+    jump: { x: 190, y: 484, w: 249, h: 367 },
+    fly: [{ x: 481, y: 508, w: 282, h: 334 }, { x: 797, y: 508, w: 282, h: 334 }, { x: 1119, y: 508, w: 282, h: 334 }]
+  };
+  let bikiniFly = [], bikiniGround = [], bikiniHurt = [];
+  let bikiniIdle = null, bikiniJump = null;
+  const bikiniSheet = new Image(), bikiniGroundSheet = new Image(), bikiniHurtSheet = new Image();
+  function buildBikiniSheet() {
+    if (!bikiniSheet.naturalWidth) return;
+    bikiniIdle = refitBox(bikiniSheet, BIKINI_SHEET_BOXES.idle, 190 / 327);
+    bikiniJump = refitBox(bikiniSheet, BIKINI_SHEET_BOXES.jump, 250 / 325);
+    const fly = BIKINI_SHEET_BOXES.fly.map(bx => refitBox(bikiniSheet, bx, 248 / 305));
+    // Only three flight cells were drawn; ping-pong them into the 4-frame cycle
+    // the flight animation expects so it reads as a loop, not a stutter.
+    bikiniFly = [fly[0], fly[1], fly[2], fly[1]];
+  }
+  function buildBikiniGround() {
+    if (bikiniGroundSheet.naturalWidth) bikiniGround = refitStrip(bikiniGroundSheet, 5, 298 / 308);
+  }
+  function buildBikiniHurt() {
+    if (bikiniHurtSheet.naturalWidth) bikiniHurt = refitStrip(bikiniHurtSheet, 4, 298 / 308);
+  }
+  bikiniSheet.onload = buildBikiniSheet; bikiniSheet.src = 'assets/images/player-bikini-sheet.webp?v=1';
+  if (bikiniSheet.complete) buildBikiniSheet();
+  bikiniGroundSheet.onload = buildBikiniGround; bikiniGroundSheet.src = 'assets/images/player-bikini-ground.webp?v=1';
+  if (bikiniGroundSheet.complete) buildBikiniGround();
+  bikiniHurtSheet.onload = buildBikiniHurt; bikiniHurtSheet.src = 'assets/images/player-bikini-hurt.webp?v=1';
+  if (bikiniHurtSheet.complete) buildBikiniHurt();
+
   function resetGame() {
     clearTimeout(openingTimeout); openingTimeout = 0;
     clearTimeout(resultTimeout); resultTimeout = 0;
@@ -728,6 +844,7 @@
     // so the run begins stocked. Continues deliberately do NOT top this up —
     // it is an opening cushion, not a permanent safety net.
     ammoPackStock = AMMO_PACK_START; reloadFlash = 0;
+    bikiniOwned = false; bikiniRegenHp = 0; bikiniRegenAmmo = 0;
     bullets = []; clearEnemyFire(); enemies = []; particles = []; pickups = []; shockwaves = [];
     setupStage();
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
@@ -1057,11 +1174,31 @@
     }
   }
 
+  // Bullets leave the gun tip. Both numbers below were measured, not guessed:
+  // each costume's frame was drawn into drawPlayer's own rect and scanned for
+  // the rightmost opaque pixel (the barrel), giving
+  //   fly     normal (118,71)  bikini (116,64)
+  //   ground  normal (119,64)  bikini (122,56)
+  // MUZZLE_BASE is the default costume's tip; MUZZLE_FIX is the bikini's offset
+  // from it (its blaster rides higher, and further forward on the ground).
+  // The previous ground base was (114,80) — 16px below the barrel, which is
+  // where the "bullets miss the muzzle" report came from.
+  const MUZZLE_BASE = { fly: { x: 118, y: 71 }, ground: { x: 119, y: 64 } };
+  const MUZZLE_FIX = { fly: { x: -2, y: -7 }, ground: { x: 3, y: -8 } };
+  function muzzle() {
+    const g = player.grounded;
+    const base = g ? MUZZLE_BASE.ground : MUZZLE_BASE.fly;
+    const o = bikiniOn() ? (g ? MUZZLE_FIX.ground : MUZZLE_FIX.fly) : { x: 0, y: 0 };
+    return {
+      x: player.x + base.x + o.x,
+      y: player.y + base.y + o.y + (g ? 0 : Math.sin(player.frame * .65) * 3)
+    };
+  }
+
   function shoot() {
     // Walk sheet gun tip ≈ local (217, 200) in 232×350 crop, drawn at (x-8,y-28) size 130×190.
     // → screen offset ≈ (+113, +80). Fly sheet tip is further forward.
-    const muzzleX = player.x + (player.grounded ? 114 : 116);
-    const muzzleY = player.y + (player.grounded ? 80 : 72 + Math.sin(player.frame * .65) * 3);
+    const { x: muzzleX, y: muzzleY } = muzzle();
     const lanes = player.spread === 1 ? [0] : player.spread === 2 ? [-95, 0, 95] : [-160, -80, 0, 80, 160];
     // Ground run-and-gun: mostly horizontal out of the walk blaster (asset already aims forward).
     const aimBias = player.grounded ? -12 : 0;
@@ -1081,16 +1218,16 @@
   // Empty-magazine fallback: a slow, weak but infinite pea-shot so running dry
   // is a setback, never a softlock — every boss stays killable.
   function shootPea() {
-    const muzzleX = player.x + (player.grounded ? 114 : 116);
-    const muzzleY = player.y + (player.grounded ? 80 : 72 + Math.sin(player.frame * .65) * 3);
+    const { x: muzzleX, y: muzzleY } = muzzle();
     bullets.push({ x: muzzleX, y: muzzleY, vx: 780, vy: player.grounded ? -12 : 0, life: 1.7, r: 5, damage: .6, pea: true });
     burst(muzzleX, muzzleY, '#c9d6ec', 3, 90);
     sfx('shoot');
   }
 
   function shootMissile() {
-    const x = player.x + (player.grounded ? 100 : 88);
-    const y = player.y + (player.grounded ? 78 : 76);
+    const fix = bikiniOn() ? (player.grounded ? MUZZLE_FIX.ground : MUZZLE_FIX.fly) : { x: 0, y: 0 };
+    const x = player.x + (player.grounded ? 100 : 88) + fix.x;
+    const y = player.y + (player.grounded ? 78 : 76) + fix.y;
     for (const side of [-1, 1]) bullets.push({ x, y: y + side * 17, vx: 390, vy: side * 115 - (player.grounded ? 20 : 0), life: 3.2, r: 9, damage: 1.4 + player.power * .65, missile: true, turn: 4.2 });
     burst(x, y, '#ff8a35', 7, 100); sfx('missile');
   }
@@ -2419,6 +2556,24 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const c of clouds) { c.x -= c.v * dt * gameSpeed; if (c.x < -220 * c.s) { c.x = VW + 150; c.y = 80 + Math.random() * 390; } }
     updateAmbient(dt);
     updateSceneLayers(dt);
+    // Bikini trickle-regen. Fractional carries are accumulated and spent whole,
+    // so HP and ammo tick up in visible steps instead of drifting by 0.02/frame.
+    // Deliberately does NOT run while dead or during the between-stage lull.
+    if (bikiniOn() && health > 0) {
+      bikiniRegenHp += BIKINI_HP_PER_SEC * dt;
+      if (bikiniRegenHp >= 1 && health < maxHealth) {
+        const heal = Math.min(Math.floor(bikiniRegenHp), maxHealth - health);
+        health += heal; bikiniRegenHp -= Math.floor(bikiniRegenHp);
+        if (heal > 0 && Math.random() < .5) {
+          particles.push({ x: player.x + 20 + Math.random() * 70, y: player.y + 100, vx: 0, vy: -70, life: .5, max: .5, color: '#7dffb0', size: 4, gravity: 0 });
+        }
+      } else if (health >= maxHealth) bikiniRegenHp = 0;
+      bikiniRegenAmmo += BIKINI_AMMO_PER_SEC * dt;
+      if (bikiniRegenAmmo >= 1 && ammo < ammoMax) {
+        ammo = Math.min(ammoMax, ammo + Math.floor(bikiniRegenAmmo));
+        bikiniRegenAmmo -= Math.floor(bikiniRegenAmmo);
+      } else if (ammo >= ammoMax) bikiniRegenAmmo = 0;
+    }
     for (const b of bullets) {
       if (b.missile) {
         let target = null, best = Infinity;
@@ -2756,6 +2911,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // Stocked emergency full reloads (up to 5): auto-fire the instant the mag
     // hits empty, refilling to max before the pea-shot fallback ever shows —
     // same "buy a stock, it saves you automatically" shape as the charm.
+    { id: 'buyBikini', price: () => 3200, keepStatus: true, can: () => !bikiniOwned, apply: () => { bikiniOwned = true; }, status: () => !bikiniOwned ? 'みしゅとく' : bikiniOn() ? 'そうびちゅう' : 'つぎのステージから' },
     { id: 'buyAmmoPack', price: () => 1200, can: () => ammoPackStock < AMMO_PACK_MAX, apply: () => ammoPackStock++, status: () => `もちもの ${ammoPackStock}/${AMMO_PACK_MAX}` },
     // Consumed automatically in hurt() to cancel one power-down — cheap
     // insurance against the Gradius-style demotion on getting hit.
@@ -2788,7 +2944,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const maxed = !item.can();
       const cost = item.price();
       item.btn.disabled = maxed || score < cost;
-      item.btn.querySelector('.shop-status').textContent = maxed ? 'MAX' : item.status();
+      item.btn.querySelector('.shop-status').textContent = maxed && !item.keepStatus ? 'MAX' : item.status();
       // Priced from the table rather than the markup, so the vitamin's rising
       // cost shows up on the button.
       item.btn.querySelector('.shop-price').textContent = maxed ? '—' : yen(cost);
@@ -7390,23 +7546,25 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // uniform and ground-aligned, so drawn size is constant (never pops bigger); feet sit
       // on the floor when grounded, tucked up a touch while airborne.
       const HURT_DUR = .45;
-      const idx = Math.max(0, Math.min(hurtFrames.length - 1,
-        Math.floor((1 - player.hit / HURT_DUR) * hurtFrames.length)));
+      const hf = bikiniOn() && bikiniHurt.length ? bikiniHurt : hurtFrames;
+      const idx = Math.max(0, Math.min(hf.length - 1,
+        Math.floor((1 - player.hit / HURT_DUR) * hf.length)));
       const hy = player.grounded ? player.y - 24 : player.y - 23 + bob;
       const hx = player.grounded ? player.x - 30 : player.x - 22;
       const hh = player.grounded ? 183 : 152;
-      ctx.drawImage(hurtFrames[idx], hx, hy, hh * (298 / 308), hh);
-    } else if (player.takeoff > 0 && jumpFrame) {
+      ctx.drawImage(hf[idx], hx, hy, hh * (298 / 308), hh);
+    } else if (player.takeoff > 0 && (bikiniOn() && bikiniJump ? bikiniJump : jumpFrame)) {
       // Jump / takeoff cell from the sheet.
-      ctx.drawImage(jumpFrame, player.x - 10, player.y - 26 + bob, 128, 175);
-    } else if (player.grounded && groundFrames.length) {
+      ctx.drawImage(bikiniOn() && bikiniJump ? bikiniJump : jumpFrame, player.x - 10, player.y - 26 + bob, 128, 175);
+    } else if (player.grounded && (bikiniOn() && bikiniGround.length ? bikiniGround : groundFrames).length) {
       // Ground: distance-synchronised frames plus a small body lift make each
       // planted step read clearly. Shooting alone does not fake a walk cycle.
+      const gf = bikiniOn() && bikiniGround.length ? bikiniGround : groundFrames;
       const walking = Math.abs(player.vx) > 24;
       const walkLift = walking ? Math.abs(Math.sin(player.walkPhase * Math.PI / 2)) * 3 : 0;
       const frame = walking
-        ? groundFrames[1 + (Math.floor(player.walkPhase) % 4)]
-        : groundFrames[0];
+        ? gf[1 + (Math.floor(player.walkPhase) % 4)]
+        : gf[0];
       if (walking && Math.abs(player.vx) > 110) {
         const dir = Math.sign(player.vx);
         ctx.save();
@@ -7419,8 +7577,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         ctx.restore();
       }
       ctx.drawImage(frame, player.x - 30, player.y - 24 - walkLift, 177, 183);
-    } else if (spriteFrames.length) {
-      const frame = spriteFrames[Math.floor(player.frame) % spriteFrames.length];
+    } else if ((bikiniOn() && bikiniFly.length ? bikiniFly : spriteFrames).length) {
+      const ff = bikiniOn() && bikiniFly.length ? bikiniFly : spriteFrames;
+      const frame = ff[Math.floor(player.frame) % ff.length];
       ctx.drawImage(frame, player.x - 13, player.y - 22 + bob, 132, 167);
     } else {
       ctx.fillStyle = '#ff3e9d'; ctx.fillRect(player.x + 20, player.y + 20, 70, 65);
@@ -9184,7 +9343,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, bombStock, charmStock, ammo, ammoMax, ammoPackStock, musicReactive, hardClear: !!localStorage.getItem('grochan-hard-clear'), stageTime, phaseId: activePhase.id, enemies: enemies.length, blocks: enemies.filter(en => en.type === 'block').length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, bombStock, charmStock, ammo, ammoMax, ammoPackStock, bikiniOwned, bikiniOn: bikiniOn(), musicReactive, hardClear: !!localStorage.getItem('grochan-hard-clear'), stageTime, phaseId: activePhase.id, enemies: enemies.length, blocks: enemies.filter(en => en.type === 'block').length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
   // Boss-fight test hooks, alongside the Shift+N/M/B keys and ?boss=N above:
   // they let a headless run drive a boss to any state without playing the fight.
   // Local only — these can set a boss's HP directly, which has no place on the
@@ -9198,6 +9357,12 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     window.__wall = () => spawnBlockWall();
     window.__drop = (type, kind = null) => { pickups.push({ type, kind, x: player.x + 260, y: player.y + 40, r: 19, t: 0 }); };
     window.__setAmmo = n => { ammo = clamp(n, 0, ammoMax); };
+    window.__grantBikini = (on = true) => { bikiniOwned = !!on; };
+    window.__bikiniDump = () => ({ idle: bikiniIdle, jump: bikiniJump, fly: bikiniFly, ground: bikiniGround, hurt: bikiniHurt });
+    window.__frameDump = () => ({
+      bikini: { fly: bikiniFly, ground: bikiniGround },
+      normal: { fly: spriteFrames, ground: groundFrames }
+    });
     window.__grantAmmoPack = () => { ammoPackStock = Math.min(AMMO_PACK_MAX, ammoPackStock + 1); };
     window.__bgLayers = on => { sceneLayersOn = !!on; };
     window.__bgDir = () => backgroundDirector();
@@ -9255,14 +9420,34 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       else localStorage.setItem('grochan-hard-clear', '1');
       refreshSoundtrackLinks();
     }
+    // ?shop=N drops straight into the rest stop that follows stage N, with a
+    // test float so every item is actually buyable. N must be < the last stage
+    // (there is no shop after the final one).
+    // ?bikini=1 hands over the costume so it can be inspected without playing
+    // to the shop first. Applied after resetGame(), which clears it.
+    const wantBikini = q.get('bikini') === '1';
+    const shopN = parseInt(q.get('shop'), 10);
+    const shopJump = shopN >= 1 && shopN < stages.length;
+    if (shopJump) {
+      setTimeout(() => {
+        resetGame();
+        if (wantBikini) bikiniOwned = true;
+        stageIndex = shopN - 1;
+        stageResult = { kills: 0, time: 0, noDamageBonus: 0, timeBonus: 0 };
+        score += 30000;
+        setupStage();
+        openShop();
+      }, 140);
+    }
     const bossN = parseInt(q.get('boss'), 10);
     const midN = parseInt(q.get('mid'), 10);
     const directStageN = parseInt(q.get('stage'), 10);
     const mode = bossN ? 'boss' : midN ? 'mid' : directStageN ? 'stage' : null;
     const n = bossN || midN || directStageN;
-    if (n >= 1 && n <= stages.length) {
+    if (!shopJump && n >= 1 && n <= stages.length) {
       setTimeout(() => {
         resetGame();
+        if (wantBikini) bikiniOwned = true;
         stageIndex = n - 1; stageBanner = mode === 'stage' ? 3 : 0; bossState = 'waiting';
         midBossDone = mode === 'boss';
         spawnTimer = mode === 'stage' ? .7 : 999;
