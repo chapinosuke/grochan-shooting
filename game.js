@@ -242,8 +242,12 @@
   let ammoMax = 170;
   let ammoBanner = 0;    // "弾切れ!" rising tag timer, armed on the shot that empties the gun
   let lifeDropsSpawned = 0;  // per-run cap on the rare max-HP capsule drop
-  let ammoPackStock = 0;  // stocked full-reload packs (shop only), auto-used when the mag hits empty
-  let reloadFlash = 0;    // "フルリロード!" rising tag timer, armed when a pack auto-fires
+  // Full-reload packs: bought in the shop, auto-spent the instant the mag runs
+  // dry. START is the opening cushion handed out by resetGame(); MAX caps both
+  // the shop and the debug grant, so the two never drift apart.
+  const AMMO_PACK_START = 3, AMMO_PACK_MAX = 5;
+  let ammoPackStock = AMMO_PACK_START;  // stocked full-reload packs, auto-used when the mag hits empty
+  let reloadFlash = 0;    // "スペアマガジン!" rising tag timer, armed when a spare auto-fires
   let bossCrit = 0;      // 0..1 fade of the palace's blood-red sky in the queen's last act
   let bgCam = 0;
   let bgCamX = 0;        // horizontal camera yaw, eased from player.x (parallax)
@@ -580,6 +584,9 @@
   let boltGhosts = [];   // fading after-images of recent lightning strikes (cosmetic)
   let palaceBossMix = 0; // eased 0..1: palace shifts to battle lighting while the queen is on stage
   let nearProps = [];
+  let lifeAgents = [];   // background inhabitants (birds, fish, drones, courtiers...)
+  let motes = [];        // depth-layered airborne particulate (the weather pass)
+  let sceneLayersOn = true;  // debug toggle (window.__bgLayers) for A/B-ing the new passes
   let delayedBursts = [];
   let shockwaves = [];
   // Wide-area boss attacks (beams and rect fields) live here rather than in
@@ -716,7 +723,11 @@
     continuesLeft = 3; continueBanner = 0; powerDownBanner = 0;
     bombStock = 0; charmStock = 0; charmFlash = 0;
     ammo = ammoMax = difficulties[difficultyKey].ammo; ammoBanner = 0; lifeDropsSpawned = 0;
-    ammoPackStock = 0; reloadFlash = 0;
+    // Starting kit: three full-reload packs. Running dry in the first stage
+    // before the shop is ever reachable was the harshest part of the opening,
+    // so the run begins stocked. Continues deliberately do NOT top this up —
+    // it is an opening cushion, not a permanent safety net.
+    ammoPackStock = AMMO_PACK_START; reloadFlash = 0;
     bullets = []; clearEnemyFire(); enemies = []; particles = []; pickups = []; shockwaves = [];
     setupStage();
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
@@ -952,6 +963,7 @@
     for (let i = 0; i < 8; i++) bgProps.push({ kind: 'nearDetail', lane: i, seed: Math.random() * 1000 });
     // Cache the near-detail subset so the draw loop skips a per-frame filter().
     nearProps = bgProps.filter(p => p.kind === 'nearDetail');
+    initSceneLayers();
   }
 
   function makeAmbient(kind) {
@@ -2406,6 +2418,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const s of stars) { s.x -= s.s * 15 * dt * gameSpeed; s.a += dt * 2; if (s.x < -5) { s.x = VW + 5; s.y = Math.random() * VH * .75; } }
     for (const c of clouds) { c.x -= c.v * dt * gameSpeed; if (c.x < -220 * c.s) { c.x = VW + 150; c.y = 80 + Math.random() * 390; } }
     updateAmbient(dt);
+    updateSceneLayers(dt);
     for (const b of bullets) {
       if (b.missile) {
         let target = null, best = Infinity;
@@ -2739,11 +2752,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     { id: 'buySpeed', price: () => 1800, can: () => player.speed < 3, apply: () => player.speed++, status: () => `Lv ${player.speed}/3` },
     { id: 'buyHeal', price: () => 600, can: () => health < maxHealth, apply: () => { health = Math.min(maxHealth, health + 40); }, status: () => `HP ${Math.ceil(health)}/${maxHealth}` },
     // The stage-transition top-up only reaches 60% — a full magazine is a purchase.
-    { id: 'buyAmmo', price: () => 900, can: () => ammo < ammoMax, apply: () => { ammo = Math.min(ammoMax, ammo + 120); }, status: () => `${ammo}/${ammoMax}` },
+    { id: 'buyAmmo', price: () => 900, can: () => ammo < ammoMax, apply: () => { ammo = Math.min(ammoMax, ammo + 120); }, status: () => `いま ${ammo}/${ammoMax}` },
     // Stocked emergency full reloads (up to 5): auto-fire the instant the mag
     // hits empty, refilling to max before the pea-shot fallback ever shows —
     // same "buy a stock, it saves you automatically" shape as the charm.
-    { id: 'buyAmmoPack', price: () => 1200, can: () => ammoPackStock < 5, apply: () => ammoPackStock++, status: () => `のこり ${ammoPackStock}/5` },
+    { id: 'buyAmmoPack', price: () => 1200, can: () => ammoPackStock < AMMO_PACK_MAX, apply: () => ammoPackStock++, status: () => `もちもの ${ammoPackStock}/${AMMO_PACK_MAX}` },
     // Consumed automatically in hurt() to cancel one power-down — cheap
     // insurance against the Gradius-style demotion on getting hit.
     { id: 'buyCharm', price: () => 2200, can: () => charmStock < 3, apply: () => charmStock++, status: () => `のこり ${charmStock}/3` },
@@ -3014,12 +3027,23 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       return grad;
     });
     ctx.fillStyle = g; ctx.fillRect(-30, -30, VW + 60, VH + 60);
+    const dir = backgroundDirector();
+    // Chapter tint goes under the scenery — it should read as the light in the
+    // air, not as a filter over the buildings.
+    drawChapterWash(stage, dir);
     const theme = stage.theme;
     if (theme === 'neon') drawNeonBackdrop(stage);
     else if (theme === 'aqua') drawAquaBackdrop(stage);
     else if (theme === 'factory') drawFactoryBackdrop(stage);
     else if (theme === 'storm') drawStormBackdrop(stage);
     else drawPalaceBackdrop(stage);
+    // Landmarks and inhabitants must come AFTER the theme backdrop: several
+    // backdrops (neon especially) repaint the whole sky band opaquely, so
+    // anything drawn under them is simply erased. They stay below the volume
+    // pass, so real foreground geometry still occludes them.
+    drawFarLandmarks(stage, dir);
+    drawMotes(stage, dir, true);
+    drawLifeLayer(stage, dir);
     // A dedicated volume pass sits above the flat scenic layers but below
     // particles/gameplay. Every stage gets large objects with visible top/side
     // faces, a shared vanishing point and strong scale separation.
@@ -3031,6 +3055,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawStageDirection(stage);
     drawAmbient();
     drawNearScenery(stage);
+    drawMotes(stage, dir, false);
     drawAtmosphere(stage);
     ctx.restore();
   }
@@ -3049,6 +3074,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // Stateless by design: ?stage, Shift+T/M/B and continues can jump anywhere
   // in the route without leaving an animation controller out of sync.
   const BG_PHASE_ORDER = ['opening', 'buildup', 'formationA', 'breather1', 'midboss', 'recover', 'assault2', 'setpiece', 'breather2', 'eliteRush', 'finalPush'];
+  // Each 5-minute route is read as three chapters. The chapter index drives the
+  // far-landmark set, the light wash and the mote colour, so the stage reads as
+  // a journey rather than one looping panorama. Derived from stageTime, so it
+  // stays stateless like the rest of the director.
+  const CHAPTERS = 3;
   function backgroundDirector() {
     const route = clamp(stageTime / Math.max(1, timelineTotal()), 0, 1);
     const phaseIndex = Math.max(0, BG_PHASE_ORDER.indexOf(activePhase.id));
@@ -3058,7 +3088,142 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const setT = setpiece ? clamp(activeTIn / Math.max(1, activePhase.dur * timeScale()), 0, 1) : 0;
     const warning = bossState === 'warning' || bossState === 'midboss-warning';
     const energy = boss ? 1 : mid ? .78 : clamp((activePhase.intensity || .25) * .82 + route * .18, .18, 1);
-    return { route, phaseIndex, boss, mid, setpiece, setT, warning, energy, q: bgQuality() };
+    // Boss fights pin the final chapter: the arena shouldn't slide back to the
+    // opening vista just because the fight ran past the timeline total.
+    const chapF = boss || mid ? CHAPTERS - .001 : clamp(route, 0, .999) * CHAPTERS;
+    const chapter = Math.floor(chapF);
+    const chapterT = chapF - chapter;                 // 0..1 progress inside it
+    const chapterIn = clamp(chapterT * 5, 0, 1);      // cross-fade at the seam
+    return { route, phaseIndex, boss, mid, setpiece, setT, warning, energy, chapter, chapterT, chapterIn, q: bgQuality() };
+  }
+
+  // --- Scene chapters, inhabitants and weather ---------------------------
+  // One shared implementation; each theme supplies parameters. That keeps all
+  // five stages moving in step instead of drifting into five bespoke systems.
+  //
+  // NOTE ON COST: the frame is fill-rate bound, not JS bound (a CPU profile of
+  // the palace runs ~90% idle while the frame still costs 16ms). So detail is
+  // added as many SMALL marks rather than more full-screen blended layers, and
+  // nothing here uses shadowBlur or a screen-sized gradient.
+
+  // Per-chapter far-landmark silhouettes + light wash. `band` is the y range
+  // the landmarks occupy, `wash` tints the sky for that leg of the route.
+  const SCENE_CHAPTERS = {
+    neon: [
+      { label: '繁華街', wash: '#ff3e9d', washA: .05, mote: '#ffd6f2' },
+      { label: '高速道路', wash: '#31e8ff', washA: .07, mote: '#cfefff' },
+      { label: 'タワー直下', wash: '#8a6cff', washA: .09, mote: '#e0d4ff' }
+    ],
+    aqua: [
+      { label: '沿岸', wash: '#65fff2', washA: .05, mote: '#dffffb' },
+      { label: '外洋', wash: '#2f8cff', washA: .07, mote: '#bfe4ff' },
+      { label: '深海', wash: '#041b3d', washA: .12, mote: '#8fd8ff' }
+    ],
+    factory: [
+      { label: '搬入路', wash: '#ff9f43', washA: .05, mote: '#ffd9a8' },
+      { label: '溶鉱炉', wash: '#ff5a36', washA: .08, mote: '#ffb98a' },
+      { label: '排熱塔', wash: '#ffe15a', washA: .07, mote: '#ffe9b8' }
+    ],
+    storm: [
+      { label: '外縁', wash: '#72ff68', washA: .05, mote: '#c9ffc4' },
+      { label: '演算層', wash: '#31e8ff', washA: .07, mote: '#bff6ff' },
+      { label: '中枢', wash: '#48b849', washA: .09, mote: '#d8ffd4' }
+    ],
+    palace: [
+      { label: '外苑', wash: '#ffe15a', washA: .05, mote: '#ffe9c0' },
+      { label: '回廊', wash: '#ff3e9d', washA: .07, mote: '#ffd0e8' },
+      { label: '玉座前', wash: '#d82065', washA: .10, mote: '#ffc0dc' }
+    ]
+  };
+
+  // Background inhabitants. Each entry: n=count, y=[min,max] spawn band,
+  // sc=[min,max] scale, v=[min,max] px/s drift, depth=parallax factor.
+  const LIFE = {
+    neon: [
+      { kind: 'birdV', n: 3, y: [90, 200], sc: [.5, .9], v: [26, 46], depth: .22 },
+      { kind: 'copter', n: 2, y: [120, 260], sc: [.6, 1], v: [34, 58], depth: .3 },
+      { kind: 'blimp', n: 1, y: [110, 190], sc: [.9, 1.2], v: [12, 20], depth: .18 }
+    ],
+    aqua: [
+      { kind: 'school', n: 4, y: [300, 520], sc: [.6, 1.1], v: [30, 62], depth: .34 },
+      { kind: 'gull', n: 3, y: [90, 210], sc: [.5, .9], v: [40, 70], depth: .24 },
+      { kind: 'ray', n: 2, y: [340, 470], sc: [.7, 1.1], v: [18, 32], depth: .3 }
+    ],
+    factory: [
+      { kind: 'pod', n: 3, y: [150, 300], sc: [.6, 1], v: [40, 74], depth: .3 },
+      { kind: 'copter', n: 2, y: [110, 230], sc: [.5, .85], v: [30, 52], depth: .26 },
+      { kind: 'crow', n: 3, y: [130, 260], sc: [.45, .8], v: [34, 60], depth: .22 }
+    ],
+    storm: [
+      { kind: 'moth', n: 5, y: [140, 420], sc: [.5, .95], v: [26, 56], depth: .3 },
+      { kind: 'sentry', n: 2, y: [120, 280], sc: [.6, 1], v: [22, 40], depth: .26 },
+      { kind: 'pod', n: 2, y: [180, 330], sc: [.5, .85], v: [38, 66], depth: .3 }
+    ],
+    palace: [
+      { kind: 'wisp', n: 5, y: [180, 460], sc: [.5, 1], v: [14, 30], depth: .28 },
+      { kind: 'dove', n: 3, y: [120, 280], sc: [.5, .9], v: [30, 54], depth: .24 },
+      { kind: 'banner', n: 2, y: [100, 200], sc: [.8, 1.1], v: [10, 18], depth: .16 }
+    ]
+  };
+
+  // Airborne particulate, two depth bands. `drift` is the sideways bias and
+  // `fall` the vertical one, so one pool covers snow-like, rising and
+  // sideways-blown looks without per-theme update code.
+  const WEATHER = {
+    neon: { n: 26, fall: [10, 34], drift: [-46, -14], size: [1.5, 3.4], a: .30, shape: 'streak' },
+    aqua: { n: 30, fall: [-30, -8], drift: [-26, -6], size: [1.5, 3.8], a: .26, shape: 'dot' },
+    factory: { n: 28, fall: [-16, 26], drift: [-58, -20], size: [1.5, 3.6], a: .30, shape: 'dot' },
+    storm: { n: 26, fall: [16, 52], drift: [-70, -30], size: [1.2, 3], a: .28, shape: 'streak' },
+    palace: { n: 26, fall: [12, 34], drift: [-34, -10], size: [2, 4.4], a: .28, shape: 'petal' }
+  };
+
+  const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+
+  function initSceneLayers() {
+    const theme = stages[stageIndex].theme;
+    lifeAgents = [];
+    for (const spec of LIFE[theme] || []) {
+      for (let i = 0; i < spec.n; i++) {
+        lifeAgents.push({
+          kind: spec.kind, depth: spec.depth,
+          x: Math.random() * (VW + 300) - 150, y: rand(spec.y[0], spec.y[1]),
+          sc: rand(spec.sc[0], spec.sc[1]), v: rand(spec.v[0], spec.v[1]),
+          dir: Math.random() < .78 ? -1 : 1,       // mostly with the scroll
+          phase: Math.random() * 6.28, seed: Math.random() * 1000
+        });
+      }
+    }
+    const w = WEATHER[theme];
+    motes = [];
+    if (w) {
+      for (let i = 0; i < w.n; i++) {
+        motes.push({
+          x: Math.random() * (VW + 120) - 60, y: Math.random() * (VH + 80) - 40,
+          vy: rand(w.fall[0], w.fall[1]), vx: rand(w.drift[0], w.drift[1]),
+          s: rand(w.size[0], w.size[1]), spin: Math.random() * 6.28,
+          spinV: rand(-2, 2), far: i % 2 === 0, a: rand(.55, 1)
+        });
+      }
+    }
+  }
+
+  function updateSceneLayers(dt) {
+    const speed = gameSpeed;
+    for (const a of lifeAgents) {
+      a.x += a.dir * a.v * dt * (a.dir < 0 ? speed : 1);
+      a.phase += dt * (1.4 + a.sc);
+      if (a.dir < 0 && a.x < -220) { a.x = VW + rand(40, 260); a.y = rand(80, 470); }
+      else if (a.dir > 0 && a.x > VW + 220) { a.x = -rand(40, 260); a.y = rand(80, 470); }
+    }
+    for (const m of motes) {
+      const par = m.far ? .55 : 1.25;      // near motes travel visibly faster
+      m.x += m.vx * dt * par * speed; m.y += m.vy * dt * par;
+      m.spin += m.spinV * dt;
+      if (m.x < -70) m.x = VW + 60;
+      if (m.x > VW + 70) m.x = -60;
+      if (m.y > VH + 50) m.y = -40;
+      if (m.y < -50) m.y = VH + 40;
+    }
   }
 
   function drawStageDirection(stage) {
@@ -3070,6 +3235,413 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     else drawPalaceDirection(stage, d);
     drawScenicLightEcho(stage, d);
   }
+
+  // --- Chapter light wash ------------------------------------------------
+  // One gradient per frame tinting the upper half toward the current chapter's
+  // colour. Cheap (a single fill) and it does most of the work of making the
+  // three legs of a route feel like different places.
+  function drawChapterWash(stage, d) {
+    const set = SCENE_CHAPTERS[stage.theme];
+    if (!set || !sceneLayersOn) return;
+    const cur = set[Math.min(set.length - 1, d.chapter)];
+    const prev = set[Math.max(0, Math.min(set.length - 1, d.chapter - 1))];
+    const mix = d.chapterIn;
+    ctx.save();
+    for (const [c, w] of [[prev, 1 - mix], [cur, mix]]) {
+      if (w <= .01) continue;
+      const g = ctx.createLinearGradient(0, 0, 0, VH * .82);
+      g.addColorStop(0, hexA(c.wash, c.washA * w * (.75 + d.energy * .45)));
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g; ctx.fillRect(-30, -30, VW + 60, VH * .82);
+    }
+    ctx.restore();
+  }
+
+  // --- Background inhabitants --------------------------------------------
+  // Small, cheap silhouettes that move on their own clock. Volume of *marks*
+  // is what sells a living world; none of these is bigger than ~40px.
+  function drawLifeLayer(stage, d) {
+    if (d.q <= 0 || !sceneLayersOn) return;
+    const dim = d.boss ? .5 : 1;   // don't compete with the boss for attention
+    for (const a of lifeAgents) {
+      ctx.save();
+      ctx.translate(a.x + bgCamX * a.depth, a.y + bgCam * a.depth);
+      ctx.scale(a.dir < 0 ? a.sc : -a.sc, a.sc);
+      ctx.globalAlpha = .5 * dim;
+      drawLifeAgent(a, stage);
+      ctx.restore();
+    }
+  }
+
+  function drawLifeAgent(a, stage) {
+    const flap = Math.sin(a.phase * 3);
+    if (a.kind === 'birdV' || a.kind === 'gull' || a.kind === 'crow' || a.kind === 'dove') {
+      // A little skein of 3, each wing-beat phase-offset so the group ripples.
+      const col = a.kind === 'crow' ? '#1b1226' : a.kind === 'dove' ? '#ffe9f4' : a.kind === 'gull' ? '#eaf6ff' : '#20143a';
+      ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineCap = 'round';
+      const n = a.kind === 'birdV' ? 3 : 2;
+      for (let i = 0; i < n; i++) {
+        const bx = i * 15, by = Math.abs(i - 1) * 8 + Math.sin(a.phase * 3 + i) * 2;
+        const w = 8 + Math.sin(a.phase * 3 + i * .8) * 5;
+        ctx.beginPath();
+        ctx.moveTo(bx - 9, by + w * .5); ctx.quadraticCurveTo(bx, by - 2, bx + 9, by + w * .5);
+        ctx.stroke();
+      }
+      return;
+    }
+    if (a.kind === 'school') {
+      // Fish school: a tight cloud of darts sharing one sine.
+      ctx.fillStyle = hexA(stage.accent, .8);
+      for (let i = 0; i < 7; i++) {
+        const fx = (i % 4) * 13, fy = Math.floor(i / 4) * 11 + Math.sin(a.phase * 2 + i * .7) * 3;
+        ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx + 9, fy + 2.5); ctx.lineTo(fx, fy + 5);
+        ctx.closePath(); ctx.fill();
+      }
+      return;
+    }
+    if (a.kind === 'ray') {
+      ctx.fillStyle = hexA(stage.accent2, .7);
+      const w = 26, h = 7 + flap * 3;
+      ctx.beginPath(); ctx.moveTo(-w, 0);
+      ctx.quadraticCurveTo(0, -h, w, 0); ctx.quadraticCurveTo(0, h * .8, -w, 0);
+      ctx.closePath(); ctx.fill();
+      ctx.fillRect(w - 2, -1, 12, 2);   // tail
+      return;
+    }
+    if (a.kind === 'copter') {
+      ctx.fillStyle = '#241634';
+      ctx.fillRect(-11, -3, 22, 7); ctx.fillRect(9, -1, 9, 3);
+      ctx.strokeStyle = hexA(stage.accent, .85); ctx.lineWidth = 1.5;
+      const r = 15 * (.4 + Math.abs(Math.cos(a.phase * 7)) * .6);
+      ctx.beginPath(); ctx.moveTo(-r, -6); ctx.lineTo(r, -6); ctx.stroke();
+      ctx.fillStyle = Math.sin(a.phase * 5) > 0 ? '#ff5a5a' : 'rgba(255,90,90,.25)';
+      ctx.fillRect(-12, 1, 3, 3);
+      return;
+    }
+    if (a.kind === 'blimp' || a.kind === 'pod') {
+      const w = a.kind === 'blimp' ? 34 : 20, h = a.kind === 'blimp' ? 12 : 9;
+      ctx.fillStyle = a.kind === 'blimp' ? '#2a1c46' : '#3a2a1e';
+      ctx.beginPath(); ctx.ellipse(0, 0, w, h, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = hexA(stage.accent, .55);
+      ctx.fillRect(-w * .5, -1.5, w, 3);           // lit band along the hull
+      ctx.fillStyle = '#150e24'; ctx.fillRect(-5, h - 1, 10, 4);
+      return;
+    }
+    if (a.kind === 'moth') {
+      // Glitchy data moth: two triangular wings that stutter rather than flap.
+      const st = Math.sin(a.phase * 9) > .3 ? 1 : .45;
+      ctx.fillStyle = hexA(stage.accent, .75 * st);
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-11, -8 * st); ctx.lineTo(-9, 5); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(11, -8 * st); ctx.lineTo(9, 5); ctx.closePath(); ctx.fill();
+      return;
+    }
+    if (a.kind === 'sentry') {
+      ctx.fillStyle = '#0e2018';
+      ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(11, 0); ctx.lineTo(0, 9); ctx.lineTo(-11, 0); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = hexA(stage.accent, .3 + Math.abs(Math.sin(a.phase * 2)) * .7);
+      ctx.fillRect(-3, -2, 6, 4);
+      return;
+    }
+    if (a.kind === 'wisp') {
+      // Floating candle flame: a teardrop with a soft core.
+      const f = 1 + Math.sin(a.phase * 4) * .18;
+      ctx.fillStyle = hexA('#ffd98a', .6);
+      ctx.beginPath(); ctx.ellipse(0, 0, 4 * f, 7 * f, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = hexA('#fff6d8', .85);
+      ctx.beginPath(); ctx.ellipse(0, 1, 1.8 * f, 3.4 * f, 0, 0, Math.PI * 2); ctx.fill();
+      return;
+    }
+    // banner — a hanging pennant rippling on its pole
+    ctx.fillStyle = hexA(stage.accent2, .6);
+    ctx.beginPath(); ctx.moveTo(0, -14);
+    for (let i = 0; i <= 4; i++) {
+      const t = i / 4;
+      ctx.lineTo(t * 26, -14 + Math.sin(a.phase * 2 + t * 3) * 3 + t * 2);
+    }
+    for (let i = 4; i >= 0; i--) {
+      const t = i / 4;
+      ctx.lineTo(t * 26, 6 + Math.sin(a.phase * 2 + t * 3) * 3 + t * 2);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#2a1030'; ctx.fillRect(-2, -18, 3, 30);
+  }
+
+  // --- Weather / particulate ---------------------------------------------
+  // `far` motes draw behind the action at low alpha, near ones in front of the
+  // scenery but still under gameplay. Two passes so the air has depth.
+  function drawMotes(stage, d, far) {
+    if (d.q <= 0 || !sceneLayersOn) return;
+    const w = WEATHER[stage.theme];
+    if (!w) return;
+    const set = SCENE_CHAPTERS[stage.theme];
+    const col = set ? set[Math.min(set.length - 1, d.chapter)].mote : '#ffffff';
+    const base = w.a * (far ? .55 : 1) * (d.boss ? .7 : 1);
+    ctx.save();
+    for (const m of motes) {
+      if (m.far !== far) continue;
+      const s = m.s * (far ? .7 : 1);
+      ctx.globalAlpha = base * m.a;
+      ctx.fillStyle = col;
+      if (w.shape === 'streak') {
+        ctx.fillRect(m.x, m.y, s * .8, s * 3.2);
+      } else if (w.shape === 'petal') {
+        ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(m.spin);
+        ctx.beginPath(); ctx.ellipse(0, 0, s, s * .5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.beginPath(); ctx.arc(m.x, m.y, s * .6, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  // --- Per-chapter far landmarks -----------------------------------------
+  // Big, flat, low-contrast silhouettes on the deepest layer. They cross-fade
+  // at the chapter seam, so the far skyline visibly changes as the route runs.
+  function drawFarLandmarks(stage, d) {
+    const sets = FAR_LANDMARKS[stage.theme];
+    if (!sets || d.q <= 0 || !sceneLayersOn) return;
+    const cur = d.chapter, prev = Math.max(0, cur - 1);
+    ctx.save();
+    ctx.translate(bgCamX * .1, bgCam * .1);
+    if (prev !== cur && d.chapterIn < 1) {
+      ctx.globalAlpha = 1 - d.chapterIn;
+      sets[Math.min(sets.length - 1, prev)](stage, d);
+    }
+    ctx.globalAlpha = prev === cur ? 1 : d.chapterIn;
+    sets[Math.min(sets.length - 1, cur)](stage, d);
+    ctx.restore();
+  }
+
+  // Shared helper: a scrolling row of silhouette shapes on the far plane.
+  function farRow(stage, { y, speed, gap, alpha, color, draw }) {
+    const off = ((elapsed * speed) % gap + gap) % gap;
+    ctx.save();
+    ctx.globalAlpha = (ctx.globalAlpha || 1) * alpha;
+    ctx.fillStyle = color;
+    for (let i = -1; i * gap - off < VW + gap; i++) {
+      const x = i * gap - off;
+      draw(x, y, i);
+    }
+    ctx.restore();
+  }
+
+  const FAR_LANDMARKS = {
+    neon: [
+      // Ch.1 繁華街 — a dense low skyline of narrow buildings.
+      (s) => farRow(s, {
+        y: 300, speed: 9, gap: 132, alpha: .3, color: '#1a1040',
+        draw: (x, y, i) => {
+          const h = 150 + ((i * 37) % 5) * 34;
+          ctx.fillRect(x, y - h, 88, h);
+          ctx.fillStyle = hexA(s.accent, .16);
+          for (let r = 0; r < 4; r++) ctx.fillRect(x + 10, y - h + 14 + r * 24, 68, 6);
+          ctx.fillStyle = '#1a1040';
+        }
+      }),
+      // Ch.2 高速道路 — elevated expressway pylons marching to the horizon.
+      (s) => farRow(s, {
+        y: 214, speed: 14, gap: 210, alpha: .32, color: '#221252',
+        draw: (x, y) => {
+          ctx.fillRect(x + 84, y, 26, 150);
+          ctx.fillRect(x, y - 16, 210, 18);
+          ctx.fillStyle = hexA(s.accent2, .2); ctx.fillRect(x, y - 20, 210, 4);
+          ctx.fillStyle = '#221252';
+        }
+      }),
+      // Ch.3 タワー直下 — we are UNDER the tower now: two colossal legs stride
+      // through frame and its underbelly truss caps the sky. Framing the open
+      // sky band is the only way a landmark this big reads over the dense city.
+      (s) => {
+        // A dark silhouette is invisible against this stage's dark sky, so the
+        // structure reads through EDGE LIGHT (neon lattice) rather than fill.
+        ctx.save();
+        const drift = (elapsed * 11) % 900;
+        for (const base of [220 - drift, 1120 - drift, 2020 - drift]) {
+          if (base < -260 || base > VW + 260) continue;
+          // Leg: splayed, wider at the bottom, vanishing behind the skyline.
+          ctx.globalAlpha = .55; ctx.fillStyle = '#0b0620';
+          ctx.beginPath();
+          ctx.moveTo(base - 30, 0); ctx.lineTo(base + 30, 0);
+          ctx.lineTo(base + 104, 320); ctx.lineTo(base + 48, 320);
+          ctx.closePath(); ctx.fill();
+          ctx.globalAlpha = .5; ctx.strokeStyle = s.accent; ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(base - 30, 0); ctx.lineTo(base + 48, 320); ctx.moveTo(base + 30, 0); ctx.lineTo(base + 104, 320);
+          ctx.stroke();
+          ctx.globalAlpha = .32;
+          for (let i = 1; i < 8; i++) {
+            const t = i / 8, yy = t * 320;
+            const l = base - 30 + t * 78, r = base + 30 + t * 74;
+            ctx.beginPath(); ctx.moveTo(l, yy); ctx.lineTo(r, yy);
+            ctx.moveTo(l, yy); ctx.lineTo(r + 9, yy - 40); ctx.stroke();
+          }
+        }
+        // Underbelly truss capping the frame, lit along its lower edge.
+        ctx.globalAlpha = .62; ctx.fillStyle = '#070418';
+        ctx.fillRect(-30, -30, VW + 60, 82);
+        ctx.globalAlpha = .75; ctx.strokeStyle = s.accent2; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.moveTo(-30, 52); ctx.lineTo(VW + 30, 52); ctx.stroke();
+        ctx.globalAlpha = .3; ctx.lineWidth = 2;
+        for (let i = 0; i < 16; i++) {
+          const x = ((i * 96 - drift * .5) % (VW + 96) + VW + 96) % (VW + 96) - 48;
+          ctx.beginPath(); ctx.moveTo(x, 52); ctx.lineTo(x + 48, 8); ctx.lineTo(x + 96, 52); ctx.stroke();
+        }
+        for (let i = 0; i < 7; i++) {
+          const x = ((i * 190 - drift * .5) % (VW + 190) + VW + 190) % (VW + 190) - 95;
+          ctx.globalAlpha = .45 + Math.abs(Math.sin(elapsed * 1.6 + i)) * .5;
+          ctx.fillStyle = '#ff5a5a'; ctx.fillRect(x - 5, 54, 10, 9);
+        }
+        ctx.restore();
+      }
+    ],
+    aqua: [
+      // Ch.1 沿岸 — headlands and a distant harbour crane line.
+      (s) => farRow(s, {
+        y: 236, speed: 7, gap: 240, alpha: .26, color: '#123c68',
+        draw: (x, y) => {
+          ctx.beginPath(); ctx.moveTo(x, y + 90); ctx.lineTo(x + 70, y - 26); ctx.lineTo(x + 150, y + 20); ctx.lineTo(x + 230, y + 90);
+          ctx.closePath(); ctx.fill();
+        }
+      }),
+      // Ch.2 外洋 — open water: only far container ships on the horizon.
+      (s) => farRow(s, {
+        y: 268, speed: 11, gap: 330, alpha: .24, color: '#17456f',
+        draw: (x, y) => {
+          ctx.fillRect(x, y, 132, 13);
+          ctx.fillRect(x + 88, y - 20, 22, 20);
+          for (let i = 0; i < 5; i++) ctx.fillRect(x + 8 + i * 15, y - 9, 12, 9);
+        }
+      }),
+      // Ch.3 深海 — the light is gone; only trench walls and bioluminescence.
+      (s) => {
+        ctx.save(); ctx.globalAlpha = (ctx.globalAlpha || 1) * .4;
+        ctx.fillStyle = '#03142c';
+        const off = (elapsed * 9) % 300;
+        for (let i = -1; i * 300 - off < VW + 300; i++) {
+          const x = i * 300 - off;
+          ctx.beginPath(); ctx.moveTo(x, 470); ctx.lineTo(x + 60, 150); ctx.lineTo(x + 140, 240); ctx.lineTo(x + 210, 120); ctx.lineTo(x + 290, 470);
+          ctx.closePath(); ctx.fill();
+        }
+        ctx.fillStyle = hexA(s.accent, .5);
+        for (let i = 0; i < 14; i++) {
+          const x = ((i * 173 - elapsed * 9) % (VW + 120) + VW + 120) % (VW + 120) - 60;
+          const y = 180 + ((i * 97) % 240);
+          ctx.globalAlpha = (.2 + Math.abs(Math.sin(elapsed * 1.3 + i)) * .5) * .4;
+          ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+      }
+    ],
+    factory: [
+      // Ch.1 搬入路 — long low warehouse roofs and stacked containers.
+      (s) => farRow(s, {
+        y: 226, speed: 10, gap: 200, alpha: .28, color: '#3a1c34',
+        draw: (x, y) => {
+          ctx.fillRect(x, y, 176, 96);
+          ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x + 88, y - 30); ctx.lineTo(x + 182, y); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = hexA(s.accent2, .18);
+          for (let i = 0; i < 3; i++) ctx.fillRect(x + 16 + i * 54, y + 26, 34, 20);
+          ctx.fillStyle = '#3a1c34';
+        }
+      }),
+      // Ch.2 溶鉱炉 — furnace stacks with glowing mouths.
+      (s) => farRow(s, {
+        y: 250, speed: 13, gap: 168, alpha: .3, color: '#4a1f2f',
+        draw: (x, y, i) => {
+          const h = 150 + ((i * 53) % 4) * 40;
+          ctx.fillRect(x + 30, y, 54, h);
+          ctx.fillStyle = hexA('#ff8a35', .22 + Math.abs(Math.sin(elapsed * 1.1 + i)) * .18);
+          ctx.fillRect(x + 34, y + 4, 46, 16);
+          ctx.fillStyle = '#4a1f2f';
+        }
+      }),
+      // Ch.3 排熱塔 — hyperboloid cooling towers venting into the sunset.
+      (s) => farRow(s, {
+        y: 210, speed: 8, gap: 300, alpha: .3, color: '#552438',
+        draw: (x, y) => {
+          ctx.beginPath();
+          ctx.moveTo(x + 30, y + 240); ctx.quadraticCurveTo(x + 86, y + 90, x + 64, y);
+          ctx.lineTo(x + 152, y); ctx.quadraticCurveTo(x + 130, y + 90, x + 186, y + 240);
+          ctx.closePath(); ctx.fill();
+        }
+      })
+    ],
+    storm: [
+      // Ch.1 外縁 — a low ridge of server cabinets.
+      (s) => farRow(s, {
+        y: 250, speed: 10, gap: 148, alpha: .28, color: '#0d2a26',
+        draw: (x, y, i) => {
+          const h = 90 + ((i * 41) % 4) * 30;
+          ctx.fillRect(x, y - h + 90, 108, h);
+          ctx.fillStyle = hexA(s.accent, .2);
+          for (let r = 0; r < 5; r++) ctx.fillRect(x + 8, y - h + 100 + r * 15, 92, 3);
+          ctx.fillStyle = '#0d2a26';
+        }
+      }),
+      // Ch.2 演算層 — floating compute slabs at several depths.
+      (s) => farRow(s, {
+        y: 260, speed: 15, gap: 190, alpha: .26, color: '#10352c',
+        draw: (x, y, i) => {
+          const yy = y + Math.sin(elapsed * .5 + i) * 22 + ((i * 31) % 3) * 60;
+          ctx.fillRect(x, yy, 140, 26);
+          ctx.fillStyle = hexA(s.accent2, .25); ctx.fillRect(x, yy - 3, 140, 3);
+          ctx.fillStyle = '#10352c';
+        }
+      }),
+      // Ch.3 中枢 — one vast column of stacked rings around the core.
+      (s) => {
+        const cx = 880;
+        ctx.save(); ctx.globalAlpha = (ctx.globalAlpha || 1) * .3;
+        ctx.strokeStyle = hexA(s.accent, .5); ctx.lineWidth = 3;
+        for (let i = 0; i < 11; i++) {
+          const yy = 70 + i * 38, rw = 60 + Math.sin(i * .7 + elapsed * .6) * 26 + i * 6;
+          ctx.beginPath(); ctx.ellipse(cx, yy, rw, 9, 0, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.fillStyle = hexA(s.accent2, .18); ctx.fillRect(cx - 16, 70, 32, 420);
+        ctx.restore();
+      }
+    ],
+    palace: [
+      // Ch.1 外苑 — garden hedges and topiary against the outer wall.
+      (s) => farRow(s, {
+        y: 250, speed: 8, gap: 170, alpha: .26, color: '#3d1030',
+        draw: (x, y) => {
+          ctx.fillRect(x, y + 40, 150, 60);
+          for (let i = 0; i < 3; i++) {
+            ctx.beginPath(); ctx.arc(x + 28 + i * 46, y + 30, 22, 0, Math.PI * 2); ctx.fill();
+          }
+        }
+      }),
+      // Ch.2 回廊 — a receding arcade of arches.
+      (s) => farRow(s, {
+        y: 250, speed: 12, gap: 150, alpha: .28, color: '#4a1440',
+        draw: (x, y) => {
+          ctx.fillRect(x, y, 26, 230);
+          ctx.beginPath(); ctx.moveTo(x + 26, y + 40);
+          ctx.quadraticCurveTo(x + 75, y - 34, x + 124, y + 40);
+          ctx.lineTo(x + 124, y + 4); ctx.quadraticCurveTo(x + 75, y - 66, x + 26, y + 4);
+          ctx.closePath(); ctx.fill();
+        }
+      }),
+      // Ch.3 玉座前 — the throne hall's great rose window and banners.
+      (s) => {
+        // No full-width fill here: the palace is the one stage with no frame
+        // budget to spare, and a flat band across the nave only muddies it.
+        ctx.save(); ctx.globalAlpha = (ctx.globalAlpha || 1) * .3;
+        ctx.strokeStyle = hexA(s.accent, .45); ctx.lineWidth = 3;
+        const cx = 640, cy = 210, r = 120;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(cx, cy, r * .55, 0, Math.PI * 2); ctx.stroke();
+        for (let i = 0; i < 12; i++) {
+          const ang = i / 12 * Math.PI * 2 + elapsed * .04;
+          ctx.beginPath(); ctx.moveTo(cx + Math.cos(ang) * r * .55, cy + Math.sin(ang) * r * .55);
+          ctx.lineTo(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r); ctx.stroke();
+        }
+        ctx.restore();
+      }
+    ]
+  };
 
   // Shared material response along the bottom of frame. It makes lightning,
   // furnace fire, signs and stained glass feel like lights in one world rather
@@ -8171,10 +8743,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.fillRect(91, 139, 152 * ammo / ammoMax, 10);
     ctx.fillStyle = ammoLow ? '#ff8a6a' : '#fff'; ctx.font = '7px "Press Start 2P", monospace'; ctx.fillText('AMMO', 34, 148);
     if (ammoPackStock > 0) {
-      // Stocked full-reload packs: a small badge in the panel's top-right
+      // Stocked spare magazines: a small badge in the panel's top-right
       // corner, clear of the bar, the AMMO label and the numeric readout.
       ctx.fillStyle = '#a8ffa0'; ctx.font = '6px "Press Start 2P", monospace';
-      ctx.textAlign = 'right'; ctx.fillText(`PACK×${ammoPackStock}`, 304, 138); ctx.textAlign = 'left';
+      ctx.textAlign = 'right'; ctx.fillText(`SPARE×${ammoPackStock}`, 304, 138); ctx.textAlign = 'left';
     }
     ctx.fillStyle = ammoLow ? '#ff8a6a' : '#fff'; ctx.font = '7px "Press Start 2P", monospace';
     ctx.textAlign = 'right'; ctx.fillText(String(ammo), 298, 148); ctx.textAlign = 'left';
@@ -8259,7 +8831,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const a = Math.min(1, reloadFlash * 2.2);
       ctx.save(); ctx.globalAlpha = a; ctx.textAlign = 'center';
       ctx.fillStyle = '#72ff68'; ctx.font = '15px "DotGothic16", monospace';
-      ctx.fillText('フルリロード！', player.x + player.w / 2, player.y - 40 - (1.6 - reloadFlash) * 30);
+      ctx.fillText('スペアマガジン！', player.x + player.w / 2, player.y - 40 - (1.6 - reloadFlash) * 30);
       ctx.restore(); ctx.textAlign = 'left';
     }
     if (ammoBanner > 0) {
@@ -8626,7 +9198,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     window.__wall = () => spawnBlockWall();
     window.__drop = (type, kind = null) => { pickups.push({ type, kind, x: player.x + 260, y: player.y + 40, r: 19, t: 0 }); };
     window.__setAmmo = n => { ammo = clamp(n, 0, ammoMax); };
-    window.__grantAmmoPack = () => { ammoPackStock = Math.min(5, ammoPackStock + 1); };
+    window.__grantAmmoPack = () => { ammoPackStock = Math.min(AMMO_PACK_MAX, ammoPackStock + 1); };
+    window.__bgLayers = on => { sceneLayersOn = !!on; };
+    window.__bgDir = () => backgroundDirector();
     window.__bossMaxHp = () => { const b = enemies.find(en => en.type === 'boss' || en.type === 'midboss'); return b ? b.maxHp : null; };
     window.__setSpecial = n => { special = clamp(n, 0, 100); updateSpecialButton(); };
     window.__grantBomb = () => { bombStock = Math.min(3, bombStock + 1); updateBombButton(); };
