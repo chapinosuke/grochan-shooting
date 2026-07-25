@@ -34,6 +34,10 @@ python3 -m http.server 8123      # プロジェクト直下で起動
 ### デバッグキー / API
 - **F1**=FPS表示 / **Shift+N**=ステージスキップ / **Shift+M**=中ボス召喚 / **Shift+B**=ボス召喚 / **Shift+T**=タイムライン+30秒早送り
 - `window.GRO_DEBUG` で状態取得（`phaseId`/`stageTime`/`continuesLeft`/`power` 等）
+- **雑魚の絵柄検証**（localhost のときだけ生える。`file://` では存在しない）:
+  `__spawn(type, x, y, hold=true, over)` で任意タイプを固定位置に静止召喚（`over` で `variant`/`hp`/`jaw` 等を上書き）、
+  `__clearEnemies()` で雑魚一掃、`__enemies()` で敵の軽量スナップショット（挙動プローブ用）。
+  スポーンテーブル任せで待つより速く、目的の敵を確実に撮れる。
 
 ### スクショハーネス（`.devtools/`、puppeteer-core + システムChrome）
 - `node .devtools/shot.js <play|boss|mid|shop> <stageSkips>` → `.devtools/shot-<mode>-s<skips>.png`
@@ -43,6 +47,14 @@ python3 -m http.server 8123      # プロジェクト直下で起動
 
 ## 4. コード地図（game.js）
 - ステージ定義配列 `stages`（~180行）: name/boss/midBoss/theme/sky/accent/spawnTable 等
+- 雑魚: `spawnEnemy`（ステータス）/ `enemyShoot`（弾）/ `drawEnemy`（描画）の3か所に1タイプずつ足す。
+  タイプ分類は `GROUND_TYPES` / `ORGANIC_TYPES` / `SOLO_TYPES`（編隊に並べない大型）に集約済み。
+  `ORGANIC_TYPES` の生物はリベット・王冠・部隊章・装甲のひび割れを描かず、生物向けの装飾に差し替わる。
+- **ステージ2は実在の深海生物ロスター**（メンダコ/チョウチンアンコウ/リュウグウノツカイ/巨大ウツボ）。
+  シルエットと解剖学的特徴は実物準拠、配色と発光はネオン、目は `drawFishEye`。他ステージは未着手。
+- プレイヤーの描画サイズは `PLAYER_DRAW` に集約（地上セル 177×183 が基準）。
+  シートごとに元の絵の縮尺が違うので、**新しいセルを足すときは必ずここで頭のサイズを揃える**。
+  変えたら `MUZZLE_BASE` / `shootMissile` のオフセットもセル内相対位置から引き直すこと。
 - タイムライン: `PHASE_TEMPLATE` / `currentPhase(stageTime)`（ステートレス導出）
 - 音声: `sampledSfx`+`sfx()` / `bgmTracks`+`playBgm()` / `voice()`（Gro-chan）/ `bossVoice(stageIdx,event)`（ボス）/ WebAudio合成は `sfx()` 末尾
 - ボス: `spawnBoss`/`updateBoss`/`executeBossSpecial`/`drawBoss`。中ボス: `spawnMidBoss`/`updateMidBoss`/`drawMidBoss`

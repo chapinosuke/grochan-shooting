@@ -307,7 +307,11 @@
     {
       name: 'AQUA HIGHWAY', boss: 'SERVER GOLEM', midBoss: 'DEEP BLUE DIVA', theme: 'aqua', subtitle: '潮風のハイウェイを駆け抜けろ',
       sky: ['#041b3d', '#075987', '#20c5c9'], far: '#123c68', city: '#071d42', accent: '#65fff2', accent2: '#2f8cff',
-      spawnTable: [['bat', 3], ['jelly', 5], ['drone', 2], ['spinner', 3], ['manta', 4], ['racer', 2]],
+      // Stage 2 fields real deep-sea fauna instead of the shared mecha roster:
+      // dumbo octopus, humpback anglerfish, oarfish and a giant moray, with the
+      // jellyfish and manta that were already native here. One patrol racer is
+      // left in so the highway still reads as a human route through their water.
+      spawnTable: [['jelly', 4], ['manta', 4], ['dumbo', 5], ['angler', 3], ['oarfish', 3], ['moray', 2], ['racer', 2]],
       melody: [392, 440, 523.25, 587.33, 659.25, 587.33, 523.25, 440, 349.23, 392, 440, 523.25, 587.33, 523.25, 440, 392],
       bass: [98, 98, 87.31, 87.31, 110, 110, 87.31, 73.42]
     },
@@ -1183,7 +1187,10 @@
   // from it (its blaster rides higher, and further forward on the ground).
   // The previous ground base was (114,80) — 16px below the barrel, which is
   // where the "bullets miss the muzzle" report came from.
-  const MUZZLE_BASE = { fly: { x: 118, y: 71 }, ground: { x: 119, y: 64 } };
+  // fly.x/y were re-derived after PLAYER_DRAW unified the airborne sprite scale
+  // with the grounded one: the same cell-local tip (u≈.99, v≈.56) lands 9px
+  // further forward and 1px lower once the flight cell is drawn at 150×185.
+  const MUZZLE_BASE = { fly: { x: 127, y: 72 }, ground: { x: 119, y: 64 } };
   const MUZZLE_FIX = { fly: { x: -2, y: -7 }, ground: { x: 3, y: -8 } };
   function muzzle() {
     const g = player.grounded;
@@ -1226,8 +1233,8 @@
 
   function shootMissile() {
     const fix = bikiniOn() ? (player.grounded ? MUZZLE_FIX.ground : MUZZLE_FIX.fly) : { x: 0, y: 0 };
-    const x = player.x + (player.grounded ? 100 : 88) + fix.x;
-    const y = player.y + (player.grounded ? 78 : 76) + fix.y;
+    const x = player.x + (player.grounded ? 100 : 93) + fix.x;
+    const y = player.y + (player.grounded ? 78 : 78) + fix.y;
     for (const side of [-1, 1]) bullets.push({ x, y: y + side * 17, vx: 390, vy: side * 115 - (player.grounded ? 20 : 0), life: 3.2, r: 9, damage: 1.4 + player.power * .65, missile: true, turn: 4.2 });
     burst(x, y, '#ff8a35', 7, 100); sfx('missile');
   }
@@ -1341,6 +1348,18 @@
     return true;
   }
 
+  // Enemy type categories, shared by the spawner, the formation builder and the
+  // damage-decal pass so each rule lives in exactly one place.
+  //   GROUND  … walks/sits on the floor, so it ignores the flight lane
+  //   ORGANIC … living creatures: no rivets, no crown, no squad badge, no
+  //             cracked plating — flesh doesn't spall, it scars and bleeds light
+  //   SOLO    … too big or too slow to make sense seven-abreast in a formation
+  const GROUND_TYPES = ['tank', 'turret', 'ember', 'walker'];
+  const ORGANIC_TYPES = ['bat', 'jelly', 'manta', 'dumbo', 'angler', 'oarfish', 'moray'];
+  const SOLO_TYPES = ['moray', 'oarfish'];
+  const isGroundType = t => GROUND_TYPES.includes(t);
+  const isOrganic = t => ORGANIC_TYPES.includes(t);
+
   function pickSpawnType() {
     const table = stages[stageIndex].spawnTable;
     let total = 0;
@@ -1370,6 +1389,21 @@
     else if (type === 'walker') e = { type, x: VW + 90, y: 548, baseY: 548, w: 84, h: 92, hp: 8, maxHp: 8, vx: 92 + rank * 18, t: Math.random() * 2, wave: false, points: 760, fire: .85 };
     else if (type === 'seeker') e = { type, x: VW + 80, y, baseY: y, w: 68, h: 68, hp: 5, maxHp: 5, vx: 155 + rank * 30, t: Math.random() * 6, wave: true, points: 520, fire: 1.15 };
     else if (type === 'knight') e = { type, x: VW + 80, y: Math.min(y, 500), baseY: Math.min(y, 500), w: 72, h: 82, hp: 7, maxHp: 7, vx: 115 + rank * 20, t: Math.random() * 6, wave: true, points: 680, fire: 1.3 };
+    // --- AQUA HIGHWAY deep-sea fauna -------------------------------------
+    // Dumbo octopus (メンダコ): the slowest thing in the stage, drifting on its
+    // ear fins. Soft, cheap to kill, but it fogs the lane with ink on the way out.
+    else if (type === 'dumbo') e = { type, x: VW + 80, y: Math.min(y, 480), baseY: Math.min(y, 480), w: 76, h: 74, hp: 3, maxHp: 3, vx: 76 + rank * 18, t: Math.random() * 6, wave: true, points: 380, fire: 2.1 };
+    // Humpback anglerfish (チョウチンアンコウ): an ambush predator, so it barely
+    // moves — its lure is the telegraph, and it burns brighter the nearer the shot.
+    else if (type === 'angler') e = { type, x: VW + 90, y: clamp(y, 90, 500), baseY: clamp(y, 90, 500), w: 86, h: 78, hp: 6, maxHp: 6, vx: 62 + rank * 16, t: Math.random() * 6, wave: true, points: 620, fire: 1.9 };
+    // Oarfish (リュウグウノツカイ): swims head-up like the real animal, so it is a
+    // tall vertical ribbon — a moving pillar you route around rather than through.
+    else if (type === 'oarfish') e = { type, x: VW + 70, y: clamp(y - 40, 40, 400), baseY: clamp(y - 40, 40, 400), w: 58, h: 186, hp: 5, maxHp: 5, vx: 108 + rank * 24, t: Math.random() * 6, wave: true, points: 700, fire: 2.4 };
+    // Giant moray (巨大ウツボ): the stage's rare heavy, drawn at encounter scale —
+    // the box below is only its head, and roughly 350 more pixels of body trail
+    // off to the right of it. Holds station and lunges, jaws first, instead of
+    // shooting; `lunge`/`recoil`/`jaw` drive both the dash and the art.
+    else if (type === 'moray') e = { type, x: VW + 260, y: clamp(y, 60, 470), baseY: clamp(y, 60, 470), w: 150, h: 92, hp: 16, maxHp: 16, vx: 40 + rank * 10, t: Math.random() * 6, wave: true, points: 1800, fire: 2.8, lunge: 0, recoil: 0, jaw: 0 };
     else e = { type: 'cupid', x: VW + 70, y, baseY: y, w: 62, h: 58, hp: 3, maxHp: 3, vx: 120, t: Math.random() * 6, wave: true, points: 340, fire: 1.6 };
     const variantRoll = Math.random();
     // Stage 1 mostly fields plain enemies so the player learns the base patterns
@@ -1400,15 +1434,20 @@
   // A single fast air-type slipping in from the left so "shoot straight ahead
   // forever" stops being a safe strategy once a stage heats up.
   function spawnFlanker() {
-    const GROUND_TYPES = ['tank', 'turret', 'ember', 'walker'];
-    const air = stages[stageIndex].spawnTable.filter(([t]) => !GROUND_TYPES.includes(t));
+    // Solo types are excluded too: a 10 HP moray crossing left-to-right behind
+    // the player is a wall, not the quick jab this spawn is meant to be.
+    const air = stages[stageIndex].spawnTable.filter(([t]) => !isGroundType(t) && !SOLO_TYPES.includes(t));
     const type = air.length ? air[Math.floor(Math.random() * air.length)][0] : 'drone';
     spawnEnemy(type, null, true);
   }
 
   function spawnFormation(elite = false) {
-    const type = pickSpawnType();
-    const groundType = ['tank', 'turret', 'ember', 'walker'].includes(type);
+    // Re-roll once past a solo type: seven morays abreast is not a formation,
+    // it is a locked door. One re-roll keeps the rest of the table's weighting.
+    let type = pickSpawnType();
+    if (SOLO_TYPES.includes(type)) type = pickSpawnType();
+    if (SOLO_TYPES.includes(type)) { spawnEnemy(type); formationTimer = 3.2 + Math.random() * 2.4; return; }
+    const groundType = isGroundType(type);
     // Stage 1 sticks to the classic vee/column entirely; the complex shapes
     // (vertical picket, slithering chain, staggered parallel rows) are the big
     // squads, so keeping them off stage 1 is most of the crowd reduction.
@@ -1467,9 +1506,8 @@
   // signature enemies from the spawnTable, so no bespoke enemy code is needed.
   function runSetpiece(step) {
     const table = stages[stageIndex].spawnTable;
-    const GROUND_TYPES = ['tank', 'turret', 'ember', 'walker'];
-    const air = table.filter(([t]) => !GROUND_TYPES.includes(t));
-    const ground = table.filter(([t]) => GROUND_TYPES.includes(t));
+    const air = table.filter(([t]) => !isGroundType(t) && !SOLO_TYPES.includes(t));
+    const ground = table.filter(([t]) => isGroundType(t));
     const airType = air.length ? air[step % air.length][0] : 'drone';
     const pattern = step % 5;
     // Set-pieces are the single biggest dumps of small fry in the route, so
@@ -1623,6 +1661,38 @@
     }
     if (e.type === 'walker') {
       for (const lift of [-250, -355]) enemyBullets.push({ x: e.x, y: e.y + 28, vx: Math.cos(aim) * 190, vy: lift, gravity: 420, r: 10, life: 5, damage: 20, fire: true });
+      return;
+    }
+    // Dumbo octopus: a slow ink screen, not aimed fire. Three blots fanned
+    // downward-forward that swell as they drift — area denial you swim around.
+    if (e.type === 'dumbo') {
+      for (const spread of [-.42, 0, .42]) {
+        enemyBullets.push({ x: e.x + 30, y: e.y + 58, vx: Math.cos(aim + spread) * 120, vy: Math.sin(aim + spread) * 120 + 30, r: 13, life: 4.4, damage: 11, ink: true, drift: 40 });
+      }
+      return;
+    }
+    // Anglerfish: sheds its bait. Two cold lights that home lazily — the lure
+    // glow on the fish itself is the wind-up, so this is never a surprise.
+    if (e.type === 'angler') {
+      for (const spread of [-.14, .14]) {
+        enemyBullets.push({ x: e.x + 14, y: e.y + 20, vx: Math.cos(aim + spread) * 175, vy: Math.sin(aim + spread) * 175, r: 8, life: 6, damage: 16, lure: true, homing: .55 });
+      }
+      return;
+    }
+    // Oarfish: a single hard water-jet from the mouth at the top of the ribbon.
+    if (e.type === 'oarfish') {
+      const my = e.y + 30;
+      const a2 = Math.atan2((player.y + 45) - my, player.x - e.x);
+      enemyBullets.push({ x: e.x + 10, y: my, vx: Math.cos(a2) * 300, vy: Math.sin(a2) * 300, r: 9, life: 5, damage: 18, bubble: true });
+      return;
+    }
+    // Giant moray: it does not shoot. Its "shot" is the strike — it coils back,
+    // then dashes jaws-first (updateEnemies drives `lunge`), and the pharyngeal
+    // jaw fires forward as a short-range bite the instant the dash commits.
+    if (e.type === 'moray') {
+      e.lunge = .62; e.jaw = 1;
+      enemyBullets.push({ x: e.x + 34, y: e.y + 52, vx: Math.cos(aim) * 260, vy: Math.sin(aim) * 260, r: 10, life: 1.1, damage: 22, bubble: true });
+      sfx('boom');
       return;
     }
     const speed = ['tank', 'turret', 'walker'].includes(e.type) ? 250 : ['glitch', 'racer', 'seeker'].includes(e.type) ? 330 : 205;
@@ -2643,15 +2713,34 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         e.blink = Math.max(0, e.blink - dt);
         e.tp -= dt;
         if (e.tp <= 0) { e.tp = .8 + Math.random() * .7; e.y = clamp(e.y + (Math.random() - .5) * 260, 60, 580); e.blink = .22; burst(e.x + 29, e.y + 29, '#72ff68', 8, 170); }
+      } else if (e.type === 'moray') {
+        // Strike / recoil / hold. Base movement above already creeps it leftward
+        // at its (deliberately low) vx; this branch only adds the strike itself,
+        // so a moray crosses the lane in a couple of lunges rather than drifting.
+        e.jaw = Math.max(0, (e.jaw || 0) - dt * 1.7);
+        if (e.lunge > 0) {
+          e.lunge -= dt;
+          e.x -= 560 * dt * gameSpeed;
+          e.y += ((player.y + 40) - e.y) * dt * 3.4;   // tracks Gro-chan mid-strike
+          if (e.lunge <= 0) { e.recoil = .4; e.baseY = e.y; }
+        } else if (e.recoil > 0) {
+          e.recoil -= dt;
+          e.x += 300 * dt * gameSpeed;                 // pulls its head back to coil again
+        } else {
+          e.y = e.baseY + Math.sin(e.t * 1.15) * 34;
+        }
       } else if (e.wave) {
-        const amp = e.type === 'bat' ? 55 : e.type === 'spinner' ? 42 : e.type === 'jelly' ? 74 : e.type === 'cupid' ? 62 : e.type === 'manta' ? 46 : e.type === 'knight' ? 28 : 30;
-        const freq = e.type === 'jelly' ? 1.5 : e.type === 'manta' ? 1.2 : e.type === 'cupid' ? 2.2 : e.type === 'knight' ? 1.7 : 3.2;
+        const amp = e.type === 'bat' ? 55 : e.type === 'spinner' ? 42 : e.type === 'jelly' ? 74 : e.type === 'cupid' ? 62 : e.type === 'manta' ? 46 : e.type === 'knight' ? 28
+          : e.type === 'dumbo' ? 66 : e.type === 'angler' ? 26 : e.type === 'oarfish' ? 52 : 30;
+        const freq = e.type === 'jelly' ? 1.5 : e.type === 'manta' ? 1.2 : e.type === 'cupid' ? 2.2 : e.type === 'knight' ? 1.7
+          : e.type === 'dumbo' ? 1.1 : e.type === 'angler' ? .8 : e.type === 'oarfish' ? .9 : 3.2;
         e.y = e.baseY + Math.sin(e.t * freq) * amp;
       }
       e.fire -= dt / (difficulty.fireGap * (isStage1() ? STAGE1_EASE.fire : 1));
       if (e.fire <= 0 && e.x < VW - 90) {
         enemyShoot(e);
-        const cadence = e.type === 'tank' ? 1.1 : e.type === 'turret' ? 1.4 : e.type === 'spinner' ? 1.8 : e.type === 'glitch' ? 1.9 : e.type === 'cupid' ? 2 : e.type === 'racer' ? 1.5 : e.type === 'manta' ? 1.9 : e.type === 'walker' ? 1.25 : e.type === 'seeker' ? 1.45 : e.type === 'knight' ? 1.7 : 2.1 + Math.random();
+        const cadence = e.type === 'tank' ? 1.1 : e.type === 'turret' ? 1.4 : e.type === 'spinner' ? 1.8 : e.type === 'glitch' ? 1.9 : e.type === 'cupid' ? 2 : e.type === 'racer' ? 1.5 : e.type === 'manta' ? 1.9 : e.type === 'walker' ? 1.25 : e.type === 'seeker' ? 1.45 : e.type === 'knight' ? 1.7
+          : e.type === 'dumbo' ? 2.4 : e.type === 'angler' ? 2.2 : e.type === 'oarfish' ? 2.6 : e.type === 'moray' ? 2.9 : 2.1 + Math.random();
         e.fire = cadence * (e.variant === 'elite' ? .76 : 1);
         e.fireMax = e.fire;
       }
@@ -2685,7 +2774,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     enemyBullets = enemyBullets.filter(b => b.life > 0 && b.x > -40 && b.x < VW + 240 && b.y > -400 && b.y < VH + 400);
     // Bosses are exempt from the left cull: they leave the screen deliberately
     // during a retreat, and deleting one strands bossState in 'active' forever.
-    enemies = enemies.filter(e => (e.hp > 0 || e.dying > 0) && (e.type === 'boss' || e.x > -130) && (!e.flank || e.x < VW + 170));
+    // The moray gets a much later left cull than everything else: its head is
+    // long past the edge while ~350px of body is still crossing the screen, and
+    // culling on the head would delete the animal out from under its own tail.
+    enemies = enemies.filter(e => (e.hp > 0 || e.dying > 0) && (e.type === 'boss' || e.x > (e.type === 'moray' ? -560 : -130)) && (!e.flank || e.x < VW + 170));
     particles = particles.filter(p => p.life > 0);
     shockwaves = shockwaves.filter(r => r.life > 0);
     pickups = pickups.filter(p => p.x > -50 && !p.taken);
@@ -2805,8 +2897,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       for (const victim of chainVictims) destroyEnemy(victim, false);
     }
     const ex = e.x + e.w / 2, ey = e.y + e.h / 2;
-    burst(ex, ey, e.type === 'bat' ? '#ff3e9d' : '#ffe15a', isMajor ? (isBoss ? 90 : 55) : e.type === 'tank' ? 28 : 15, isMajor ? (isBoss ? 520 : 420) : e.type === 'tank' ? 330 : 240);
-    burstDebris(ex, ey, [stages[stageIndex].accent2, '#5a4058', '#2a1f2c'], isMajor ? (isBoss ? 26 : 18) : e.type === 'tank' ? 12 : 7, isMajor ? 420 : e.type === 'tank' ? 300 : 220);
+    const organicKill = isOrganic(e.type);
+    burst(ex, ey, e.type === 'bat' ? '#ff3e9d' : organicKill ? '#8ffcff' : '#ffe15a', isMajor ? (isBoss ? 90 : 55) : e.type === 'tank' ? 28 : 15, isMajor ? (isBoss ? 520 : 420) : e.type === 'tank' ? 330 : 240);
+    // Machines throw shrapnel; creatures don't. Organics scatter pale scales and
+    // a puff of their own colour instead of dark metal chunks.
+    burstDebris(ex, ey, organicKill ? ['#cfe6ff', '#7fb8c9', '#3a5f72'] : [stages[stageIndex].accent2, '#5a4058', '#2a1f2c'], isMajor ? (isBoss ? 26 : 18) : e.type === 'tank' ? 12 : 7, isMajor ? 420 : e.type === 'tank' ? 300 : 220);
+    // A dumbo octopus inks the water as it dies — the real animal's last resort.
+    if (e.type === 'dumbo') burst(ex, ey, '#5a1a72', 18, 170);
     shake = isMajor ? (isBoss ? 28 : 20) : e.type === 'tank' ? 12 : 6; flash = isMajor ? (isBoss ? 1 : .6) : e.type === 'tank' ? .35 : .12; sfx(isMajor ? 'bigBoom' : 'boom');
     hitStop = Math.max(hitStop, isMajor ? (isBoss ? .12 : .09) : e.type === 'tank' ? .05 : .03);
     if (isMajor) {
@@ -7517,6 +7614,24 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (flash > 0) { ctx.globalAlpha = flash * .45; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, VW, VH); ctx.globalAlpha = 1; }
   }
 
+  // On-screen draw boxes for Gro-chan, one entry per sprite sheet. The three
+  // sheets were authored independently, so their cells do NOT share a character
+  // scale: drawn at their old sizes the flight pose came out ~11% smaller than
+  // the walk pose and the airborne damage frame ~17% smaller than the grounded
+  // one — the same girl visibly shrank the instant she left the floor.
+  //
+  // Every box below is now scaled so the *head* matches the ground sheet (the
+  // scale reference, since it owns idle + walk), and each keeps its cell's own
+  // aspect so nothing is squashed. `ox`/`oy` are offsets from player.x/player.y
+  // chosen to hold the body centre still, so switching sheets never jumps.
+  const PLAYER_DRAW = {
+    ground: { ox: -30, oy: -24, w: 177, h: 183 },   // 298×308 cell, the reference
+    fly: { ox: -22, oy: -31, w: 150, h: 185 },      // 248×305 cell (was 132×167)
+    jump: { ox: -19, oy: -33, w: 145, h: 189 },     // 250×325 cell (was 128×175)
+    hurtGround: { ox: -30, oy: -24, w: 177, h: 183 },
+    hurtAir: { ox: -35, oy: -30, w: 177, h: 183 },  // was 147×152 — the big offender
+  };
+
   function drawPlayer() {
     ctx.save();
     if (player.inv > 0 && Math.floor(player.inv * 12) % 2 === 0) ctx.globalAlpha = .25;
@@ -7530,32 +7645,31 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (!player.grounded) {
       ctx.save(); ctx.globalCompositeOperation = 'lighter';
       const flick = .55 + Math.abs(Math.sin(player.frame * 1.3)) * .45;
-      const tx = player.x + 20, ty = player.y + 78 + bob;
+      const tx = player.x + 16, ty = player.y + 80 + bob;
       const th = ctx.createRadialGradient(tx, ty, 2, tx, ty, 42);
       th.addColorStop(0, hexA('#8ffcff', .8 * flick)); th.addColorStop(.5, hexA('#31e8ff', .32 * flick)); th.addColorStop(1, 'rgba(49,232,255,0)');
       ctx.fillStyle = th; ctx.beginPath(); ctx.ellipse(tx - 10, ty, 40 * flick, 15, 0, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
-    ctx.fillStyle = 'rgba(49,232,255,.18)'; ctx.beginPath(); ctx.ellipse(player.x + 56, player.y + (player.grounded ? 155 : 96), 54, 11, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(49,232,255,.18)'; ctx.beginPath(); ctx.ellipse(player.x + 56, player.y + (player.grounded ? 155 : 100), 54, 11, 0, 0, Math.PI * 2); ctx.fill();
     // Mirror the sprite horizontally when retreating (facing left). Pivot on the
     // visual center so the flip stays put; shadow/thruster above are left un-mirrored.
     ctx.save();
     if (player.facing === -1) { const pivot = player.x + 56; ctx.translate(pivot, 0); ctx.scale(-1, 1); ctx.translate(-pivot, 0); }
     if (player.hit > 0 && hurtFrames.length) {
       // Damage/hurt: play the 4-frame knock-around animation once over HURT_DUR. Cells are
-      // uniform and ground-aligned, so drawn size is constant (never pops bigger); feet sit
-      // on the floor when grounded, tucked up a touch while airborne.
+      // uniform and ground-aligned, so drawn size is constant in BOTH states now; only the
+      // anchor moves — feet on the floor when grounded, tucked up a touch while airborne.
       const HURT_DUR = .45;
       const hf = bikiniOn() && bikiniHurt.length ? bikiniHurt : hurtFrames;
       const idx = Math.max(0, Math.min(hf.length - 1,
         Math.floor((1 - player.hit / HURT_DUR) * hf.length)));
-      const hy = player.grounded ? player.y - 24 : player.y - 23 + bob;
-      const hx = player.grounded ? player.x - 30 : player.x - 22;
-      const hh = player.grounded ? 183 : 152;
-      ctx.drawImage(hf[idx], hx, hy, hh * (298 / 308), hh);
+      const d = player.grounded ? PLAYER_DRAW.hurtGround : PLAYER_DRAW.hurtAir;
+      ctx.drawImage(hf[idx], player.x + d.ox, player.y + d.oy + (player.grounded ? 0 : bob), d.w, d.h);
     } else if (player.takeoff > 0 && (bikiniOn() && bikiniJump ? bikiniJump : jumpFrame)) {
       // Jump / takeoff cell from the sheet.
-      ctx.drawImage(bikiniOn() && bikiniJump ? bikiniJump : jumpFrame, player.x - 10, player.y - 26 + bob, 128, 175);
+      const d = PLAYER_DRAW.jump;
+      ctx.drawImage(bikiniOn() && bikiniJump ? bikiniJump : jumpFrame, player.x + d.ox, player.y + d.oy + bob, d.w, d.h);
     } else if (player.grounded && (bikiniOn() && bikiniGround.length ? bikiniGround : groundFrames).length) {
       // Ground: distance-synchronised frames plus a small body lift make each
       // planted step read clearly. Shooting alone does not fake a walk cycle.
@@ -7576,11 +7690,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         }
         ctx.restore();
       }
-      ctx.drawImage(frame, player.x - 30, player.y - 24 - walkLift, 177, 183);
+      const dg = PLAYER_DRAW.ground;
+      ctx.drawImage(frame, player.x + dg.ox, player.y + dg.oy - walkLift, dg.w, dg.h);
     } else if ((bikiniOn() && bikiniFly.length ? bikiniFly : spriteFrames).length) {
       const ff = bikiniOn() && bikiniFly.length ? bikiniFly : spriteFrames;
       const frame = ff[Math.floor(player.frame) % ff.length];
-      ctx.drawImage(frame, player.x - 13, player.y - 22 + bob, 132, 167);
+      const d = PLAYER_DRAW.fly;
+      ctx.drawImage(frame, player.x + d.ox, player.y + d.oy + bob, d.w, d.h);
     } else {
       ctx.fillStyle = '#ff3e9d'; ctx.fillRect(player.x + 20, player.y + 20, 70, 65);
     }
@@ -7678,6 +7794,36 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = 'rgba(47,140,255,.5)'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r - 3, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.fillRect(b.x - b.r * .4, b.y - b.r * .5, 4, 4); ctx.restore(); return;
     }
+    if (b.ink) {
+      // Cephalopod ink: a ragged, slowly-swelling blot rather than a clean orb.
+      b.seed ??= Math.floor(Math.random() * 1000);
+      const grow = 1 + (1 - Math.min(1, b.life / 4)) * .5;
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.seed * .01 + elapsed * .5);
+      ctx.fillStyle = 'rgba(24,6,34,.32)';
+      ctx.beginPath(); ctx.arc(0, 0, (b.r + 9) * grow, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#2a0a3a'; ctx.beginPath();
+      for (let i = 0; i < 9; i++) {
+        const a = i / 9 * Math.PI * 2;
+        const rr = b.r * grow * (.78 + ((b.seed + i * 61) % 40) / 100);
+        ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * rr, Math.sin(a) * rr);
+      }
+      ctx.closePath(); ctx.fill();
+      // Ink is nearly the colour of the water it hangs in, so it gets a lit rim
+      // — otherwise a lethal blot is invisible against the AQUA HIGHWAY blues.
+      ctx.strokeStyle = 'rgba(214,130,255,.85)'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.fillStyle = 'rgba(198,120,224,.55)'; ctx.beginPath(); ctx.arc(-b.r * .3, -b.r * .3, b.r * .3, 0, Math.PI * 2); ctx.fill();
+      ctx.restore(); return;
+    }
+    if (b.lure) {
+      // Bioluminescent bait shed by the anglerfish — cold light, no tail.
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const p = .7 + Math.sin(elapsed * 11 + b.x * .05) * .3;
+      const g = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, b.r + 14);
+      g.addColorStop(0, hexA('#f2ffff', .95)); g.addColorStop(.3, hexA('#65fff2', .6 * p)); g.addColorStop(1, 'rgba(101,255,242,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 14, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * .5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore(); return;
+    }
     if (b.fire) {
       ctx.save(); ctx.globalAlpha = .3; ctx.fillStyle = '#ff8a35'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 8, 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = 1; ctx.fillStyle = '#ff5a36'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
@@ -7768,6 +7914,27 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     }
     rctx.fillStyle = '#120b2e'; rctx.fillRect(x1, y, s, s); rctx.fillRect(x2, y, s, s);
     rctx.fillStyle = '#fff'; rctx.fillRect(x1 + 2, y + 1, pupil, pupil); rctx.fillRect(x2 + 2, y + 1, pupil, pupil);
+  }
+  // Single round eye for the sea-life enemies. Fish are drawn in profile, so the
+  // paired square eyes of drawKawaiiEyes read as a face where an animal has a
+  // head — this keeps the kawaii glint and the blink, on real fish anatomy
+  // (dark sclera ring, wet highlight, a pupil that tracks Gro-chan).
+  function drawFishEye(cx, cy, r, e) {
+    const seed = (cx * 12.9898 + cy * 78.233) % 6.28;
+    if (((elapsed * .6 + seed) % 3.9) < .1) {
+      rctx.strokeStyle = '#0a0a14'; rctx.lineWidth = Math.max(2, r * .45); rctx.lineCap = 'round';
+      rctx.beginPath(); rctx.moveTo(cx - r, cy); rctx.lineTo(cx + r, cy); rctx.stroke();
+      return;
+    }
+    rctx.fillStyle = '#f4f8ff'; rctx.beginPath(); rctx.arc(cx, cy, r, 0, Math.PI * 2); rctx.fill();
+    rctx.fillStyle = 'rgba(20,18,40,.35)'; rctx.beginPath(); rctx.arc(cx, cy, r, Math.PI, Math.PI * 2); rctx.fill();
+    // Pupil drifts toward the player — a whole shoal glancing at Gro-chan.
+    const dx = clamp(((player.x + 56) - ((e?.x || 0) + cx)) * .004, -1, 1);
+    const dy = clamp(((player.y + 60) - ((e?.y || 0) + cy)) * .004, -1, 1);
+    rctx.fillStyle = '#0d0b1c';
+    rctx.beginPath(); rctx.arc(cx + dx * r * .3, cy + dy * r * .3, r * .55, 0, Math.PI * 2); rctx.fill();
+    rctx.fillStyle = 'rgba(255,255,255,.92)';
+    rctx.beginPath(); rctx.arc(cx - r * .3, cy - r * .35, r * .26, 0, Math.PI * 2); rctx.fill();
   }
   function drawExtrudeSilhouette(drawFn, color, depth = 6) {
     ctx.save(); ctx.translate(depth, depth * .55); ctx.fillStyle = color; ctx.strokeStyle = color;
@@ -7888,7 +8055,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // Flankers travel rightward — mirror the sprite so they face their heading.
     if (e.flank) { ctx.translate(e.w, 0); ctx.scale(-1, 1); }
     if (e.type !== 'boss' && e.type !== 'midboss') {
-      drawEnemyShadow(e);
+      // The two long sea creatures don't fill their box — the oarfish is a
+      // vertical ribbon and the moray's body runs off past the right edge — so
+      // a box-sized contact shadow would sit in open water beside them.
+      if (e.type !== 'oarfish' && e.type !== 'moray') drawEnemyShadow(e);
       drawEnemyUnderglow(e, stage.accent2);
     }
     if (e.type === 'drone') {
@@ -7997,22 +8167,71 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawCylinder3D(8, 66, 18, 5, '#31e8ff');
       drawCylinder3D(46, 66, 18, 5, '#31e8ff');
     } else if (e.type === 'jelly') {
-      const squish = 1 + Math.sin(e.t * 4) * .1;
-      ctx.save(); ctx.translate(31, 30); ctx.scale(squish, 2 - squish);
-      // extruded dome
-      ctx.fillStyle = '#0a3a6e'; ctx.beginPath(); ctx.ellipse(4, 4, 28, 28, 0, Math.PI, 0); ctx.fill();
-      const dome = ctx.createRadialGradient(-8, -10, 2, 0, 4, 30);
-      dome.addColorStop(0, '#9cfff5'); dome.addColorStop(.4, '#2f8cff'); dome.addColorStop(1, '#082a55');
-      ctx.globalAlpha = .92; ctx.fillStyle = dome; ctx.beginPath(); ctx.ellipse(0, 0, 27, 27, 0, Math.PI, 0); ctx.fill();
-      ctx.fillRect(-27, 0, 54, 8);
-      ctx.restore();
-      ctx.strokeStyle = '#65fff2'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-      for (let i = 0; i < 4; i++) {
-        ctx.beginPath(); ctx.moveTo(12 + i * 13, 38);
-        ctx.quadraticCurveTo(12 + i * 13 + Math.sin(e.t * 5 + i) * 7, 50, 12 + i * 13 + Math.sin(e.t * 5 + i + 1) * 9, 64);
+      // Atolla wyvillei (クロカムリクラゲ). The deep groove ringing the bell is
+      // the "crown" the coronate jellies are named for, and the single
+      // hypertrophied trailing tentacle is its signature — twenty short ones
+      // around the rim, then one enormously longer than the rest.
+      //
+      // Its famous burglar-alarm bioluminescence fires when the animal is
+      // attacked, which is exactly when this one already scatters its dying
+      // radial volley (see destroyEnemy). The light and the attack are one event.
+      const pulse = Math.sin(e.t * 3.2);
+      const bw = 28 + pulse * 3, bh = 15 - pulse * 3;
+      const cx = 31, cy = 28;
+      const alarm = clamp((e.hit || 0) * 7 + (e.hp / e.maxHp < .5 ? .3 : 0), 0, 1);
+      // Trailing tentacle, streaming far below the bell.
+      ctx.strokeStyle = 'rgba(255,120,128,.8)'; ctx.lineWidth = 2.6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(cx + 5, cy + 8);
+      ctx.bezierCurveTo(cx + 26, cy + 32, cx + 10, cy + 58, cx + 28 + Math.sin(e.t * 1.8) * 12, cy + 86);
+      ctx.stroke();
+      // Twenty marginal tentacles, all the same short length.
+      ctx.strokeStyle = 'rgba(222,70,90,.75)'; ctx.lineWidth = 1.7;
+      for (let i = 0; i < 20; i++) {
+        const f = (i + .5) / 20, tx = cx - bw + f * bw * 2;
+        const arc = Math.sqrt(Math.max(0, 1 - Math.pow((tx - cx) / bw, 2)));
+        const sway = Math.sin(e.t * 4 + i * .8) * 5;
+        const y0 = cy + bh * arc * .55;
+        ctx.beginPath(); ctx.moveTo(tx, y0);
+        ctx.quadraticCurveTo(tx + sway * .5, y0 + 11, tx + sway, y0 + 21);
         ctx.stroke();
       }
-      drawKawaiiEyes(20, 36, 12, 7, 2);
+      // The stomach hanging under the bell — kept narrow and semi-transparent,
+      // or it reads as a solid black band rather than an organ seen through jelly.
+      ctx.globalAlpha = .7; ctx.fillStyle = '#5c0f26';
+      ctx.beginPath(); ctx.ellipse(cx, cy + 1, bw * .62, bh * .8, 0, 0, Math.PI); ctx.fill();
+      ctx.globalAlpha = 1;
+      const bell = ctx.createRadialGradient(cx - 9, cy - 9, 2, cx, cy, bw);
+      bell.addColorStop(0, '#ffd2c6'); bell.addColorStop(.34, '#e2445c'); bell.addColorStop(.8, '#8e1230'); bell.addColorStop(1, '#46081e');
+      ctx.globalAlpha = .95; ctx.fillStyle = bell;
+      ctx.beginPath(); ctx.ellipse(cx, cy, bw, bh, 0, Math.PI, 0); ctx.fill();
+      ctx.globalAlpha = 1;
+      // The crown groove.
+      ctx.strokeStyle = 'rgba(58,6,22,.5)'; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.ellipse(cx, cy, bw * .62, bh * .62, 0, Math.PI, 0); ctx.stroke();
+      // Radial canals, visible through the jelly.
+      ctx.strokeStyle = 'rgba(255,196,186,.28)'; ctx.lineWidth = 1.3;
+      for (let i = 1; i < 8; i++) {
+        const a = Math.PI + i * Math.PI / 8;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(a) * bw * .24, cy + Math.sin(a) * bh * .24);
+        ctx.lineTo(cx + Math.cos(a) * bw * .96, cy + Math.sin(a) * bh * .96);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(255,255,255,.32)';
+      ctx.beginPath(); ctx.ellipse(cx - 10, cy - 8, 8, 3.5, -.5, 0, Math.PI * 2); ctx.fill();
+      if (alarm > 0) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = alarm * (.55 + Math.sin(e.t * 22) * .45);
+        const ag = ctx.createRadialGradient(cx, cy, 2, cx, cy, bw * 1.6);
+        ag.addColorStop(0, 'rgba(127,220,255,.45)'); ag.addColorStop(1, 'rgba(127,220,255,0)');
+        ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(cx, cy, bw * 1.6, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#9fe6ff'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.ellipse(cx, cy, bw * .8, bh * .8, 0, Math.PI, 0); ctx.stroke();
+        ctx.restore();
+      }
+      // Rhopalia: the sensory bodies spaced around the rim, which really do
+      // carry light-sensing ocelli. Two of them stand in as the face.
+      drawFishEye(24, 22, 4.5, e); drawFishEye(38, 22, 4.5, e);
     } else if (e.type === 'ember') {
       const flick = Math.sin(e.t * 18) * 4;
       ctx.save(); ctx.globalCompositeOperation = 'lighter';
@@ -8066,15 +8285,76 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = glass; ctx.beginPath(); ctx.ellipse(38, 16, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#ffe15a'; ctx.fillRect(5, 22, 10, 4); ctx.fillStyle = '#fff'; ctx.fillRect(23, 9, 24, 3);
     } else if (e.type === 'manta') {
-      const flap = Math.sin(e.t * 5) * 8;
-      ctx.fillStyle = '#041828';
-      ctx.beginPath(); ctx.moveTo(8, 32); ctx.quadraticCurveTo(26, 2 + flap, 46, 22); ctx.quadraticCurveTo(68, 2 - flap, 90, 32); ctx.quadraticCurveTo(64, 28, 52, 48); ctx.lineTo(46, 56); ctx.lineTo(40, 48); ctx.quadraticCurveTo(28, 28, 8, 32); ctx.fill();
-      const skin = ctx.createLinearGradient(0, 0, 0, 52);
-      skin.addColorStop(0, '#c8fffa'); skin.addColorStop(.35, '#2f8cff'); skin.addColorStop(1, '#082a55');
+      // Mobula birostris (オニイトマキエイ), seen from above with the head to the
+      // left like every other enemy. Three things separate a real manta from a
+      // generic ray: the terminal mouth right at the FRONT of the head (a devil
+      // ray's sits underneath), the pair of cephalic fins it rolls into horns
+      // while cruising and unfurls to feed, and the white shoulder blaze — the
+      // marking individual animals are actually catalogued by.
+      const beat = e.t * 3.2;
+      // The flap is a wave travelling outboard, so the tips always lag the
+      // shoulders. A single shared sine makes both wings snap like a bird's.
+      const tipU = Math.sin(beat) * 11, tipD = Math.sin(beat + .4) * 11;
+      const midU = Math.sin(beat - .55) * 6, midD = Math.sin(beat - .15) * 6;
+      const wing = (up) => {
+        const t = up ? tipU : tipD, m = up ? midU : midD, s = up ? -1 : 1;
+        ctx.moveTo(12, 26);
+        ctx.quadraticCurveTo(30, 26 + s * (22 + m), 62, 26 + s * (26 + t));
+        ctx.quadraticCurveTo(58, 26 + s * 12, 82, 26 + s * 5);
+        ctx.lineTo(80, 26);
+      };
+      // Far side of the wings, offset down-right: the manta has real thickness.
+      ctx.fillStyle = '#03121f';
+      ctx.beginPath(); ctx.save(); ctx.translate(3, 4);
+      wing(true); wing(false); ctx.closePath(); ctx.restore(); ctx.fill();
+      // Dorsal surface.
+      const skin = ctx.createLinearGradient(0, -4, 0, 58);
+      skin.addColorStop(0, '#7fd6ff'); skin.addColorStop(.34, '#2f6fd8'); skin.addColorStop(.62, '#123f7d'); skin.addColorStop(1, '#061f3f');
       ctx.fillStyle = skin;
-      ctx.beginPath(); ctx.moveTo(4, 29); ctx.quadraticCurveTo(23, -4 + flap, 43, 19); ctx.quadraticCurveTo(65, -4 - flap, 85, 29); ctx.quadraticCurveTo(63, 23, 50, 43); ctx.lineTo(44, 51); ctx.lineTo(39, 42); ctx.quadraticCurveTo(25, 23, 4, 29); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.ellipse(43, 16, 14, 5, 0, 0, Math.PI * 2); ctx.fill();
-      drawKawaiiEyes(31, 50, 18, 7, 2);
+      ctx.beginPath(); wing(true); wing(false); ctx.closePath(); ctx.fill();
+      ctx.save(); ctx.clip();
+      // White shoulder blaze, one lobe per side of the spine.
+      ctx.fillStyle = 'rgba(236,250,255,.82)';
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(24, 26 + s * 3);
+        ctx.quadraticCurveTo(38, 26 + s * 16, 56, 26 + s * 12);
+        ctx.quadraticCurveTo(42, 26 + s * 6, 34, 26 + s * 2);
+        ctx.closePath(); ctx.fill();
+      }
+      // Wing-tip highlight where the light catches the raised edge.
+      ctx.fillStyle = 'rgba(255,255,255,.18)';
+      ctx.beginPath(); ctx.ellipse(46, 26 + midU * .5 - 12, 20, 5, -.25, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      // Cephalic fins: rolled forward horns, the manta's most distinctive part.
+      // Lit paler than the body or they vanish into it against dark water.
+      for (const s of [-1, 1]) {
+        const curl = Math.sin(e.t * 2 + s) * .2;
+        ctx.strokeStyle = '#0b2a4c'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(16, 26 + s * 7);
+        ctx.quadraticCurveTo(1, 26 + s * (11 + curl * 8), 3, 26 + s * 2);
+        ctx.stroke();
+        ctx.strokeStyle = '#4f95d8'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(16, 26 + s * 7);
+        ctx.quadraticCurveTo(1, 26 + s * (11 + curl * 8), 3, 26 + s * 2);
+        ctx.stroke();
+      }
+      // Terminal mouth: a wide slot across the very front of the head, with the
+      // pale lip a feeding manta shows. Rounded, not a bolted-on black box.
+      ctx.fillStyle = '#04101c';
+      ctx.beginPath(); ctx.ellipse(13, 26, 5, 7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(170,225,255,.45)';
+      ctx.beginPath(); ctx.ellipse(13, 21, 4, 1.8, 0, 0, Math.PI * 2); ctx.fill();
+      // Whip tail with the small dorsal fin at its base.
+      ctx.fillStyle = '#123f7d';
+      ctx.beginPath(); ctx.moveTo(74, 22); ctx.lineTo(82, 15); ctx.lineTo(84, 26); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#0d2f5c'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(80, 26);
+      ctx.quadraticCurveTo(98, 26 + Math.sin(beat - 1) * 7, 116, 26 + Math.sin(beat - 1.8) * 11);
+      ctx.stroke();
+      // A manta's eyes sit on the sides of the head, so both are visible from
+      // above — small and set back behind the cephalic fins, not up front.
+      drawFishEye(22, 19, 3.4, e); drawFishEye(22, 33, 3.4, e);
     } else if (e.type === 'walker') {
       // Two-joint chicken-walker legs (thigh + shin) with a stepping gait.
       const step = Math.sin(e.t * 7) * 8;
@@ -8151,6 +8431,237 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = '#ffd7ea'; heartPath(26, 25, 9); ctx.fill();
       drawKawaiiEyes(22, 36, 28, 6, 2);
       ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(2, 32, 10, -1.1, 1.1); ctx.stroke();
+    } else if (e.type === 'dumbo') {
+      // Grimpoteuthis (メンダコ). Anatomy kept honest: a gelatinous bell mantle,
+      // the pair of ear-like fins it actually rows with, and eight short arms
+      // fused into a webbed umbrella it pulses. Colours stay neon-pink so it
+      // still belongs on the same screen as the mecha.
+      const flap = Math.sin(e.t * 3.1);
+      const pulse = 1 + Math.sin(e.t * 2.1) * .07;
+      // Ear fins: large, rounded and set high on the mantle, where they sit on
+      // the real animal — they are its whole means of propulsion, not a detail.
+      for (const s of [-1, 1]) {
+        ctx.save(); ctx.translate(38 + s * 17, 16); ctx.rotate(s * (.14 + flap * .30));
+        const fin = ctx.createLinearGradient(0, -14, 0, 12);
+        fin.addColorStop(0, '#ffdcf1'); fin.addColorStop(.5, '#e777c8'); fin.addColorStop(1, '#8a2a80');
+        ctx.fillStyle = fin;
+        // A long, flat paddle tapering to a soft point — a swimming fin, not a
+        // round mouse ear. These are the animal's only means of propulsion.
+        ctx.beginPath(); ctx.moveTo(0, -5);
+        ctx.bezierCurveTo(s * 18, -17, s * 36, -15, s * 41, -4);
+        ctx.bezierCurveTo(s * 34, 4, s * 15, 8, 0, 7);
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = 'rgba(96,16,80,.35)'; ctx.lineWidth = 1.2;
+        for (let i = 1; i <= 4; i++) { ctx.beginPath(); ctx.moveTo(s * 2, 0); ctx.lineTo(s * (8 + i * 7.5), -9 + i * 3.4); ctx.stroke(); }
+        ctx.restore();
+      }
+      // Webbed arm skirt, hanging clear below the mantle and flaring wider than
+      // it, with a scalloped hem — one lobe per arm — so the umbrella reads as
+      // its own volume instead of merging into the bell.
+      ctx.save(); ctx.translate(38, 40); ctx.scale(pulse, 2 - pulse);
+      const web = ctx.createLinearGradient(0, -6, 0, 26);
+      web.addColorStop(0, '#7b1f78'); web.addColorStop(.5, '#571459'); web.addColorStop(1, '#2a0730');
+      ctx.fillStyle = web;
+      ctx.beginPath();
+      ctx.moveTo(-24, -6);
+      ctx.quadraticCurveTo(-33, 8, -30, 17);
+      for (let i = 0; i < 8; i++) {
+        const x0 = -30 + i * 7.5;
+        ctx.quadraticCurveTo(x0 + 3.75, 26 + Math.sin(e.t * 3 + i * .8) * 2.5, x0 + 7.5, 17);
+      }
+      ctx.quadraticCurveTo(33, 8, 24, -6);
+      ctx.closePath(); ctx.fill();
+      // Suckers picked out along the two front arms, the only ones facing us.
+      ctx.fillStyle = 'rgba(255,190,235,.35)';
+      for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.arc(-13 + (i % 2) * 26, 2 + Math.floor(i / 2) * 6, 2, 0, Math.PI * 2); ctx.fill(); }
+      // Cirri: the fine filaments that trail past the hem.
+      ctx.strokeStyle = 'rgba(234,164,221,.85)'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+      for (let i = 0; i < 8; i++) {
+        const ax = -26 + i * 7.5, sway = Math.sin(e.t * 3.4 + i * .8) * 5;
+        ctx.beginPath(); ctx.moveTo(ax, 22); ctx.quadraticCurveTo(ax + sway * .5, 28, ax + sway, 33); ctx.stroke();
+      }
+      ctx.restore();
+      // Bell mantle: a dome with a flat base, not a sphere — the profile is what
+      // separates a dumbo octopus from the jellyfish two lanes over. The colour
+      // drifts on a slow cycle because octopus skin genuinely does: expanding
+      // and contracting chromatophores flush it darker and paler in waves.
+      const flush = .5 + Math.sin(e.t * .9) * .5;
+      const dome = ctx.createRadialGradient(28, 12, 3, 38, 26, 32);
+      dome.addColorStop(0, flush > .5 ? '#fff2fa' : '#ffe0f2');
+      dome.addColorStop(.42, flush > .5 ? '#f7a3e0' : '#e77ac6');
+      dome.addColorStop(1, flush > .5 ? '#8b2483' : '#6a1563');
+      ctx.fillStyle = dome;
+      ctx.beginPath(); ctx.moveTo(13, 40);
+      ctx.bezierCurveTo(10, 4, 66, 4, 63, 40);
+      ctx.closePath(); ctx.fill();
+      // Papillae: the skin bumps an octopus raises for texture, clipped to the bell.
+      ctx.save(); ctx.clip();
+      for (let i = 0; i < 14; i++) {
+        const px = 15 + ((i * 37) % 48), py = 8 + ((i * 23) % 30);
+        ctx.fillStyle = `rgba(255,255,255,${.06 + (i % 3) * .05})`;
+        ctx.beginPath(); ctx.ellipse(px, py, 3.2, 2.2, .4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(120,20,105,.14)';
+        ctx.beginPath(); ctx.ellipse(px, py + 2.6, 3.2, 1.6, .4, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+      // The U-shaped internal shell, visible through the jelly — a real Grimpoteuthis tell.
+      ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 3.4;
+      ctx.beginPath(); ctx.arc(38, 20, 15, .42, Math.PI - .42); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.4)';
+      ctx.beginPath(); ctx.ellipse(27, 14, 9, 5, -.55, 0, Math.PI * 2); ctx.fill();
+      // The eyes of a dumbo octopus are enormous for its size, and sit low and
+      // wide on the bell rather than up front like a fish's.
+      drawFishEye(29, 31, 7.5, e); drawFishEye(48, 31, 7.5, e);
+    } else if (e.type === 'angler') {
+      // Melanocetus (チョウチンアンコウ): a black sphere that is mostly mouth.
+      // The illicium arcs over the snout and the esca on its tip is the only
+      // real light in the frame — and it burns up as the shot charges, so the
+      // lure is the wind-up telegraph rather than a bolted-on glow.
+      const charge = e.fireMax > 0 ? clamp(1 - e.fire / e.fireMax, 0, 1) : .5;
+      const glow = .3 + charge * .7 + Math.sin(e.t * 7) * .07;
+      const gape = 5 + Math.sin(e.t * 2.1) * 3 + charge * 8;
+      const lx = 13, ly = 13;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const lg = ctx.createRadialGradient(lx, ly, 1, lx, ly, 38);
+      lg.addColorStop(0, hexA('#f2ffff', .9 * glow)); lg.addColorStop(.3, hexA('#65fff2', .5 * glow)); lg.addColorStop(1, 'rgba(101,255,242,0)');
+      ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(lx, ly, 38, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#0b1620';
+      ctx.beginPath(); ctx.moveTo(70, 32); ctx.lineTo(88, 20); ctx.lineTo(86, 62); ctx.lineTo(70, 54); ctx.closePath(); ctx.fill();
+      const bg = ctx.createRadialGradient(40, 30, 3, 50, 46, 36);
+      bg.addColorStop(0, '#31586c'); bg.addColorStop(.45, '#132430'); bg.addColorStop(1, '#04090f');
+      ctx.fillStyle = bg; ctx.beginPath(); ctx.ellipse(50, 45, 30, 26, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .45 * glow;
+      ctx.strokeStyle = '#65fff2'; ctx.lineWidth = 2.6;
+      ctx.beginPath(); ctx.ellipse(50, 45, 30, 26, 0, Math.PI * .78, Math.PI * 1.62); ctx.stroke(); ctx.restore();
+      ctx.fillStyle = '#12060c';
+      ctx.beginPath(); ctx.moveTo(48, 44); ctx.lineTo(15, 30 - gape * .4); ctx.lineTo(13, 56 + gape * .6); ctx.closePath(); ctx.fill();
+      // Needle teeth: long and thin, the way a Melanocetus's are — chunky
+      // triangles turn it into a cartoon shark.
+      ctx.fillStyle = '#e6f4ff';
+      for (let i = 0; i < 8; i++) {
+        const p = .14 + (i / 7) * .86;    // offset off the hinge so they don't pile up there
+        const ux = 46 - p * 31, uy = 44 - p * (13 + gape * .4);
+        ctx.beginPath(); ctx.moveTo(ux, uy); ctx.lineTo(ux - 1.6, uy + 11); ctx.lineTo(ux + 2, uy + 10); ctx.closePath(); ctx.fill();
+        const bx = 46 - p * 33, by = 44 + p * (11 + gape * .6);
+        ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx - 1.6, by - 11); ctx.lineTo(bx + 2, by - 10); ctx.closePath(); ctx.fill();
+      }
+      // Loose, flabby skin: a deep-sea angler has no scales and hangs slack, and
+      // its stomach distends enormously — these folds are what sell that.
+      ctx.strokeStyle = 'rgba(120,180,200,.16)'; ctx.lineWidth = 1.8;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath(); ctx.arc(50 + i * 7, 45, 20 - i * 4, -.9, 1.1); ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(140,200,220,.2)'; ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.arc(38, 46, 15, -1.3, 1.5); ctx.stroke();   // gill slit behind the jaw
+      // Pectoral fin with visible rays.
+      ctx.fillStyle = 'rgba(60,110,132,.75)';
+      ctx.beginPath(); ctx.moveTo(52, 58); ctx.quadraticCurveTo(48, 74, 62, 70); ctx.quadraticCurveTo(58, 62, 52, 58); ctx.fill();
+      ctx.strokeStyle = 'rgba(180,230,245,.3)'; ctx.lineWidth = 1;
+      for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(53, 60); ctx.lineTo(50 + i * 4, 71); ctx.stroke(); }
+      // Illicium: a fleshy rod, thicker at the base where it leaves the snout.
+      ctx.strokeStyle = '#20394a'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(44, 22); ctx.quadraticCurveTo(26, 0, lx, ly); ctx.stroke();
+      ctx.strokeStyle = '#33566b'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(44, 22); ctx.quadraticCurveTo(27, 1, lx, ly); ctx.stroke();
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      // Esca filaments: the bait is a bulb with fine wisps trailing off it.
+      ctx.strokeStyle = hexA('#9ffff2', .5 * glow); ctx.lineWidth = 1.4;
+      for (let i = 0; i < 4; i++) {
+        const a = -2.4 + i * .55 + Math.sin(e.t * 2.2 + i) * .22;
+        ctx.beginPath(); ctx.moveTo(lx, ly);
+        ctx.lineTo(lx + Math.cos(a) * 13, ly + Math.sin(a) * 13); ctx.stroke();
+      }
+      ctx.fillStyle = hexA('#eaffff', .95); ctx.beginPath(); ctx.arc(lx, ly, 5 + charge * 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      drawFishEye(35, 33, 4.5, e);
+    } else if (e.type === 'oarfish') {
+      // Regalecus glesne (リュウグウノツカイ). It hangs head-up and swims by
+      // rippling the crimson dorsal fin alone while the body stays nearly
+      // straight — that posture is what makes it a vertical pillar in the lane
+      // instead of one more horizontal fish.
+      const N = 12;
+      const pts = [];
+      for (let i = 0; i <= N; i++) pts.push({ x: 32 + Math.sin(e.t * 1.7 - i * .42) * (1 + i * .75), y: 30 + i * 13 });
+      const half = i => 12 - i * .72;   // tapers to a thread at the tail
+      // The crimson dorsal fin hugs the leading edge for the whole length, and
+      // it is the only thing that ripples — the body itself stays nearly rigid.
+      const finGrad = ctx.createLinearGradient(4, 0, 32, 0);
+      finGrad.addColorStop(0, '#ff5a7e'); finGrad.addColorStop(.5, '#d81c46'); finGrad.addColorStop(1, '#7d0f2c');
+      ctx.fillStyle = finGrad;
+      // Starts below the head so the crest of head rays stays legible above it.
+      ctx.beginPath();
+      for (let i = 1; i <= N; i++) {
+        const p = pts[i], edge = p.x - half(i);
+        const web = 5 + Math.sin(e.t * 5 - i * .8) * 3.2;
+        ctx[i > 1 ? 'lineTo' : 'moveTo'](edge - web, p.y);
+      }
+      for (let i = N; i >= 1; i--) ctx.lineTo(pts[i].x - half(i) + 1.5, pts[i].y);
+      ctx.closePath(); ctx.fill();
+      // Individual dorsal fin rays. On a real oarfish the whole fin is a comb of
+      // several hundred separate rays, and it is the only part of it that moves.
+      ctx.strokeStyle = 'rgba(122,10,38,.5)'; ctx.lineWidth = 1;
+      for (let i = 1; i <= N; i += .5) {
+        const j = Math.min(N, Math.round(i)), p = pts[j];
+        const edge = p.x - half(j), web = 5 + Math.sin(e.t * 5 - i * .8) * 3.2;
+        ctx.beginPath(); ctx.moveTo(edge + 1, p.y + (i - j) * 14); ctx.lineTo(edge - web, p.y + (i - j) * 14 - 2); ctx.stroke();
+      }
+      // Silver ribbon body, tapering to a point.
+      ctx.beginPath();
+      for (let i = 0; i <= N; i++) ctx[i ? 'lineTo' : 'moveTo'](pts[i].x - half(i), pts[i].y);
+      ctx.lineTo(pts[N].x, pts[N].y + 12);
+      for (let i = N; i >= 0; i--) ctx.lineTo(pts[i].x + half(i), pts[i].y);
+      ctx.closePath();
+      const silver = ctx.createLinearGradient(18, 0, 46, 0);
+      silver.addColorStop(0, '#fbfeff'); silver.addColorStop(.3, '#d3e2f0'); silver.addColorStop(.66, '#8ba4bd'); silver.addColorStop(1, '#3b5570');
+      ctx.fillStyle = silver; ctx.fill();
+      ctx.save(); ctx.clip();
+      // The dark flank bars of a real oarfish: soft, vertically stretched, not spots.
+      ctx.fillStyle = 'rgba(40,62,92,.32)';
+      for (let i = 2; i <= N; i += 2) { const p = pts[i]; ctx.beginPath(); ctx.ellipse(p.x + 2, p.y, 9, 5, 0, 0, Math.PI * 2); ctx.fill(); }
+      // Guanine iridescence: the silver is a crystal layer, so it throws faint
+      // colour bands rather than reading as flat grey metal.
+      for (let i = 0; i < 5; i++) {
+        const g2 = ctx.createLinearGradient(16, 30 + i * 34, 46, 62 + i * 34);
+        g2.addColorStop(0, 'rgba(150,220,255,0)');
+        g2.addColorStop(.5, i % 2 ? 'rgba(190,160,255,.22)' : 'rgba(140,235,255,.22)');
+        g2.addColorStop(1, 'rgba(150,220,255,0)');
+        ctx.fillStyle = g2; ctx.fillRect(14, 26 + i * 34, 34, 34);
+      }
+      ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(20, 30, 4, 150);   // specular strip
+      ctx.restore();
+      // Crest of elongated first dorsal rays, streaming up off the head.
+      // Fanned apart at the tips so they read as separate rays, not a red slab.
+      ctx.strokeStyle = '#ff3d63'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+      for (let i = 0; i < 4; i++) {
+        const bx = 25 + i * 4.5, sway = Math.sin(e.t * 3.6 - i * .7) * 6;
+        const tip = bx - 14 + i * 7 + sway;
+        ctx.beginPath(); ctx.moveTo(bx, 24); ctx.quadraticCurveTo((bx + tip) / 2, 11, tip, 0); ctx.stroke();
+      }
+      // Blunt head, small protrusible mouth, big round eye.
+      const headG = ctx.createLinearGradient(19, 0, 45, 0);
+      headG.addColorStop(0, '#ffffff'); headG.addColorStop(.55, '#cfdfee'); headG.addColorStop(1, '#67809b');
+      ctx.fillStyle = headG;
+      ctx.beginPath(); ctx.ellipse(32, 30, 13, 17, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#59718c';
+      ctx.beginPath(); ctx.moveTo(21, 30); ctx.lineTo(12, 35); ctx.lineTo(21, 39); ctx.closePath(); ctx.fill();
+      // Gill cover.
+      ctx.strokeStyle = 'rgba(70,96,124,.5)'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(38, 32, 9, -1.1, 1.1); ctx.stroke();
+      drawFishEye(29, 27, 6, e);
+      // The two long pelvic rays — the "oars" the common name comes from. They
+      // hang outside the leading edge so they never cross the body.
+      for (const s of [0, 1]) {
+        const sway = Math.sin(e.t * 2.6 - s * 1.1) * 9;
+        const x0 = 22 - s * 3, tipX = 8 - s * 5 + sway, tipY = 118 + s * 26;
+        ctx.strokeStyle = '#e0244a'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(x0, 44);
+        ctx.quadraticCurveTo(x0 - 10 + sway * .4, (44 + tipY) / 2, tipX, tipY); ctx.stroke();
+        ctx.fillStyle = '#e0244a';
+        ctx.beginPath(); ctx.ellipse(tipX, tipY + 7, 4, 8, .25, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (e.type === 'moray') {
+      drawGiantMoray(e);
     } else if (e.type === 'midboss') {
       // Art authored at 158×132
       ctx.save(); ctx.scale(e.w / 158, e.h / 132);
@@ -8199,22 +8710,38 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         ctx.restore();
       }
     }
-    // Damage state: cracked plating + occasional ember once badly hurt.
+    const organic = isOrganic(e.type);
+    // Damage state. Machines spall — cracked plating and a spitting ember.
+    // Flesh doesn't: a wounded creature gets torn edges and a bioluminescent
+    // bleed instead, so the same "nearly dead" read works on both.
     if (e.maxHp > 1 && e.hp / e.maxHp < .4) {
-      ctx.save(); ctx.globalAlpha = .5; ctx.strokeStyle = 'rgba(15,6,6,.6)'; ctx.lineWidth = 1.6;
-      ctx.beginPath();
-      ctx.moveTo(e.w * .32, e.h * .18); ctx.lineTo(e.w * .44, e.h * .48); ctx.lineTo(e.w * .34, e.h * .74);
-      ctx.moveTo(e.w * .6, e.h * .14); ctx.lineTo(e.w * .68, e.h * .42);
-      ctx.stroke(); ctx.restore();
-      if (Math.sin(e.t * 11 + e.w) > .82) {
-        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .8; ctx.fillStyle = '#ffb347';
-        ctx.beginPath(); ctx.arc(e.w * .4, e.h * .42, 2.2, 0, Math.PI * 2); ctx.fill();
+      if (organic) {
+        ctx.save(); ctx.globalAlpha = .55; ctx.strokeStyle = 'rgba(180,30,80,.75)'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(e.w * .3, e.h * .3); ctx.quadraticCurveTo(e.w * .42, e.h * .44, e.w * .34, e.h * .6);
+        ctx.moveTo(e.w * .58, e.h * .24); ctx.quadraticCurveTo(e.w * .66, e.h * .36, e.w * .6, e.h * .48);
+        ctx.stroke(); ctx.restore();
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = .28 + Math.abs(Math.sin(e.t * 5)) * .22; ctx.fillStyle = '#ff5a8c';
+        ctx.beginPath(); ctx.ellipse(e.w * .4, e.h * .45, e.w * .16, e.h * .13, 0, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
+      } else {
+        ctx.save(); ctx.globalAlpha = .5; ctx.strokeStyle = 'rgba(15,6,6,.6)'; ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(e.w * .32, e.h * .18); ctx.lineTo(e.w * .44, e.h * .48); ctx.lineTo(e.w * .34, e.h * .74);
+        ctx.moveTo(e.w * .6, e.h * .14); ctx.lineTo(e.w * .68, e.h * .42);
+        ctx.stroke(); ctx.restore();
+        if (Math.sin(e.t * 11 + e.w) > .82) {
+          ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .8; ctx.fillStyle = '#ffb347';
+          ctx.beginPath(); ctx.arc(e.w * .4, e.h * .42, 2.2, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        }
       }
     }
     // Stage-color decal: a small squad-insignia badge ties every enemy back
     // to the current stage's palette, independent of the type's own colors.
-    if (e.type !== 'ember') {
+    // Wildlife carries no unit markings, so organics are exempt.
+    if (e.type !== 'ember' && !organic) {
       const stage = stages[stageIndex];
       ctx.save(); ctx.globalAlpha = .65; ctx.fillStyle = stage.accent2;
       ctx.beginPath(); ctx.roundRect(e.w - 14, e.h - 14, 9, 9, 2); ctx.fill();
@@ -8223,6 +8750,32 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.restore();
     }
     if (e.variant === 'standard') return;
+    if (organic) {
+      // Same two tiers, read biologically: an elite is a bioluminescent display
+      // animal, an armored one carries thickened plates of scute along its back.
+      ctx.save();
+      if (e.variant === 'elite') {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = .45 + Math.sin(e.t * 4) * .18;
+        const eg = ctx.createRadialGradient(e.w * .5, e.h * .45, 2, e.w * .5, e.h * .45, e.w * .62);
+        eg.addColorStop(0, 'rgba(255,225,90,.55)'); eg.addColorStop(.6, 'rgba(255,120,200,.3)'); eg.addColorStop(1, 'rgba(255,120,200,0)');
+        ctx.fillStyle = eg;
+        ctx.beginPath(); ctx.ellipse(e.w * .5, e.h * .45, e.w * .6, e.h * .5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = .85; ctx.fillStyle = '#ffe15a';
+        for (let i = 0; i < 5; i++) {
+          const a = e.t * 1.6 + i * 1.26;
+          ctx.beginPath(); ctx.arc(e.w * .5 + Math.cos(a) * e.w * .34, e.h * .45 + Math.sin(a) * e.h * .3, 2.4, 0, Math.PI * 2); ctx.fill();
+        }
+      } else {
+        ctx.globalAlpha = .45; ctx.fillStyle = '#cfe6ff';
+        for (let x = 12; x < e.w - 8; x += 15) {
+          ctx.beginPath();
+          ctx.ellipse(x, e.h * .2, 5, 3, -.3, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      ctx.restore();
+      return;
+    }
     const color = e.variant === 'elite' ? '#ffe15a' : '#a8b7d6';
     ctx.save(); ctx.globalAlpha = .9;
     ctx.fillStyle = color;
@@ -8236,6 +8789,270 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }
     }
     ctx.restore();
+  }
+
+  // Gymnothorax javanicus — the giant moray, and the only regular enemy in the
+  // game drawn at encounter scale. The 150×92 box is its HEAD; roughly 350 more
+  // pixels of body trail off to the right of it and are never shootable, which
+  // is exactly how you meet one over a reef: all you get is the head.
+  //
+  // Everything here is anatomy the real animal has and the earlier pass didn't:
+  // the continuous dorsal-caudal-anal fin ribbon, two scales of blotching (fine
+  // speckle on the head growing into big dark saddles down the body), the single
+  // round gill opening, tubular anterior nostrils, a gold iris, recurved teeth of
+  // graded length with the vomerine row behind them, and the mucus sheen morays
+  // are covered in. The idle gape is gill pumping, not a chewing wobble.
+  function drawGiantMoray(e) {
+    const strike = e.lunge > 0 ? 1 : e.recoil > 0 ? .45 : 0;
+    const N = 10, SEG = 34, HINGE_X = 128, HINGE_Y = 52;
+    // Travelling wave: amplitude grows toward the tail and the phase lags with
+    // distance, so the body swims as one muscle instead of bobbing in place.
+    const seg = [];
+    for (let i = 0; i <= N; i++) {
+      seg.push({
+        x: 140 + i * SEG,
+        y: HINGE_Y + Math.sin(e.t * 2 - i * .5) * (4 + i * 3.2),
+        r: 31 - i * 2.5,
+      });
+    }
+    // Sample the spine between segments so fin rays and blotches can be placed
+    // at any density without needing more segments.
+    const at = u => {
+      const i = Math.min(N - 1, Math.max(0, Math.floor(u))), f = clamp(u - i, 0, 1);
+      const a = seg[i], b = seg[i + 1];
+      return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, r: a.r + (b.r - a.r) * f };
+    };
+    const tipX = seg[N].x + 34, tipY = seg[N].y;
+    // Stable per-index noise — Math.random() here would make the pattern crawl.
+    const rnd = (i, k) => { const v = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453; return v - Math.floor(v); };
+
+    // --- median fin ribbon (dorsal → caudal → anal), drawn behind the body ---
+    const dorsalH = u => 10 + Math.sin(u * .8 - e.t * 2.6) * 2.5 + Math.min(u, 1.5) * 3;
+    const analH = u => 7 + Math.sin(u * .9 - e.t * 2.6 + 1) * 2;
+    const fin = ctx.createLinearGradient(0, 4, 0, 96);
+    fin.addColorStop(0, '#eaf3c2'); fin.addColorStop(.3, '#587f38'); fin.addColorStop(1, '#1e3a1e');
+    // One simple non-self-intersecting loop: over the top, round the caudal tip,
+    // back under the rear half as the anal fin, then flush along the belly. The
+    // body is painted over the middle of it afterwards.
+    ctx.fillStyle = fin;
+    ctx.beginPath();
+    for (let u = 0; u <= N; u += .25) { const p = at(u); ctx[u ? 'lineTo' : 'moveTo'](p.x, p.y - p.r - dorsalH(u)); }
+    ctx.quadraticCurveTo(tipX + 14, tipY - 6, tipX + 12, tipY);
+    ctx.quadraticCurveTo(tipX + 14, tipY + 6, seg[N].x, seg[N].y + seg[N].r + analH(N));
+    for (let u = N; u >= 4; u -= .25) { const p = at(u); ctx.lineTo(p.x, p.y + p.r + analH(u)); }
+    for (let u = 4; u >= 0; u -= .25) { const p = at(u); ctx.lineTo(p.x, p.y + p.r); }
+    ctx.closePath(); ctx.fill();
+    // Individual fin rays — faint and unevenly spaced, or they read as a zipper.
+    ctx.strokeStyle = 'rgba(26,48,22,.15)'; ctx.lineWidth = 1.2;
+    // Jittered spacing: evenly spaced rays read as a zip fastener, not a fin.
+    // Thinned out first when frames get tight.
+    const rayStep = [.9, .55, .3][bgQuality()];
+    for (let u = .2; u <= N; u += rayStep + rnd(Math.round(u * 3), 41) * .3) {
+      const p = at(u), len = (dorsalH(u) - 4) * (.5 + rnd(u * 7, 31) * .4);
+      ctx.beginPath(); ctx.moveTo(p.x, p.y - p.r); ctx.lineTo(p.x + 2.5, p.y - p.r - len); ctx.stroke();
+      if (u > 4.2) { ctx.beginPath(); ctx.moveTo(p.x, p.y + p.r); ctx.lineTo(p.x + 2, p.y + p.r + analH(u) - 2); ctx.stroke(); }
+    }
+    // Pale fin margin — the light edge that outlines a moray against dark water.
+    ctx.strokeStyle = 'rgba(240,248,206,.5)'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let u = 0; u <= N; u += .25) { const p = at(u); ctx[u ? 'lineTo' : 'moveTo'](p.x, p.y - p.r - dorsalH(u)); }
+    ctx.stroke();
+
+    // --- body ------------------------------------------------------------
+    ctx.beginPath();
+    for (let u = 0; u <= N; u += .25) { const p = at(u); ctx[u ? 'lineTo' : 'moveTo'](p.x, p.y - p.r); }
+    ctx.lineTo(tipX, tipY);
+    for (let u = N; u >= 0; u -= .25) { const p = at(u); ctx.lineTo(p.x, p.y + p.r); }
+    ctx.closePath();
+    const skin = ctx.createLinearGradient(0, 8, 0, 96);
+    skin.addColorStop(0, '#e2eda6'); skin.addColorStop(.3, '#8fb355'); skin.addColorStop(.62, '#5d8639'); skin.addColorStop(1, '#22401f');
+    ctx.fillStyle = skin; ctx.fill();
+
+    // Everything below is clipped to the body, so no blotch, sheen or belly
+    // band can ever spill into the open water beside it.
+    ctx.save(); ctx.clip();
+    // Big dark saddles: the pattern that actually identifies a giant moray.
+    // They start small behind the head and swell toward mid-body.
+    for (let i = 0; i < 26; i++) {
+      const u = .6 + i * .38;
+      const p = at(u), grow = Math.min(1, u / 4);
+      ctx.fillStyle = `rgba(30,54,26,${.34 + rnd(i, 3) * .2})`;
+      ctx.beginPath();
+      ctx.ellipse(p.x + rnd(i, 1) * 12 - 6, p.y + (rnd(i, 2) - .5) * p.r * 1.7,
+        (7 + rnd(i, 4) * 8) * grow, (6 + rnd(i, 5) * 7) * grow, rnd(i, 6) * 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Fine speckle, densest over the head end. This is by far the heaviest loop
+    // on the animal, so it rides the same FPS-driven quality tier the background
+    // uses — the big saddles above carry the pattern on their own if it's cut.
+    const speckles = [18, 36, 54][bgQuality()];
+    for (let i = 0; i < speckles; i++) {
+      const u = rnd(i, 7) * rnd(i, 8) * N;   // biased toward u=0
+      const p = at(u);
+      ctx.fillStyle = `rgba(26,46,24,${.3 + rnd(i, 9) * .3})`;
+      ctx.beginPath();
+      ctx.arc(p.x + (rnd(i, 10) - .5) * 26, p.y + (rnd(i, 11) - .5) * p.r * 1.8, 1.4 + rnd(i, 12) * 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Pale belly band.
+    ctx.strokeStyle = 'rgba(246,252,216,.42)'; ctx.lineWidth = 9;
+    ctx.beginPath();
+    for (let u = 0; u <= N; u += .25) { const p = at(u); ctx[u ? 'lineTo' : 'moveTo'](p.x, p.y + p.r - 3); }
+    ctx.stroke();
+    // Mucus sheen: morays are coated in it, and it is the only specular on them.
+    ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 5;
+    ctx.beginPath();
+    for (let u = .3; u <= N * .8; u += .25) { const p = at(u); ctx[u > .3 ? 'lineTo' : 'moveTo'](p.x, p.y - p.r * .55); }
+    ctx.stroke();
+    ctx.restore();
+
+    // Single round gill opening behind the head — morays have one small pore
+    // instead of a gill cover, and nothing else in the sea looks like it.
+    // Placed past u=1.5 so the skull — which now reaches back to +44 to hide the
+    // neck seam — does not paint over it.
+    const gp = at(1.7);
+    ctx.fillStyle = '#16280f';
+    ctx.beginPath(); ctx.ellipse(gp.x, gp.y - 4, 7, 9, .2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,.5)';
+    ctx.beginPath(); ctx.ellipse(gp.x, gp.y - 4, 4, 6, .2, 0, Math.PI * 2); ctx.fill();
+
+    // --- head ------------------------------------------------------------
+    // The gape is gill pumping: morays hold their mouth open to drive water over
+    // the gills, so it is a hold-and-release rhythm, not a sine wobble.
+    const pump = Math.pow(Math.max(0, Math.sin(e.t * 1.7)), .55);
+    const open = .09 + pump * .2 + strike * .5;
+    // Dark red throat. The hinge is at the BACK of the skull, so the gape is
+    // widest at the snout — the wedge has to open forward to match, or the
+    // interior shows through behind the jaws instead of between them.
+    // It stops well short of the snout tips so the rounded jaw ends always cover
+    // its corners, and its height tracks `open` — a fixed wedge sized for a full
+    // strike leaves a red sliver hanging below the jaw on every idle frame.
+    const gap = 10 + open * 70;
+    ctx.fillStyle = '#31101a';
+    ctx.beginPath();
+    ctx.moveTo(HINGE_X + 20, HINGE_Y - 4); ctx.lineTo(HINGE_X - 70, HINGE_Y - gap * .5);
+    ctx.lineTo(HINGE_X - 70, HINGE_Y + gap); ctx.lineTo(HINGE_X + 20, HINGE_Y + 6);
+    ctx.closePath(); ctx.fill();
+
+    // Lower jaw. Deep and short — long shallow jaws read as a crocodile, which
+    // is the one silhouette this must not be. Its dorsal edge sits exactly on
+    // the hinge line (y=0), as does the skull's ventral edge, so the two meet
+    // when `open` is 0 and the teeth of both rows stay clear of each other.
+    // Negative angle: the hinge is behind the jaw, so this is what drops the
+    // snout end and opens the mouth. Positive would swing it shut.
+    ctx.save(); ctx.translate(HINGE_X, HINGE_Y);
+    // Both jaw gradients span the same world range as the body's (see `skin`),
+    // so head and body shade identically and the join never shows as a seam.
+    // Built BEFORE the rotate on purpose: a gradient created after it tilts with
+    // the jaw, and the shading drifts out of step with the body it joins.
+    const lj = ctx.createLinearGradient(0, 8 - HINGE_Y, 0, 96 - HINGE_Y);
+    lj.addColorStop(0, '#e2eda6'); lj.addColorStop(.3, '#8fb355'); lj.addColorStop(.62, '#5d8639'); lj.addColorStop(1, '#22401f');
+    ctx.rotate(-open);
+    ctx.fillStyle = lj;
+    ctx.beginPath(); ctx.moveTo(44, 0);
+    ctx.lineTo(-82, 0); ctx.quadraticCurveTo(-95, 6, -84, 18); ctx.lineTo(44, 26);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(246,252,216,.35)'; ctx.fillRect(-78, 14, 96, 4);
+    // Recurved teeth, longest at the front — a moray's front canines are fangs.
+    ctx.fillStyle = '#f4f9e8';
+    for (let i = 0; i < 11; i++) {
+      const f = i / 10, tx = -76 + i * 9, len = 13 - f * 7;
+      ctx.beginPath(); ctx.moveTo(tx, 1); ctx.quadraticCurveTo(tx + 1.5, -len * .6, tx + 3.6, -len);
+      ctx.quadraticCurveTo(tx + 4.4, -len * .5, tx + 3.8, 1);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+
+    // Upper head: deep cranium with a brow bulge over the eye, blunt snout.
+    ctx.save(); ctx.translate(HINGE_X, HINGE_Y);
+    const head = ctx.createLinearGradient(0, 8 - HINGE_Y, 0, 96 - HINGE_Y);
+    head.addColorStop(0, '#e2eda6'); head.addColorStop(.3, '#8fb355'); head.addColorStop(.62, '#5d8639'); head.addColorStop(1, '#22401f');
+    ctx.rotate(open * .45);
+    ctx.fillStyle = head;
+    // The rear runs back to ~+48 so it overlaps the body's flat leading cut by a
+    // wide margin, and it is cut on a diagonal: any residual mismatch along a
+    // slanted join disappears, where a vertical one would read as a hard seam.
+    ctx.beginPath(); ctx.moveTo(52, -30);
+    ctx.bezierCurveTo(-8, -48, -44, -40, -70, -24);
+    ctx.quadraticCurveTo(-93, -12, -84, 0);
+    ctx.lineTo(38, 8);
+    ctx.closePath(); ctx.fill();
+    // Head speckle, clipped to the skull.
+    ctx.save(); ctx.clip();
+    for (let i = 0; i < 26; i++) {
+      ctx.fillStyle = `rgba(26,46,24,${.25 + rnd(i, 21) * .3})`;
+      ctx.beginPath();
+      ctx.arc(-82 + rnd(i, 22) * 104, -42 + rnd(i, 23) * 44, 1.3 + rnd(i, 24) * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,.16)';
+    ctx.beginPath(); ctx.ellipse(-24, -34, 34, 7, -.14, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    // Upper tooth row, hanging from the skull's ventral edge.
+    ctx.fillStyle = '#f4f9e8';
+    for (let i = 0; i < 11; i++) {
+      const f = i / 10, tx = -74 + i * 9, len = 12 - f * 6;
+      ctx.beginPath(); ctx.moveTo(tx, -1); ctx.quadraticCurveTo(tx + 1.5, len * .6, tx + 3.6, len);
+      ctx.quadraticCurveTo(tx + 4.4, len * .5, tx + 3.8, -1);
+      ctx.closePath(); ctx.fill();
+    }
+    // Vomerine teeth: the extra row morays carry on the roof of the mouth,
+    // set back from the jaw line and shorter.
+    ctx.fillStyle = 'rgba(244,249,232,.8)';
+    for (let i = 0; i < 5; i++) { const tx = -40 + i * 9; ctx.beginPath(); ctx.moveTo(tx, -3); ctx.lineTo(tx - 1.6, 4); ctx.lineTo(tx + 1.8, 3); ctx.closePath(); ctx.fill(); }
+    // Anterior nostrils are short tubes on the snout tip; the posterior pair are
+    // plain pores just ahead of the eye. Both are moray-specific tells.
+    ctx.fillStyle = '#41702f';
+    ctx.beginPath(); ctx.roundRect(-78, -22, 5, 9, 2); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(-68, -28, 5, 9, 2); ctx.fill();
+    ctx.fillStyle = 'rgba(20,40,18,.6)';
+    ctx.beginPath(); ctx.arc(-44, -28, 2.2, 0, Math.PI * 2); ctx.fill();
+    // Eye: gold iris, set high and well forward. The slit pupil tracks Gro-chan
+    // the same way drawFishEye's does — being watched by the thing sizing you up
+    // is most of what makes a moray unnerving.
+    const ex = clamp(((player.x + 56) - (e.x + HINGE_X - 33)) * .006, -1, 1);
+    const ey = clamp(((player.y + 60) - (e.y + HINGE_Y - 24)) * .006, -1, 1);
+    ctx.fillStyle = '#1c2f14';
+    ctx.beginPath(); ctx.arc(-33, -24, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e8c24a';
+    ctx.beginPath(); ctx.arc(-33, -24, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(120,80,10,.5)';
+    for (let i = 0; i < 10; i++) {   // iris striations
+      const a = i * Math.PI / 5;
+      ctx.beginPath(); ctx.moveTo(-33 + Math.cos(a) * 3, -24 + Math.sin(a) * 3);
+      ctx.lineTo(-33 + Math.cos(a) * 7, -24 + Math.sin(a) * 7); ctx.lineWidth = 1; ctx.stroke();
+    }
+    ctx.fillStyle = '#0d1408';
+    ctx.beginPath(); ctx.ellipse(-33 + ex * 2.5, -24 + ey * 2.5, 3, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    ctx.beginPath(); ctx.arc(-36, -27, 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    // Pharyngeal jaw: morays carry a second set of jaws in the throat that
+    // launches forward to drag prey back. It fires on the strike and retracts.
+    if (e.jaw > 0) {
+      ctx.save(); ctx.globalAlpha = Math.min(1, e.jaw * 1.4);
+      const reach = 52 * e.jaw;
+      // Kept narrow, and darker than the outer jaws, so the red throat still
+      // frames it — a pale slab filling the whole gape reads as a blocked mouth
+      // rather than as a second set of jaws coming out of one.
+      const pj = ctx.createLinearGradient(0, HINGE_Y - 14, 0, HINGE_Y + 14);
+      pj.addColorStop(0, '#8fb46a'); pj.addColorStop(.5, '#5d833f'); pj.addColorStop(1, '#35522a');
+      ctx.fillStyle = pj;
+      ctx.beginPath();
+      ctx.moveTo(HINGE_X - 6, HINGE_Y - 15); ctx.lineTo(HINGE_X - 46 - reach, HINGE_Y - 9);
+      ctx.quadraticCurveTo(HINGE_X - 56 - reach, HINGE_Y + 1, HINGE_X - 46 - reach, HINGE_Y + 11);
+      ctx.lineTo(HINGE_X - 6, HINGE_Y + 16);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(22,8,12,.75)'; ctx.lineWidth = 1.6; ctx.stroke();
+      ctx.fillStyle = '#f4f9e8';
+      for (let i = 0; i < 6; i++) {
+        const tx = HINGE_X - 42 - reach + i * 7.5;
+        ctx.beginPath(); ctx.moveTo(tx, HINGE_Y - 8); ctx.lineTo(tx - 1.4, HINGE_Y - 1); ctx.lineTo(tx + 1.8, HINGE_Y - 2); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(tx, HINGE_Y + 10); ctx.lineTo(tx - 1.4, HINGE_Y + 3); ctx.lineTo(tx + 1.8, HINGE_Y + 4); ctx.closePath(); ctx.fill();
+      }
+      ctx.restore();
+    }
   }
 
   function drawMidBoss(e) {
@@ -9355,6 +10172,19 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     window.__bgm = () => ({ key: currentBgmKey, paused: currentBgmKey ? bgmTracks[currentBgmKey].paused : null, t: currentBgmKey ? bgmTracks[currentBgmKey].currentTime : 0, reactive: musicReactive, wired: bgmSources.size });
     window.__grant = n => { score += n; };
     window.__wall = () => spawnBlockWall();
+    // Art check: drop one enemy of a given type at a fixed spot and freeze the
+    // field, so a screenshot shows the sprite instead of whatever the spawner
+    // happened to roll. __hold keeps it parked for inspection.
+    window.__clearEnemies = () => { enemies = enemies.filter(en => en.type === 'boss' || en.type === 'midboss'); };
+    window.__enemies = () => enemies.map(en => ({ type: en.type, x: Math.round(en.x), y: Math.round(en.y), hp: en.hp, lunge: en.lunge || 0 }));
+    window.__spawn = (type, x, y, hold = true, over = null) => {
+      spawnEnemy(type);
+      const en = enemies[enemies.length - 1];
+      en.x = x; en.y = y; en.baseY = y; en.variant = 'standard'; en.shield = 0;
+      if (hold) { en.vx = 0; en.wave = false; en.behavior = 'cruise'; }
+      if (over) Object.assign(en, over);
+      return en.type;
+    };
     window.__drop = (type, kind = null) => { pickups.push({ type, kind, x: player.x + 260, y: player.y + 40, r: 19, t: 0 }); };
     window.__setAmmo = n => { ammo = clamp(n, 0, ammoMax); };
     window.__grantBikini = (on = true) => { bikiniOwned = !!on; };
