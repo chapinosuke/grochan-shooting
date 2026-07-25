@@ -272,6 +272,19 @@
     normal: { spawn: .72, speed: 1.05, damage: 1.05, timeScale: 1, bossHp: 900, score: 1, midHp: 320, bulletSpeed: 1, fireGap: 1, barrage: 1, gapW: 1, telMul: 1, hazardDmg: 1, ammo: 170 },
     hard: { spawn: .55, speed: 1.28, damage: 1.35, timeScale: .92, bossHp: 1300, score: 1.45, midHp: 460, bulletSpeed: 1.08, fireGap: .9, barrage: 1.28, gapW: .85, telMul: .92, hazardDmg: 1.15, ammo: 140 }
   };
+  // Stage 1 doubles as the tutorial: the player is still learning the controls,
+  // hasn't seen the shop yet and starts at power 1. The easing here is aimed
+  // strictly at ROUTE CROWDING — how many small fry are on screen at once and
+  // how fast they keep coming. Boss and mid-boss stats are deliberately NOT
+  // touched: stage 1's bosses hit exactly as hard as on every other stage.
+  const STAGE1_EASE = {
+    cap: 3,           // fewer simultaneous enemies on screen (assault/formation)
+    spawnGap: 1.45,   // longer pauses between spawns, and rarer bonus spawns
+    packSize: .6,     // smaller squads per formation / set-piece launch
+    variant: .55,     // rarity multiplier for armored/elite upgrades
+    fire: 1.25        // regular enemies wait longer between volleys
+  };
+  const isStage1 = () => stageIndex === 0;
   const stages = [
     {
       name: 'TOKYO MIDNIGHT', boss: 'MASQUERADE', midBoss: 'HEART BREAKER', theme: 'neon', subtitle: '渋谷スクランブル、眠らない東京の夜',
@@ -1210,7 +1223,10 @@
     else if (type === 'knight') e = { type, x: VW + 80, y: Math.min(y, 500), baseY: Math.min(y, 500), w: 72, h: 82, hp: 7, maxHp: 7, vx: 115 + rank * 20, t: Math.random() * 6, wave: true, points: 680, fire: 1.3 };
     else e = { type: 'cupid', x: VW + 70, y, baseY: y, w: 62, h: 58, hp: 3, maxHp: 3, vx: 120, t: Math.random() * 6, wave: true, points: 340, fire: 1.6 };
     const variantRoll = Math.random();
-    e.variant = variantRoll < .11 ? 'elite' : variantRoll < .31 ? 'armored' : 'standard';
+    // Stage 1 mostly fields plain enemies so the player learns the base patterns
+    // before armored/elite variants start soaking shots.
+    const vm = isStage1() ? STAGE1_EASE.variant : 1;
+    e.variant = variantRoll < .11 * vm ? 'elite' : variantRoll < .31 * vm ? 'armored' : 'standard';
     if (formation?.elite) e.variant = 'elite';
     if (e.variant === 'armored') { e.hp = Math.ceil(e.hp * 1.45); e.maxHp = e.hp; e.vx *= .88; e.points = Math.round(e.points * 1.45); }
     if (e.variant === 'elite') { e.hp = Math.ceil(e.hp * 1.25); e.maxHp = e.hp; e.vx *= 1.2; e.fire *= .72; e.points = Math.round(e.points * 1.8); }
@@ -1244,13 +1260,17 @@
   function spawnFormation(elite = false) {
     const type = pickSpawnType();
     const groundType = ['tank', 'turret', 'ember', 'walker'].includes(type);
-    // Stage 1 mostly keeps the classic vee/column; the complex shapes (vertical
-    // picket, slithering chain, staggered parallel rows) take over later.
+    // Stage 1 sticks to the classic vee/column entirely; the complex shapes
+    // (vertical picket, slithering chain, staggered parallel rows) are the big
+    // squads, so keeping them off stage 1 is most of the crowd reduction.
     const pool = groundType ? ['column']
-      : Math.random() < (stageIndex === 0 ? .7 : .42) ? ['vee', 'column']
+      : isStage1() || Math.random() < .42 ? ['vee', 'column']
         : ['wall', 'snake', 'rows'];
     const shape = pool[Math.floor(Math.random() * pool.length)];
     const centerY = 140 + Math.random() * 300;
+    // Squad size, shrunk on stage 1 — always at least 2 so a "formation" still
+    // reads as a group rather than a lone straggler.
+    const squad = n => isStage1() ? Math.max(2, Math.round(n * STAGE1_EASE.packSize)) : n;
     if (shape === 'wall') {
       // Vertical picket: five abreast filling most of the lane height.
       for (let i = 0; i < 5; i++) spawnEnemy(type, { y: 95 + i * 100, xOffset: 0, shape, slot: i, elite });
@@ -1263,7 +1283,7 @@
         spawnEnemy(type, { y: clamp(centerY + (row ? 115 : -115), 75, 535), xOffset: i * 96 + (row ? 48 : 0), shape, slot: i, elite });
       }
     } else {
-      const count = groundType ? 2 : (Math.random() < .35 ? 4 : 3);
+      const count = groundType ? 2 : squad(Math.random() < .35 ? 4 : 3);
       for (let i = 0; i < count; i++) {
         const offset = i - (count - 1) / 2;
         const y = groundType ? 560 : clamp(centerY + (shape === 'vee' ? Math.abs(offset) * 58 : offset * 64), 75, 535);
@@ -1303,30 +1323,39 @@
     const ground = table.filter(([t]) => GROUND_TYPES.includes(t));
     const airType = air.length ? air[step % air.length][0] : 'drone';
     const pattern = step % 5;
+    // Set-pieces are the single biggest dumps of small fry in the route, so
+    // stage 1 runs the same shapes with thinner ranks (min 2 keeps the shape
+    // legible — a 1-wide "pincer" would just look broken).
+    const squad = n => isStage1() ? Math.max(2, Math.round(n * STAGE1_EASE.packSize)) : n;
     if (pattern === 3) {
       // Snake chain slithering through mid-screen.
-      for (let i = 0; i < 8; i++) spawnEnemy(airType, { y: 300, xOffset: i * 72, shape: 'snake', slot: i });
+      const n = squad(8);
+      for (let i = 0; i < n; i++) spawnEnemy(airType, { y: 300, xOffset: i * 72, shape: 'snake', slot: i });
       return;
     }
     if (pattern === 4) {
       // Wall zone: a destructible barrier arrives with three escorts behind it.
       spawnBlockWall();
-      for (let i = 0; i < 3; i++) spawnEnemy(airType, { y: 140 + i * 160, xOffset: 220 + i * 60, shape: 'column', slot: i });
+      const n = squad(3);
+      for (let i = 0; i < n; i++) spawnEnemy(airType, { y: 140 + i * 160, xOffset: 220 + i * 60, shape: 'column', slot: i });
       return;
     }
     if (pattern === 0) {
       // Double vee: one wing high, one wing low.
-      for (const cy of [150, 420]) for (let i = 0; i < 5; i++) {
-        const off = i - 2;
+      const n = squad(5);
+      for (const cy of [150, 420]) for (let i = 0; i < n; i++) {
+        const off = i - (n - 1) / 2;
         spawnEnemy(airType, { y: clamp(cy + Math.abs(off) * 52, 75, 535), xOffset: Math.abs(off) * 70, shape: 'vee', slot: i });
       }
     } else if (pattern === 1 && ground.length) {
       // Ground column with air cover.
-      for (let i = 0; i < 3; i++) spawnEnemy(ground[i % ground.length][0], { y: 560, xOffset: i * 120, shape: 'column', slot: i });
-      for (let i = 0; i < 3; i++) spawnEnemy(airType, { y: 140 + i * 90, xOffset: i * 60, shape: 'column', slot: i });
+      const n = squad(3);
+      for (let i = 0; i < n; i++) spawnEnemy(ground[i % ground.length][0], { y: 560, xOffset: i * 120, shape: 'column', slot: i });
+      for (let i = 0; i < n; i++) spawnEnemy(airType, { y: 140 + i * 90, xOffset: i * 60, shape: 'column', slot: i });
     } else {
       // Pincer: two columns closing from top and bottom.
-      for (let i = 0; i < 4; i++) {
+      const n = squad(4);
+      for (let i = 0; i < n; i++) {
         spawnEnemy(airType, { y: 90 + i * 46, xOffset: i * 85, shape: 'column', slot: i });
         spawnEnemy(airType, { y: 530 - i * 46, xOffset: i * 85, shape: 'column', slot: i });
       }
@@ -2294,41 +2323,48 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (bossState === 'waiting' && stageBanner <= 1.2 && spawnTimer <= 0) {
       const inten = activePhase.intensity ?? .5;
       const mode = activePhase.mode;
+      // Stage 1 keeps fewer enemies alive at once and leaves longer gaps between
+      // waves, so the lane stays readable while the player is still learning.
+      const easeCap = isStage1() ? STAGE1_EASE.cap : 0;
+      // The quiet modes already run on caps of 3-5, so they only give back 1 —
+      // the full -2 there would empty the lane instead of calming it.
+      const easeCapLow = Math.min(easeCap, 1);
+      const easeGap = isStage1() ? STAGE1_EASE.spawnGap : 1;
       if (mode === 'calm') {
-        if (enemies.length < 3) spawnEnemy();
-        spawnTimer = 1.4 + Math.random() * .8;
+        if (enemies.length < 3 - easeCapLow) spawnEnemy();
+        spawnTimer = (1.4 + Math.random() * .8) * easeGap;
       } else if (mode === 'trickle') {
-        if (enemies.length < 5) spawnEnemy();
-        spawnTimer = (.7 + Math.random() * .4) * difficulty.spawn;
+        if (enemies.length < 5 - easeCapLow) spawnEnemy();
+        spawnTimer = (.7 + Math.random() * .4) * difficulty.spawn * easeGap;
       } else if (mode === 'setpiece') {
         // Scripted launches happen below; keep only a light filler trickle here.
-        if (enemies.length < 4) spawnEnemy();
-        spawnTimer = 1.1 + Math.random() * .5;
+        if (enemies.length < 4 - easeCapLow) spawnEnemy();
+        spawnTimer = (1.1 + Math.random() * .5) * easeGap;
       } else if (mode === 'formation') {
-        if (inten >= .5 && Math.random() < .1 + .2 * inten) spawnFlanker();
-        const cap = Math.round(7 + 4 * inten) + stageIndex;
+        if (inten >= .5 && Math.random() < (.1 + .2 * inten) / easeGap) spawnFlanker();
+        const cap = Math.round(7 + 4 * inten) + stageIndex - easeCap;
         if (enemies.length < cap) {
           spawnFormation(activePhase.elite);
           if (Math.random() < .4 && enemies.length < cap) spawnFormation(activePhase.elite);
         }
-        spawnTimer = 1.2 + Math.random() * .5;
+        spawnTimer = (1.2 + Math.random() * .5) * easeGap;
       } else { // assault
         // Hot phases also roll rear flankers so the player has to watch their back.
-        if (inten >= .5 && Math.random() < .1 + .2 * inten) spawnFlanker();
+        if (inten >= .5 && Math.random() < (.1 + .2 * inten) / easeGap) spawnFlanker();
         // From stage 2 on, hot phases occasionally drop a destructible wall
         // zone in the lane (personal cooldown keeps them an event, not a wallpaper).
         if (stageIndex >= 1 && blockWallTimer <= 0 && Math.random() < .12) spawnBlockWall();
-        const cap = Math.round(6 + 4 * inten) + stageIndex;
+        const cap = Math.round(6 + 4 * inten) + stageIndex - easeCap;
         if (formationTimer <= 0 && enemies.length < cap) {
           spawnFormation();
           // Bonus second pack for volume
-          if (Math.random() < .55 && enemies.length < cap) spawnFormation();
-          spawnTimer = 1.05 + Math.random() * .35;
+          if (Math.random() < .55 / easeGap && enemies.length < cap) spawnFormation();
+          spawnTimer = (1.05 + Math.random() * .35) * easeGap;
         } else if (enemies.length < cap) {
           spawnEnemy();
-          if (Math.random() < .45 && enemies.length < cap) spawnEnemy();
-          if (Math.random() < .44 * inten && enemies.length < cap) spawnEnemy();
-          spawnTimer = ((.32 + Math.random() * .28) * difficulty.spawn) / (gameSpeed * (.6 + inten * .8));
+          if (Math.random() < .45 / easeGap && enemies.length < cap) spawnEnemy();
+          if (Math.random() < .44 * inten / easeGap && enemies.length < cap) spawnEnemy();
+          spawnTimer = ((.32 + Math.random() * .28) * difficulty.spawn * easeGap) / (gameSpeed * (.6 + inten * .8));
         } else {
           spawnTimer = .35;
         }
@@ -2444,7 +2480,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         const freq = e.type === 'jelly' ? 1.5 : e.type === 'manta' ? 1.2 : e.type === 'cupid' ? 2.2 : e.type === 'knight' ? 1.7 : 3.2;
         e.y = e.baseY + Math.sin(e.t * freq) * amp;
       }
-      e.fire -= dt / difficulty.fireGap;
+      e.fire -= dt / (difficulty.fireGap * (isStage1() ? STAGE1_EASE.fire : 1));
       if (e.fire <= 0 && e.x < VW - 90) {
         enemyShoot(e);
         const cadence = e.type === 'tank' ? 1.1 : e.type === 'turret' ? 1.4 : e.type === 'spinner' ? 1.8 : e.type === 'glitch' ? 1.9 : e.type === 'cupid' ? 2 : e.type === 'racer' ? 1.5 : e.type === 'manta' ? 1.9 : e.type === 'walker' ? 1.25 : e.type === 'seeker' ? 1.45 : e.type === 'knight' ? 1.7 : 2.1 + Math.random();
