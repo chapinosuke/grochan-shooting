@@ -3371,10 +3371,20 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // counterparts). The scroll runs once, then holds on a static FIN card —
   // it does NOT auto-advance to RESULT; a click / ENTER moves on at any time,
   // whether the roll is still scrolling or already resting on FIN.
+  // Scroll speed, px/s. The CSS animation travels 100% of the TRACK's own
+  // height, so a fixed duration would make the roll scroll faster every time a
+  // credit is added. Deriving the duration from the measured height instead
+  // keeps the reading pace constant no matter how long the list grows.
+  const STAFF_ROLL_SPEED = 32;
   function showStaffRoll() {
     endingScreen.classList.remove('is-visible');
     staffRollFin.classList.remove('is-shown');
-    staffRollScreen.classList.add('is-visible', 'is-rolling');
+    staffRollScreen.classList.add('is-visible');
+    // .screen uses visibility (not display:none), so the track has a real
+    // layout height here even though it was hidden a moment ago.
+    const h = staffRollTrack.offsetHeight;
+    if (h) staffRollTrack.style.animationDuration = (h / STAFF_ROLL_SPEED).toFixed(1) + 's';
+    staffRollScreen.classList.add('is-rolling');
   }
   function landOnFin() { staffRollFin.classList.add('is-shown'); }
   function finishStaffRoll() {

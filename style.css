@@ -238,7 +238,14 @@ canvas {
 .staffroll-name { margin: 0; color: #fff; font-size: 20px; letter-spacing: .06em; }
 .staffroll-name small { margin-left: 8px; color: #837aa7; font-size: 13px; letter-spacing: .04em; }
 .staffroll-job { margin: 3px 0 16px; color: #bdb5e0; font-size: 14px; letter-spacing: .05em; }
-.staffroll-note { max-width: 480px; margin: 30px 0 70px; color: #6b628f; font-size: 11px; line-height: 1.7; letter-spacing: .03em; }
+.staffroll-job small { margin-left: 6px; color: #837aa7; font-size: 12px; }
+/* Secondary entries (stage/boss lineup, track list, voice cast). Deliberately a
+   step down from .staffroll-name/.staffroll-job so the four crew credits stay
+   the visual peak of the roll and these read as supporting lists. */
+.staffroll-entry { margin: 0; color: #efeaff; font-size: 16px; letter-spacing: .05em; text-align: center; }
+.staffroll-sub { margin: 2px 0 13px; color: #8f86b6; font-size: 12px; letter-spacing: .04em; text-align: center; }
+.staffroll-note { max-width: 480px; margin: 26px 0 0; color: #6b628f; font-size: 11px; line-height: 1.7; letter-spacing: .03em; }
+.staffroll-track > :last-child { margin-bottom: 70px; }
 /* FIN card: a separate full-bleed overlay (not part of the scroll) that fades
    in once the track finishes, and simply holds there. pointer-events stay
    off so a click still reaches .staffroll-screen's own skip/continue handler.
