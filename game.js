@@ -1102,10 +1102,8 @@
       for (let i = 0; i < 20; i++) ambient.push(makeAmbient('heart'));
       // Royal fireworks — they turn into a celebratory volley when the queen falls.
       bgProps.push(
-        { kind: 'firework', x: 150, timer: 2 + Math.random() * 3 },
-        { kind: 'firework', x: 430, timer: 4 + Math.random() * 3 },
-        { kind: 'firework', x: 820, timer: 3 + Math.random() * 3 },
-        { kind: 'firework', x: 1110, timer: 5 + Math.random() * 3 }
+        { kind: 'firework', x: 250, timer: 3 + Math.random() * 4 },
+        { kind: 'firework', x: 1030, timer: 6 + Math.random() * 4 }
       );
     }
     // Stable scene dressing gives every run a busy, inhabited world without
@@ -1189,7 +1187,10 @@
           if (p.riseY <= p.burstY) {
             p.rise = false;
             const quality = bgQuality();
-            const n = [18, 42, 72][quality];
+            // Never let overlapping shells grow without bound. Two structured
+            // rings read richer than hundreds of tiny points and are far less
+            // expensive beside the 980px boss sprite.
+            const n = ambient.length > 360 ? 12 : [12, 26, 44][quality];
             const pal = stages[stageIndex].theme === 'palace' ? ['#ff9ccf', '#ffe15a', '#ff5a9d'] : ['#31e8ff', '#ff3e9d', '#ffe15a'];
             const main = pal[Math.floor(Math.random() * pal.length)];
             const inner = pal[(pal.indexOf(main) + 1) % pal.length];
@@ -1202,16 +1203,17 @@
               const life = 1.65 + Math.random() * .7;
               ambient.push({ kind: 'fwspark', x: p.bx, y: p.burstY, vx: Math.cos(a2) * sp, vy: Math.sin(a2) * sp, life, max: life, size: 2 + Math.random() * 1.8, gravity: 118 + Math.random() * 38, drag: .78, color: i % 7 === 0 ? '#fff7d6' : main });
             }
-            for (let i = 0; i < Math.round(n * .48); i++) {
-              const a2 = i / (n * .48) * Math.PI * 2 + .08;
+            const innerN = Math.round(n * .35);
+            for (let i = 0; i < innerN; i++) {
+              const a2 = i / innerN * Math.PI * 2 + .08;
               const sp = 82 + Math.random() * 35;
               const life = 1.1 + Math.random() * .45;
               ambient.push({ kind: 'fwspark', x: p.bx, y: p.burstY, vx: Math.cos(a2) * sp, vy: Math.sin(a2) * sp, life, max: life, size: 1.8, gravity: 92, color: inner });
             }
-            for (let i = 0; i < 7 + quality * 3; i++) ambient.push({ kind: 'fwsmoke', x: p.bx + (Math.random() - .5) * 24, y: p.burstY + (Math.random() - .5) * 18, vx: (Math.random() - .5) * 35, vy: -8 + Math.random() * 24, r: 8 + Math.random() * 10, life: 1.8 + Math.random(), max: 2.8 });
+            for (let i = 0; i < 2 + quality * 2; i++) ambient.push({ kind: 'fwsmoke', x: p.bx + (Math.random() - .5) * 24, y: p.burstY + (Math.random() - .5) * 18, vx: (Math.random() - .5) * 35, vy: -8 + Math.random() * 24, r: 8 + Math.random() * 10, life: 1.8 + Math.random(), max: 2.8 });
             // The queen's downfall earns a celebratory volley cadence.
             const festival = stages[stageIndex].theme === 'palace' && ['transition', 'final'].includes(bossState);
-            p.timer = festival ? .35 + Math.random() * .6 : 3.5 + Math.random() * 4.5;
+            p.timer = festival ? .65 + Math.random() * .65 : 4.5 + Math.random() * 5;
           }
         } else {
           p.timer -= dt;
@@ -7600,9 +7602,12 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         // Long-exposure-like streak, white-hot seed and irregular glitter.
         ctx.globalCompositeOperation = 'lighter';
         const fa = clamp(a.life / (a.max || 1), 0, 1) * (.72 + Math.sin(elapsed * 22 + a.x * .13) * .28);
-        ctx.globalAlpha = fa;
-        ctx.strokeStyle = a.color || '#ffe15a'; ctx.lineWidth = a.size || 2;
-        ctx.shadowColor = a.color || '#ffe15a'; ctx.shadowBlur = 7;
+        ctx.strokeStyle = a.color || '#ffe15a';
+        // A broad translucent stroke supplies the glow without Canvas shadowBlur,
+        // which was the main GPU/CPU stall when hundreds of sparks overlapped.
+        ctx.globalAlpha = fa * .22; ctx.lineWidth = (a.size || 2) + 4;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x - a.vx * .065, a.y - a.vy * .065); ctx.stroke();
+        ctx.globalAlpha = fa; ctx.lineWidth = a.size || 2;
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x - a.vx * .065, a.y - a.vy * .065); ctx.stroke();
         ctx.globalAlpha = Math.min(1, fa * 1.25); ctx.fillStyle = '#fff';
         ctx.fillRect(a.x - 1, a.y - 1, 2, 2);
@@ -7617,13 +7622,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(a.x, a.y, 70, 0, Math.PI * 2); ctx.fill();
       }
       else if (a.kind === 'fwsmoke') {
-        // Smoke is briefly lit from inside, then cools to blue-grey.
+        // Two flat translucent lobes suggest lit smoke. Per-particle radial
+        // gradients looked good but dominated frame time during the finale.
         const sa = clamp(a.life / (a.max || 2.8), 0, 1) * .16;
-        const sg = ctx.createRadialGradient(a.x - a.r * .2, a.y - a.r * .2, 1, a.x, a.y, a.r);
-        sg.addColorStop(0, `rgba(255,225,180,${sa})`);
-        sg.addColorStop(.45, `rgba(105,92,125,${sa * .65})`);
-        sg.addColorStop(1, 'rgba(45,38,65,0)');
-        ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = sa; ctx.fillStyle = '#b99ca8';
+        ctx.beginPath(); ctx.arc(a.x - a.r * .18, a.y - a.r * .12, a.r * .72, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = sa * .55; ctx.fillStyle = '#40384f';
+        ctx.beginPath(); ctx.arc(a.x + a.r * .24, a.y + a.r * .14, a.r, 0, Math.PI * 2); ctx.fill();
       }
       else if (a.kind === 'dust') {
         // Gold motes twinkling inside the god rays.
@@ -10869,7 +10874,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function frame(now) {
     const raw = (now - lastTime) / 1000;
     let dt = clamp(raw || 0, 0, .033);
-    if (fpsShow && raw > 0 && raw < 1) fpsAvg += (1 / raw - fpsAvg) * .1;
+    // Quality adaptation must run even when the F1 readout is hidden. The old
+    // guard left fpsAvg frozen at 60, so expensive background tiers never
+    // backed off on a struggling device.
+    if (raw > 0 && raw < 1) fpsAvg += (1 / raw - fpsAvg) * .1;
     lastTime = now;
     // Brief hitstop on hard impacts: real time keeps ticking (so it self-clears)
     // but gameplay dt is crushed to a near-freeze for a punchy, readable hit.
