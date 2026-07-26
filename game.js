@@ -105,7 +105,18 @@
     bossSuperHit: { src: 'assets/sfx/boss-superhit.mp3', volume: .4, pool: 2, max: 1.1 },
     bossCollapse: { src: 'assets/sfx/boss-collapse.mp3', volume: .46, pool: 1, max: 3.5 },
     // 効果音ラボ「連続打ち上げ花火」 — the six-second royal finale bed.
-    fireworks: { src: 'assets/sfx/fireworks-finale.mp3', volume: .42, pool: 1, max: 6.5 }
+    fireworks: { src: 'assets/sfx/fireworks-finale.mp3', volume: .42, pool: 1, max: 6.5 },
+    // FLAME OYABUN's melee layer (効果音ラボ「戦闘」). Real recorded impacts —
+    // the synthesised thuds under them could not carry the weight of a punch on
+    // their own. Deep pools on the punches: the sweep fires ten times a second.
+    punchHeavy: { src: 'assets/sfx/punch-heavy.mp3', volume: .42, pool: 4, max: 1.05 },
+    punchBig: { src: 'assets/sfx/punch-big.mp3', volume: .48, pool: 2, max: 1.3 },
+    kickHeavy: { src: 'assets/sfx/kick-heavy.mp3', volume: .46, pool: 2, max: 1.3 },
+    punchSwing: { src: 'assets/sfx/punch-swing.mp3', volume: .34, pool: 3, max: 1.05 },
+    stepIn: { src: 'assets/sfx/step-in.mp3', volume: .44, pool: 1, max: 1.3 },
+    wallBreak: { src: 'assets/sfx/wall-break.mp3', volume: .45, pool: 1, max: 5 },
+    armCrack: { src: 'assets/sfx/arm-crack.mp3', volume: .4, pool: 1, max: .3 },
+    ko: { src: 'assets/sfx/ko.mp3', volume: .5, pool: 1, max: 2.9 }
   };
   const sfxPools = {};
   Object.entries(sampledSfx).forEach(([key, def]) => {
@@ -149,7 +160,7 @@
   const bossVoiceCfg = [
     { char: 'thief-boy', rate: 1.05 },            // st1 MASQUERADE 仮面の道化
     { char: 'witch', rate: 0.82 },                // st2 ABYSS SIREN 深海の人魚
-    { char: 'necromancer-oldwoman', rate: 0.88 }, // st3 INFERNO DJINN 炎上魔人
+    { char: 'swordman', rate: 0.86 },             // st3 FLAME OYABUN 炎上親分
     { char: 'wizard', rate: 0.85 },               // st4 BOT GENERAL ロボ将軍
     { char: 'witch', rate: 1.0 }                  // st5 QUEEN 女王
   ];
@@ -319,7 +330,7 @@
       bass: [98, 98, 87.31, 87.31, 110, 110, 87.31, 73.42]
     },
     {
-      name: 'SUNSET FACTORY', boss: 'INFERNO DJINN', midBoss: 'BLAZE EMPRESS', theme: 'factory', subtitle: '燃える夕日と鋼鉄の罠',
+      name: 'SUNSET FACTORY', boss: 'FLAME OYABUN', midBoss: 'BLAZE EMPRESS', theme: 'factory', subtitle: '燃える夕日と鋼鉄の罠',
       sky: ['#351036', '#a42f4f', '#ff9f43'], far: '#592141', city: '#28132e', accent: '#ffe15a', accent2: '#ff5a36',
       spawnTable: [['slagling', 5], ['rivetbeetle', 4], ['furnacehound', 3], ['turret', 2], ['walker', 2]],
       melody: [329.63, 329.63, 392, 329.63, 311.13, 329.63, 392, 440, 329.63, 329.63, 392, 493.88, 440, 392, 329.63, 293.66],
@@ -355,7 +366,7 @@
     interludes: [
       [{ img: 'assets/images/story/int1_shard1.webp', text: 'MASQUERADEを撃破！仮面の道化は、みんなのハートを「いいね」に変えて集めていた。残る反応は海の方へ！' }],
       [{ img: 'assets/images/story/int2_transmission.webp', text: 'ABYSS SIRENを退けると、深海に閉じこめられていたハートがいっせいに浮かび上がった。「……次は灼熱地帯。気をつけて……」くろ子の通信だ！' }],
-      [{ img: 'assets/images/story/int3_resolve.webp', text: 'INFERNO DJINNを鎮火！怒りや悲しみをあおるほど、炎上魔人は大きくなっていた。「もう、だれの心も燃やさせない！」' }],
+      [{ img: 'assets/images/story/int3_resolve.webp', text: 'FLAME OYABUNをKO！気に入らない投稿を見つけては人を集めて燃やす——炎上親分の力は、みんなの怒りそのものだった。「もう、だれの心も燃やさせない！」' }],
       [{ img: 'assets/images/story/int4_palace_reveal.webp', text: 'BOT GENERALの自動投稿軍団が停止。命令の発信元は、嵐の雲の上——ハートの宮殿。黒幕の女王が待っている！' }],
     ],
     ending: [
@@ -382,10 +393,13 @@
   // Battle pose sets (transparent PNGs, facing left): arrays per pose so
   // multi-frame sets animate (idle sways between 2 frames, attacks cycle 3).
   // The user-made sheet bosses use {2,3,2}; the generated sets are single-frame.
+  // Pose names come from the counts object, so a boss whose sheet carries more
+  // than the idle/attack/hurt triple (a taunt, an authored defeat run) declares
+  // those extra sets the same way instead of needing a special loader.
   const loadSet = (base, counts) => {
     const load = (name) => { const im = new Image(); im.src = `assets/images/bosses/poses/${name}.webp`; return im; };
     const set = {};
-    for (const pose of ['idle', 'attack', 'hurt']) {
+    for (const pose of Object.keys(counts)) {
       const n = counts[pose];
       set[pose] = n === 1 ? [load(`${base}_${pose}`)] : Array.from({ length: n }, (_, i) => load(`${base}_${pose}${i + 1}`));
     }
@@ -393,12 +407,16 @@
   };
   const GEN_COUNTS = { idle: 1, attack: 1, hurt: 1 }, SHEET_COUNTS = { idle: 2, attack: 3, hurt: 2 };
   const FINAL_QUEEN_COUNTS = { idle: 4, attack: 4, hurt: 8 };
+  // FLAME OYABUN: one move per attack cell (jab / straight / knee / low sweep),
+  // a flex used as the act-two taunt, and two fall cells that continue out of
+  // hurt2 into the authored defeat run.
+  const OYABUN_COUNTS = { idle: 2, attack: 4, hurt: 2, taunt: 1, fall: 2, walk: 2, guard: 2 };
   // Stage bosses. SERVER GOLEM and the former stage5 set remain in assets as
   // held designs; replacing an active slot never deletes its source material.
   const bossSets = [
     loadSet('masquerade', SHEET_COUNTS),
     loadSet('abyss-siren', SHEET_COUNTS),
-    loadSet('inferno-djinn', SHEET_COUNTS),
+    loadSet('flame-oyabun', OYABUN_COUNTS),
     loadSet('bot-general', SHEET_COUNTS),
     loadSet('heartbreak-queen', FINAL_QUEEN_COUNTS),
   ];
@@ -416,7 +434,7 @@
   const BOSS_TINT = [
     { hit: '#9ff4ff', crit: '#ff3e9d' },  // MASQUERADE   pale scan -> magenta cracks
     { hit: '#f3d5ff', crit: '#b832ff' },  // ABYSS SIREN pearl flash -> abyss violet
-    { hit: '#7ad7ff', crit: '#fff3bd' },  // INFERNO DJINN doused blue -> white heat
+    { hit: '#7ad7ff', crit: '#fff3bd' },  // FLAME OYABUN  doused blue -> white heat
     { hit: '#ff4d4d', crit: '#72ff68' },  // BOT GENERAL   error red -> glitch green
     { hit: '#fff1a8', crit: '#8f35d9' },  // QUEEN         royal gold -> abyss violet
   ];
@@ -467,6 +485,7 @@
     e.attackT = Math.max(0, (e.attackT || 0) - dt);
     e.hurtT = Math.max(0, (e.hurtT || 0) - dt);
     e.hurtCd = Math.max(0, (e.hurtCd || 0) - dt);
+    e.tauntT = Math.max(0, (e.tauntT || 0) - dt);
     if (e.hit > .09 && e.hurtCd <= 0) {
       // The final queen's second sheet is an eight-pose dramatic damage
       // sequence. At the shared .4s duration each pose survived for only
@@ -1621,7 +1640,10 @@
     // The last stage's boss is the whole game's climax, so it gets an extra
     // tankiness bonus on top of the normal per-stage ramp.
     const isFinalBoss = stageIndex === stages.length - 1;
-    const bossHp = Math.round(difficulties[difficultyKey].bossHp * (1 + stageIndex * .65) * (isFinalBoss ? 1.3 : 1));
+    // FLAME OYABUN is the game's brawler and is meant to feel like a wall: he
+    // closes distance himself and trades hits, so he carries more HP than the
+    // per-stage ramp alone would give him.
+    const bossHp = Math.round(difficulties[difficultyKey].bossHp * (1 + stageIndex * .65) * (isFinalBoss ? 1.3 : stageIndex === 2 ? 1.55 : 1));
     // With a loaded sprite the hitbox takes the art's aspect ratio at a large
     // fixed height, so the visual and the collision box stay in sync (tall
     // sprites no longer get an invisible wide hitbox). 460×380 is the
@@ -1629,16 +1651,31 @@
     const sprite = frameReady(bossSets[stageIndex].idle[0]) ? bossSets[stageIndex].idle[0] : bossSprites[stageIndex];
     let w = 460, h = 380;
     if (sprite && sprite.complete && sprite.naturalWidth) {
-      h = stageIndex === 4 ? 980 : stageIndex === 1 ? 640 : 560;
+      // 680 is the tallest FLAME OYABUN can be and still keep his soles on
+      // screen: his y clamp bottoms out at 40 (VH-h-24 goes negative past 656),
+      // and his feet sit at 97.4% of the frame, so 40 + .974*680 = 702 < 720.
+      h = stageIndex === 4 ? 980 : stageIndex === 2 ? 680 : stageIndex === 1 ? 640 : 560;
       w = Math.round(h * sprite.naturalWidth / sprite.naturalHeight);
     }
     // The contact box is pulled inside the artwork: several sprites are wide
     // enough to overlap the player's own movement limit, which turned simply
     // standing at the right edge into passive contact damage.
-    const bossY = stageIndex === 4 ? 0 : stageIndex === 1 ? 30 : 90;
-    const hitInset = Math.round(w * (stageIndex === 4 ? .40 : stageIndex === 1 ? .22 : .16));
-    const hitInsetY = Math.round(h * (stageIndex === 4 ? .18 : .08));
-    enemies.push({ type: 'boss', x: VW + 380, y: bossY, baseY: bossY, w, h, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8, hitInset, hitInsetY, tier: 0, tierBanner: 0, crit: false });
+    // Everyone else hovers. He stands: y=18 lands his soles on the factory floor.
+    const bossY = stageIndex === 4 ? 0 : stageIndex === 2 ? 18 : stageIndex === 1 ? 30 : 90;
+    // FLAME OYABUN's cells share one canvas sized by his low sweep, which leaves
+    // ~29% of the idle cell empty on the left. A 16% inset would put the contact
+    // box 78px into that empty air — inside the player's reach (VW*.62 + sprite),
+    // which is passive contact damage from nothing. Pull it in to meet his body.
+    const hitInset = Math.round(w * (stageIndex === 4 ? .40 : stageIndex === 2 ? .28 : stageIndex === 1 ? .22 : .16));
+    // He is 680 tall on a 720 screen, so an 8% vertical inset would leave the
+    // player almost no lane to duck his charge in. 13% trims head and feet from
+    // the contact box — it is a torso hitbox — and gives real room above and below.
+    const hitInsetY = Math.round(h * (stageIndex === 4 ? .18 : stageIndex === 2 ? .13 : .08));
+    // Where the walk-in starts. The default clears the right edge by the whole
+    // box; for the oyabun that dead canvas means two seconds of empty screen
+    // before any of him crossed it, so he starts with his ART just off the edge.
+    const spawnX = VW + (stageIndex === 2 ? -Math.round(w * .29) : 380);
+    enemies.push({ type: 'boss', x: spawnX, y: bossY, baseY: bossY, w, h, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8, hitInset, hitInsetY, tier: 0, tierBanner: 0, crit: false });
     bossState = 'active';
     musicStep = 0; musicClock = 0;
     clearEnemyFire();
@@ -1864,6 +1901,10 @@
     if (e.hideClock <= 0) {
       e.mode = 'hover'; e.x = e.homeX; e.y = e.homeY;
       e.fade = 1; e.ghost = false; e.dissolve = 0;
+      // FLAME OYABUN lands his re-entry with a flex. It is armed here, not
+      // during the drop, because the 'ascend' style starts him above the top
+      // edge — a raised-arms pose taken mid-descent would be cut off by it.
+      if (e.type === 'boss' && stageIndex === 2) { e.tauntT = .9; oyabunSfx('taunt'); }
     }
   }
 
@@ -1982,7 +2023,11 @@
     // The final queen has authored collapse poses; keep their shared baseline
     // stable so the kneeling/prone cells land on the floor instead of sliding
     // through it. Other bosses retain the old heavy downward settling motion.
-    e.y += (e.type === 'boss' && stageIndex === 4 ? 3 : 12) * dt;
+    // FLAME OYABUN goes down on his own two feet, so settle him back onto the
+    // standing line he spawned on rather than letting him drift on downward
+    // through the floor. baseY, not a literal, so it tracks his spawn height.
+    if (e.type === 'boss' && stageIndex === 2) e.y += (e.baseY - e.y) * Math.min(1, dt * 2.2);
+    else e.y += (e.type === 'boss' && stageIndex === 4 ? 3 : 12) * dt;
     for (let i = 0; i < 2; i++) {
       particles.push({
         x: e.x + Math.random() * e.w, y: e.y + Math.random() * e.h,
@@ -2028,6 +2073,10 @@
     e.telType = type; e.telMax = sec; e.tel = sec;
     e.telX = opts.x; e.telY = opts.y;
     if (stageIndex === 1) e.attackIdx = type === 'claw' ? 0 : type === 'tailslam' ? 2 : 1;
+    // FLAME OYABUN's cells are each a specific strike, so the pose is picked to
+    // match what the move does: the low sweep throws the ground pillars, the
+    // knee drives the heat wall, the straight punch fires the beam.
+    if (stageIndex === 2) e.attackIdx = type === 'pillar' ? 3 : type === 'heatwall' ? 2 : 1;
     if (stageIndex === 4) {
       e.attackIdx = type === 'cannon' ? 3 : type === 'ring' ? 2
         : type === 'lattice' || type === 'curtain' || type === 'curtain2' || type === 'wave' ? 1 : 0;
@@ -2041,6 +2090,9 @@
     if (e.mode && e.mode.startsWith('hide')) { updateBossHide(e, dt); return; }
     const parkX = VW - e.w - 40;
     if (e.x > parkX && e.mode !== 'dash' && e.mode !== 'return') e.x -= 250 * dt;
+    // He is the only boss with an actual gait, so the approach is a walk rather
+    // than a hover. Read by drawBoss; harmless on every other boss.
+    e.entering = e.x > parkX + 4 && e.mode !== 'dash' && e.mode !== 'return';
     const tiers = bossTiers(idx);
     const want = tiers.filter(t => e.hp <= e.maxHp * t).length;
     if (want > (e.tier || 0)) { e.tier = want; bossBreak(e, idx); }
@@ -2115,18 +2167,48 @@
         e.sp = [4.7, 3.4, 2.8][e.tier || 0];
       }
     } else if (idx === 2) {
-      e.y = bobY(e.baseY + 50, 55);
+      // A brawler, not a hoverer. He keeps his feet on the floor and closes the
+      // distance himself with a shoulder charge instead of drifting up and down.
+      if (e.mode === 'dash') {
+        e.x -= 1020 * dt;
+        oyabunChargeTrail(e);
+        if (e.x < 24) {
+          e.mode = 'return';
+          oyabunSfx('slam');
+          shake = Math.max(shake, 26); flash = Math.max(flash, .3);
+          hitStop = Math.max(hitStop, .08);
+          shockwaves.push({ x: e.x + e.w * .3, y: e.y + e.h * .82, r: 24, speed: 720, life: .8, max: .8, color: '#ffb347' });
+          burstDebris(e.x + e.w * .3, e.y + e.h * .94, ['#ffe15a', '#ff5a36', '#5a4058'], 18, 380);
+          // Slamming into the far wall shakes the ceiling down on the player.
+          for (let i = 0; i < 3; i++) bossPillar(clamp(200 + i * 300 + (Math.random() - .5) * 90, 60, VW - 60));
+        }
+        return;
+      }
+      if (e.mode === 'return') {
+        e.x += 520 * dt;
+        if (e.x >= parkX) { e.x = parkX; e.mode = 'hover'; }
+        return;
+      }
+      e.y = bobY(e.baseY, 12);
       if (engaged && e.fire <= 0) {
-        if (e.phase2) { bossFlameSweep(e); e.fire = .12; } else { bossFireball(e); e.fire = .85; }
+        if (e.phase2) { bossFlameSweep(e); e.fire = .1; } else { bossFireball(e); e.fire = .62; }
+        // Both helpers raise attackT themselves, which stepPoseTimers reads as
+        // "a new attack began" and answers by rotating attackIdx — quietly
+        // undoing whatever cell was pinned. So pin it here on every shot: the
+        // jab for the fireball, the straight punch for the sweep, and during a
+        // special's windup the cell bossTelegraph already chose for that move.
+        // setBossAttackPose also writes prevAttackT, which stops the rotation.
+        setBossAttackPose(e, e.tel > 0 ? (e.attackIdx || 0) : e.phase2 ? 1 : 0, e.phase2 ? .3 : .42);
       }
       if (engaged && e.sp <= 0 && !(e.tel > 0)) {
-        // Act two adds the horizontal heat press to the wall/pillar deck.
+        // The charge is in the deck from the start — it is the move that makes
+        // him read as a fighter — and act two adds the horizontal heat press.
         const roll = Math.random();
         const pick = e.tier >= 1
-          ? (roll < .34 ? 'heatbeam' : roll < .67 ? 'heatwall' : 'pillar')
-          : 'pillar';
-        bossTelegraph(e, pick, telFor(60), { x: clamp(player.x + 56, 90, VW - 140) });
-        e.sp = [4.0, 2.8, 2.2][e.tier || 0];
+          ? (roll < .26 ? 'heatbeam' : roll < .5 ? 'heatwall' : roll < .74 ? 'pillar' : 'charge')
+          : (roll < .55 ? 'pillar' : 'charge');
+        bossTelegraph(e, pick, telFor(pick === 'charge' ? 96 : 60), { x: clamp(player.x + 56, 90, VW - 140) });
+        e.sp = [3.2, 2.3, 1.8][e.tier || 0];
       }
     } else if (idx === 3) {
       e.blink = Math.max(0, (e.blink || 0) - dt);
@@ -2188,6 +2270,8 @@
     if (Math.random() < .6) bossVoice(stageIndex, 'attack', { throttle: 5.5 });
     const type = e.telType; e.telType = null;
     if (type === 'dash') { e.mode = 'dash'; e.y = e.telY; sfx('boss'); }
+    // The oyabun's charge runs along the floor, so unlike 'dash' it keeps his y.
+    else if (type === 'charge') { e.mode = 'dash'; oyabunSfx('charge'); shake = Math.max(shake, 14); }
     else if (type === 'wave') { stageIndex === 4 ? bossHeartWall(e) : bossBubbleWall(e); }
     else if (type === 'pillar') bossPillar(e.telX);
     else if (type === 'strike') bossStrike(e.telX);
@@ -2300,28 +2384,116 @@
     sfx('boss');
   }
 
+  // His punches come off the end of his arm, not off the edge of his box. The
+  // frames share one canvas whose left third is empty, so e.x + 20 sat in dead
+  // air well behind the fist; these fractions track the drawn hand instead.
+  const oyabunFist = (e) => ({ x: e.x + e.w * .19, y: e.y + e.h * .35 });
+
   function bossFireball(e) {
     e.attackT = .45;
-    const ox = e.x + 20, oy = e.y + e.h / 2;
-    for (const lead of [0, 90, -90]) {
-      enemyBullets.push({ x: ox, y: oy, vx: (player.x + lead - ox) / 1.3, vy: -300 - Math.random() * 110, gravity: 430, r: 12, life: 6, damage: 22, fire: true });
+    const { x: ox, y: oy } = oyabunFist(e);
+    const D = difficulties[difficultyKey];
+    const leads = e.tier >= 1 ? [-150, -75, 0, 75, 150] : [-110, 0, 110];
+    for (const lead of leads) {
+      enemyBullets.push({ x: ox, y: oy, vx: (player.x + lead - ox) / 1.25, vy: -320 - Math.random() * 120, gravity: 430, r: 14, life: 6, damage: 26, fire: true });
     }
-    burst(ox, oy, '#ff8a35', 10, 200); sfx('fireball');
+    // A thrown punch should land like one: flash at the knuckles, a ring off the
+    // fist and sparks, on top of the actual impact sample.
+    burst(ox, oy, '#ffd66b', 16, 260);
+    burstDebris(ox, oy, ['#ffe15a', '#ff5a36'], 6, 260);
+    shockwaves.push({ x: ox, y: oy, r: 10, speed: 430, life: .34, max: .34, color: '#ffb347' });
+    shake = Math.max(shake, 6);
+    oyabunSfx('jab');
+    if (D.barrage > 1.05) shake = Math.max(shake, 8);
   }
 
   function bossFlameSweep(e) {
     e.attackT = .45;
     e.sweep = (e.sweep || 2.6) + .13;
     const a = Math.PI - Math.sin(e.sweep) * .85;
-    const ox = e.x + 20, oy = e.y + e.h / 2;
-    enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 330, vy: Math.sin(a) * 330, r: 10, life: 4, damage: 17, fire: true });
+    const { x: ox, y: oy } = oyabunFist(e);
+    enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 350, vy: Math.sin(a) * 350, r: 12, life: 4, damage: 20, fire: true });
+    // The sweep fires ~10x a second, so its punctuation is rationed: embers on
+    // every shot, the heavy layer only at the ends of the arc.
+    particles.push({ x: ox, y: oy, vx: Math.cos(a) * 90, vy: Math.sin(a) * 90 - 40, life: .45, max: .45, size: 5 + Math.random() * 4, color: '#ffb347', gravity: -40 });
+    if (Math.abs(Math.cos(e.sweep)) < .16) { oyabunSfx('straight'); shake = Math.max(shake, 7); }
   }
 
   function bossPillar(x) {
     for (let i = 0; i < 8; i++) {
-      enemyBullets.push({ x: x + (Math.random() - .5) * 26, y: 690 + i * 38, vx: 0, vy: -580, r: 13, life: 3.2, damage: 21, fire: true });
+      enemyBullets.push({ x: x + (Math.random() - .5) * 26, y: 690 + i * 38, vx: 0, vy: -580, r: 14, life: 3.2, damage: 25, fire: true });
     }
-    burst(x, 655, '#ff8a35', 26, 360); shake = Math.max(shake, 12); sfx('fireball');
+    burst(x, 655, '#ff8a35', 30, 380);
+    burstDebris(x, 662, ['#ffe15a', '#ff5a36', '#5a4058'], 12, 320);
+    shockwaves.push({ x, y: 660, r: 14, speed: 520, life: .5, max: .5, color: '#ffe15a' });
+    shake = Math.max(shake, 14); oyabunSfx('slam');
+  }
+
+  // FLAME OYABUN's own sound stack. Every strike lands on a sampled impact so
+  // the punches are audible, with a short synthesised body under it so a jab, a
+  // heavy straight and a shoulder charge do not all sound like the same hit.
+  // Bundled audio only — no new files, no dependencies.
+  function oyabunSfx(kind) {
+    if (!soundOn) return;
+    // Recorded melee impacts carry the weight; the synth body below only adds
+    // the low end. Each move is a swing layered into its own landing sound, so
+    // a jab, a heavy straight, a knee and a shoulder charge stay distinct.
+    if (kind === 'jab') { sfx('punchSwing'); sfx('punchHeavy'); }
+    else if (kind === 'straight') { sfx('punchSwing'); sfx('punchBig'); sfx('bossSuperHit'); }
+    else if (kind === 'knee') { sfx('kickHeavy'); sfx('bossQuake'); }
+    else if (kind === 'charge') { sfx('stepIn'); sfx('bossRoar'); }
+    else if (kind === 'slam') { sfx('wallBreak'); sfx('bossQuake'); sfx('bigBoom'); }
+    else if (kind === 'taunt') { sfx('armCrack'); sfx('bossRoar'); }
+    else if (kind === 'ko') { sfx('ko'); sfx('bossQuake'); }
+    else sfx('punchHeavy');
+    try {
+      ensureAudio();
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      // [body pitch, drop, length, gain] — heavier moves start lower and ring longer.
+      const [root, drop, len, vol] = kind === 'charge' ? [62, 30, .85, .05]
+        : kind === 'slam' ? [48, 24, .7, .055]
+        : kind === 'straight' ? [88, 40, .3, .05]
+        : kind === 'knee' ? [104, 52, .24, .042]
+        : [132, 66, .16, .035];
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(root, now);
+      o.frequency.exponentialRampToValueAtTime(drop, now + len);
+      o.connect(g); g.connect(audioCtx.destination);
+      g.gain.setValueAtTime(vol, now);
+      g.gain.exponentialRampToValueAtTime(.001, now + len);
+      o.start(now); o.stop(now + len + .02);
+      // A short click for edge. Kept quiet on purpose: the recorded impacts
+      // already have their own transient, and a loud one on top reads as a beep.
+      const c = audioCtx.createOscillator(), cg = audioCtx.createGain();
+      c.type = 'square';
+      c.frequency.setValueAtTime(kind === 'slam' || kind === 'charge' ? 320 : 640, now);
+      c.frequency.exponentialRampToValueAtTime(120, now + .05);
+      c.connect(cg); cg.connect(audioCtx.destination);
+      cg.gain.setValueAtTime(.009, now);
+      cg.gain.exponentialRampToValueAtTime(.001, now + .06);
+      c.start(now); c.stop(now + .07);
+    } catch (_) { /* the synth layer is an embellishment */ }
+  }
+
+  // Heat and grit dragged along behind the shoulder charge.
+  function oyabunChargeTrail(e) {
+    const bx = e.x + e.w * .55, by = e.y + e.h * .6;
+    for (let i = 0; i < 2; i++) {
+      particles.push({
+        x: bx + Math.random() * e.w * .25, y: by + (Math.random() - .5) * e.h * .5,
+        vx: 210 + Math.random() * 160, vy: (Math.random() - .5) * 90,
+        life: .3 + Math.random() * .25, max: .55, size: 5 + Math.random() * 7,
+        color: Math.random() < .5 ? '#ffb347' : '#ff5a36', gravity: -30,
+      });
+    }
+    // Dust kicked off the floor under him.
+    particles.push({
+      x: bx + Math.random() * e.w * .3, y: e.y + e.h * .95,
+      vx: 150 + Math.random() * 120, vy: -40 - Math.random() * 70,
+      life: .4, max: .4, size: 6 + Math.random() * 6, color: '#5a4058', gravity: 120,
+    });
   }
 
   function bossVoltShot(e) {
@@ -2422,10 +2594,14 @@
       if (Math.abs(off) < half + 45) continue;
       bossPillar(x);
     }
-    const rollers = Math.max(4, Math.round(6 * D.barrage));
+    const rollers = Math.max(5, Math.round(8 * D.barrage));
     for (let i = 0; i < rollers; i++) {
-      enemyBullets.push({ x: e.x - 20, y: 604 + i * 14, vx: -260, vy: 0, r: 14, life: 6, damage: 21, fire: true, grazeMul: .4 });
+      enemyBullets.push({ x: e.x + e.w * .18, y: 596 + i * 14, vx: -290, vy: 0, r: 15, life: 6, damage: 25, fire: true, grazeMul: .4 });
     }
+    // It is a knee driven into the floor, so it gets the knee's impact.
+    oyabunSfx('knee');
+    shockwaves.push({ x: e.x + e.w * .25, y: 620, r: 16, speed: 560, life: .55, max: .55, color: '#ff5a36' });
+    shake = Math.max(shake, 12); hitStop = Math.max(hitStop, .05);
   }
 
   function golemGeyser(x) {
@@ -2476,7 +2652,7 @@
     sfx('boss');
   }
 
-  // INFERNO DJINN's press: two horizontal flame bands that leave a corridor at
+  // FLAME OYABUN's press: two horizontal flame bands that leave a corridor at
   // the player's row — hold the line to survive.
   function bossHeatBeam(e) {
     const D = difficulties[difficultyKey];
@@ -2490,8 +2666,12 @@
         damage: 34, color: '#ff8a35',
       });
     }
-    for (let i = 0; i < 3; i++) delayedBursts.push({ x: e.x + 30, y: e.y + e.h * .4, t: .18 + i * .26, color: '#ffb347' });
-    shake = Math.max(shake, 6); sfx('boss');
+    for (let i = 0; i < 3; i++) delayedBursts.push({ x: e.x + e.w * .2, y: e.y + e.h * .35, t: .18 + i * .26, color: '#ffb347' });
+    const { x: fx, y: fy } = oyabunFist(e);
+    burst(fx, fy, '#ffd66b', 20, 300);
+    shockwaves.push({ x: fx, y: fy, r: 12, speed: 620, life: .5, max: .5, color: '#ff8a35' });
+    shake = Math.max(shake, 11); hitStop = Math.max(hitStop, .06);
+    oyabunSfx('straight');
   }
 
   // Tracks the player, then commits. The freeze is the whole mechanic: dodge
@@ -3146,8 +3326,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // vanishing on the killing frame. The culling filter keeps it alive
       // while e.dying > 0; hp<=0 already makes it non-collidable everywhere.
       // Give the queen's authored fall enough screen time to read: stagger,
-      // kneel, then remain down. Other bosses keep the compact dissolve.
-      e.dying = e.dyingMax = isBoss && stageIndex === 4 ? 7.2 : isBoss ? 3.4 : 2.2;
+      // kneel, then remain down. FLAME OYABUN has a shorter authored run of his
+      // own; 4.4s fits it inside the 4.6s stage transition below, so the beat
+      // costs the player no extra waiting. Other bosses keep the compact dissolve.
+      e.dying = e.dyingMax = isBoss && stageIndex === 4 ? 7.2 : isBoss && stageIndex === 2 ? 4.4 : isBoss ? 3.4 : 2.2;
       e.tel = 0; e.telType = null; e.mode = null; e.ghost = false; e.fade = 1;
       sfx('bossQuake');
     }
@@ -3179,6 +3361,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       clearEnemyFire(); bullets = []; musicStep = 0; musicClock = 0;
       sfx('bossCollapse'); sfx('thunder'); bossVoice(stageIndex, 'death');
       if (stageIndex === stages.length - 1) setTimeout(() => sfx('fireworks'), 650);
+      // The oyabun loses a fight rather than exploding: the count lands as he
+      // goes down on one knee, ~1.7s into his authored fall.
+      if (stageIndex === 2) setTimeout(() => oyabunSfx('ko'), 1700);
       const stage = stages[stageIndex];
       for (let i = 0; i < 14; i++) {
         delayedBursts.push({ x: e.x + Math.random() * e.w, y: e.y + Math.random() * e.h, t: .08 + i * .11, color: i % 3 ? '#ffe15a' : stage.accent2, boom: i % 2 === 0 });
@@ -7787,6 +7972,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillRect(0, boss.telY + half, VW, Math.max(0, 680 - (boss.telY + half)));
       ctx.globalAlpha = Math.min(1, p * 2.4); ctx.fillStyle = '#fff';
       ctx.fillRect(0, boss.telY - half, VW, 3); ctx.fillRect(0, boss.telY + half - 3, VW, 3);
+    } else if (boss.telType === 'charge') {
+      // A lane across the whole floor at his own height. The read is "leave this
+      // row", so the edges are outlined in white like the other corridor tells —
+      // and they sit exactly on his contact box, not on his artwork.
+      const top = boss.y + boss.h * .13, bot = boss.y + boss.h * .87;
+      ctx.fillStyle = '#ff5a36'; ctx.fillRect(0, top, VW, bot - top);
+      ctx.globalAlpha = Math.min(1, p * 2.4); ctx.fillStyle = '#fff';
+      ctx.fillRect(0, top, VW, 3); ctx.fillRect(0, bot - 3, VW, 3);
     } else if (boss.telType === 'heatwall') {
       const half = 100 * difficulties[difficultyKey].gapW;
       ctx.fillStyle = '#ff8a35';
@@ -10044,6 +10237,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // caller's hitbox scaling keeps working. Procedural art is the fallback
     // until the image finishes loading.
     const finalDefeat = e.dying > 0 && stageIndex === 4;
+    const oyabunDefeat = e.dying > 0 && stageIndex === 2;
     let sprite;
     if (finalDefeat) {
       // Sheet 2 begins with a coherent defeat run: clutch chest, reel back,
@@ -10053,6 +10247,31 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const k = clamp(1 - e.dying / e.dyingMax, 0, .999);
       const step = k < .12 ? 0 : k < .25 ? 1 : k < .39 ? 2 : k < .54 ? 3 : 4;
       sprite = fall[Math.min(step, fall.length - 1)];
+    } else if (oyabunDefeat) {
+      // He does not burst — he loses on his feet. The reel he already uses for
+      // heavy hits is beat one, so the dedicated fall cells only carry the
+      // hunch and the kneel; the kneel then holds for the rest of the count.
+      const run = [readyFrames(bossSets[2].hurt)[1], ...readyFrames(bossSets[2].fall || [])].filter(Boolean);
+      const k = clamp(1 - e.dying / e.dyingMax, 0, .999);
+      const step = k < .18 ? 0 : k < .38 ? 1 : 2;
+      sprite = run[Math.min(step, run.length - 1)];
+    } else if (stageIndex === 2 && !(e.hurtT > 0) && (e.mode === 'dash' || e.mode === 'return' || e.telType === 'charge')) {
+      // The charge, in three cells the attack set never sees: brace low, then
+      // shoulder first across the floor, then walk back to his spot.
+      const guard = readyFrames(bossSets[2].guard || []);
+      const walk = readyFrames(bossSets[2].walk || []);
+      if (e.mode === 'dash') sprite = guard[1] || guard[0];
+      else if (e.mode === 'return') sprite = walk.length ? walk[Math.floor(e.t * 5) % walk.length] : null;
+      else sprite = guard[0];
+    } else if (stageIndex === 2 && e.entering && !(e.hurtT > 0)) {
+      // He walks into the arena on his own two feet instead of gliding in.
+      const f = readyFrames(bossSets[2].walk || []);
+      if (f.length) sprite = f[Math.floor(e.t * 4) % f.length];
+    } else if (stageIndex === 2 && e.tauntT > 0 && !(e.hurtT > 0)) {
+      // Act two: having landed his re-entry, he flexes. The taunt cell is his
+      // "still standing" statement, and the beat right after touching down is
+      // the one moment it reads — on the way out he is already fading.
+      sprite = readyFrames(bossSets[2].taunt || [])[0];
     }
     sprite ||= pickPoseFrame(bossSets[stageIndex], e) || (frameReady(bossSprites[stageIndex]) ? bossSprites[stageIndex] : null);
     if (sprite) {
@@ -10062,7 +10281,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // hurt); body language on top: breathing, a hard forward lean while
       // dashing, a pain jitter while hurt, a strobe while teleporting.
       const hurt = e.hurtT > 0;
-      const breath = finalDefeat ? 0 : Math.sin(e.t * 2.6) * .022;
+      // Authored defeat runs carry their own body language; the idle breathing
+      // and bobbing would fight the drawn pose, so both stop for them.
+      const authoredFall = finalDefeat || oyabunDefeat;
+      const breath = authoredFall ? 0 : Math.sin(e.t * 2.6) * .022;
       let lean = Math.sin(e.t * 1.4) * .02;
       if (e.mode === 'dash') lean = -.18;
       else if (e.mode === 'return') lean = .09;
@@ -10098,13 +10320,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const deathK = finalDefeat ? clamp(1 - e.dying / e.dyingMax, 0, 1) : 0;
       const floorT = finalDefeat ? clamp((deathK - .28) / .28, 0, 1) : 0;
       const floorLift = 67 * floorT * floorT * (3 - 2 * floorT);
-      const dy0 = 190 - dh - floorLift + (finalDefeat ? 0 : Math.sin(e.t * 2.2) * 5);
+      const dy0 = 190 - dh - floorLift + (authoredFall ? 0 : Math.sin(e.t * 2.2) * 5);
       if (e.dying > 0) {
-        if (finalDefeat) {
-          // Do not shred the authored prone pose. It remains solid for most of
-          // the aftermath, then exhales away just before the ending begins.
+        if (authoredFall) {
+          // Do not shred an authored pose. It stays solid for most of the count
+          // and then exhales away — the queen just before the ending begins,
+          // the oyabun a little earlier so the stage banner is not left waiting.
           const k = clamp(1 - e.dying / e.dyingMax, 0, 1);
-          ctx.globalAlpha *= k < .82 ? 1 : clamp((1 - k) / .18, 0, 1);
+          const holdTo = finalDefeat ? .82 : .7;
+          ctx.globalAlpha *= k < holdTo ? 1 : clamp((1 - k) / (1 - holdTo), 0, 1);
           ctx.drawImage(sprite, dx0, dy0, dw, dh);
         } else {
           drawDeathDissolve(sprite, dx0, dy0, dw, dh, e);
@@ -10679,7 +10903,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = stage.accent2; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText(`BOSS: ${stage.boss}`, VW / 2, by + 160);
       ctx.restore(); ctx.textAlign = 'left';
     }
-    const showClearCard = bossState === 'transition' || (bossState === 'final' && stageTransition <= 2.8);
+    // Bosses with an authored defeat run hold the card back until the fall has
+    // landed, so the beat is not covered mid-stagger: the queen until she is
+    // down, FLAME OYABUN until he is on one knee. Everyone else shows it at once.
+    const cardDelay = bossState === 'final' ? 2.8 : stageIndex === 2 ? 2.9 : Infinity;
+    const showClearCard = (bossState === 'transition' || bossState === 'final') && stageTransition <= cardDelay;
     if (showClearCard && state === 'playing') {
       ctx.globalAlpha = .92; ctx.fillStyle = 'rgba(7,4,25,.86)'; ctx.fillRect(0, 240, VW, 236);
       ctx.textAlign = 'center'; ctx.fillStyle = '#ffe15a'; ctx.font = '25px "Press Start 2P", monospace';
@@ -11095,7 +11323,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     window.__types = () => enemies.map(en => en.type);
     window.__boss = () => {
       const b = enemies.find(en => en.type === 'boss');
-      return b ? { tier: b.tier, hp: b.hp, maxHp: b.maxHp, telType: b.telType, mode: b.mode, ghost: !!b.ghost, crit: !!b.crit, dying: b.dying || 0, x: b.x, y: b.y } : null;
+      return b ? { tier: b.tier, hp: b.hp, maxHp: b.maxHp, telType: b.telType, tel: b.tel || 0, attackIdx: b.attackIdx || 0, mode: b.mode, ghost: !!b.ghost, crit: !!b.crit, dying: b.dying || 0, x: b.x, y: b.y } : null;
     };
     window.__parkBoss = () => {
       const b = enemies.find(en => en.type === 'boss');
@@ -11106,6 +11334,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       if (b) b.dying = b.dyingMax * (1 - clamp(progress, 0, .99));
     };
     window.__damage = n => { const b = enemies.find(en => en.type === 'boss'); if (b) b.hp = Math.max(1, b.hp - n); };
+    // __damage/__setHp deliberately floor at 1hp so a harness can sit at the
+    // brink without ending the fight. This is the way to actually end it, and
+    // it goes through the real kill path so the authored fall runs as shipped.
+    window.__killBoss = () => { const b = enemies.find(en => en.type === 'boss' && !(en.dying > 0)); if (b) { b.hp = 0; destroyEnemy(b); } };
     window.__D = () => difficulties[difficultyKey];
     window.__telFor = px => telFor(px);
     window.__setDiff = k => { difficultyKey = k; };

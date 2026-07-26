@@ -3,3 +3,8 @@ node_modules/
 .devtools/*.png
 .devtools/crop-out.png
 tmp/
+
+# Raw generated pose sheets. Kept on disk as the masters, but the game only
+# ever loads the derived WebP under assets/images/bosses/, so they stay out of
+# the repo — see THIRD_PARTY_ASSETS.md for what each one became.
+art-source/ChatGPT Image *.png
