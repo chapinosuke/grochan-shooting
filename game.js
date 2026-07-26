@@ -103,7 +103,9 @@
     bossRoar: { src: 'assets/sfx/boss-roar.mp3', volume: .42, pool: 1, max: 2.6 },
     bossQuake: { src: 'assets/sfx/boss-quake.mp3', volume: .34, pool: 1, max: 3.5 },
     bossSuperHit: { src: 'assets/sfx/boss-superhit.mp3', volume: .4, pool: 2, max: 1.1 },
-    bossCollapse: { src: 'assets/sfx/boss-collapse.mp3', volume: .46, pool: 1, max: 3.5 }
+    bossCollapse: { src: 'assets/sfx/boss-collapse.mp3', volume: .46, pool: 1, max: 3.5 },
+    // 効果音ラボ「連続打ち上げ花火」 — the six-second royal finale bed.
+    fireworks: { src: 'assets/sfx/fireworks-finale.mp3', volume: .42, pool: 1, max: 6.5 }
   };
   const sfxPools = {};
   Object.entries(sampledSfx).forEach(([key, def]) => {
@@ -238,6 +240,7 @@
   let bombStock = 0;
   let charmStock = 0;
   let charmFlash = 0;
+  let testMaxLoadout = false; // localhost ?max=1: lock combat-check resources at full
   let ammo = 170;        // main-gun magazine: one round per volley, pea-shot fallback at 0
   let ammoMax = 170;
   let ammoBanner = 0;    // "弾切れ!" rising tag timer, armed on the shot that empties the gun
@@ -389,14 +392,15 @@
     return set;
   };
   const GEN_COUNTS = { idle: 1, attack: 1, hurt: 1 }, SHEET_COUNTS = { idle: 2, attack: 3, hurt: 2 };
-  // Stage bosses. SERVER GOLEM's complete set remains in assets as a held
-  // design; ABYSS SIREN takes the active stage-2 slot without deleting it.
+  const FINAL_QUEEN_COUNTS = { idle: 4, attack: 4, hurt: 8 };
+  // Stage bosses. SERVER GOLEM and the former stage5 set remain in assets as
+  // held designs; replacing an active slot never deletes its source material.
   const bossSets = [
     loadSet('masquerade', SHEET_COUNTS),
     loadSet('abyss-siren', SHEET_COUNTS),
     loadSet('inferno-djinn', SHEET_COUNTS),
     loadSet('bot-general', SHEET_COUNTS),
-    loadSet('stage5', GEN_COUNTS),
+    loadSet('heartbreak-queen', FINAL_QUEEN_COUNTS),
   ];
   // Mid-bosses: the former stage bosses demoted, plus LORD CENSOR guarding the palace.
   const midSets = [
@@ -414,7 +418,7 @@
     { hit: '#f3d5ff', crit: '#b832ff' },  // ABYSS SIREN pearl flash -> abyss violet
     { hit: '#7ad7ff', crit: '#fff3bd' },  // INFERNO DJINN doused blue -> white heat
     { hit: '#ff4d4d', crit: '#72ff68' },  // BOT GENERAL   error red -> glitch green
-    { hit: '#ffffff', crit: '#7a1848' },  // QUEEN         pure white -> bruised violet
+    { hit: '#fff1a8', crit: '#8f35d9' },  // QUEEN         royal gold -> abyss violet
   ];
   // Sprites are re-drawn through their own alpha into an offscreen canvas, so a
   // flat colour lands on the character and never on a bounding box. ctx.filter
@@ -440,7 +444,11 @@
   const pickPoseFrame = (set, e) => {
     if (e.hurtT > 0) {
       const f = readyFrames(set.hurt);
-      if (f.length) return f[Math.floor(e.t * 5) % f.length];
+      if (f.length) {
+        const duration = e.hurtPoseDuration || .4;
+        const progress = clamp(1 - e.hurtT / duration, 0, .999);
+        return f[Math.floor(progress * f.length)];
+      }
     }
     // Only the tail of a windup shows the attack pose — long telegraphs would
     // otherwise leave the boss frozen mid-swing for over a second.
@@ -460,7 +468,13 @@
     e.hurtT = Math.max(0, (e.hurtT || 0) - dt);
     e.hurtCd = Math.max(0, (e.hurtCd || 0) - dt);
     if (e.hit > .09 && e.hurtCd <= 0) {
-      e.hurtT = .4; e.hurtCd = 1.3;
+      // The final queen's second sheet is an eight-pose dramatic damage
+      // sequence. At the shared .4s duration each pose survived for only
+      // ~3 frames and looked as if the sheet was not being used. Give every
+      // cell a readable beat while leaving the shorter sets unchanged.
+      e.hurtPoseDuration = e.type === 'boss' && stageIndex === 4 ? 1.2 : .4;
+      e.hurtT = e.hurtPoseDuration;
+      e.hurtCd = e.type === 'boss' && stageIndex === 4 ? 1.7 : 1.3;
       if (e.type === 'boss' && Math.random() < .35) bossVoice(stageIndex, 'hurt', { throttle: 3 });
     }
     // rotate through the attack frames: each newly-triggered attack (the
@@ -478,10 +492,11 @@
   }
 
   let storySlides = null, storyStep = 0, storyDone = null;
-  let storyTyping = null, storyFullText = '';
-  function showStory(slides, done) {
+  let storyTyping = null, storyFullText = '', storyTypeDelay = 55;
+  function showStory(slides, done, opts = {}) {
     if (!slides || !slides.length) { if (done) done(); return; }
     storySlides = slides; storyStep = -1; storyDone = done;
+    storyTypeDelay = opts.typeDelay || 55;
     storyScreen.classList.add('is-visible');
     advanceStory();
   }
@@ -508,7 +523,7 @@
       shown++;
       renderTyped(shown);
       if (shown >= text.length) finishTyping();
-    }, 55);
+    }, storyTypeDelay);
   }
   function finishTyping() {
     clearInterval(storyTyping); storyTyping = null;
@@ -1086,7 +1101,12 @@
     } else if (theme === 'palace') {
       for (let i = 0; i < 20; i++) ambient.push(makeAmbient('heart'));
       // Royal fireworks — they turn into a celebratory volley when the queen falls.
-      bgProps.push({ kind: 'firework', x: 260, timer: 3 + Math.random() * 4 }, { kind: 'firework', x: 1010, timer: 6 + Math.random() * 4 });
+      bgProps.push(
+        { kind: 'firework', x: 150, timer: 2 + Math.random() * 3 },
+        { kind: 'firework', x: 430, timer: 4 + Math.random() * 3 },
+        { kind: 'firework', x: 820, timer: 3 + Math.random() * 3 },
+        { kind: 'firework', x: 1110, timer: 5 + Math.random() * 3 }
+      );
     }
     // Stable scene dressing gives every run a busy, inhabited world without
     // affecting collision or gameplay readability.
@@ -1121,7 +1141,13 @@
       a.x += (a.vx || 0) * dt - 26 * dt * gameSpeed;
       a.y += (a.vy || 0) * dt;
       if (a.kind === 'spark') a.vy += 480 * dt;
-      if (a.kind === 'fwspark') { a.vy += 250 * dt; a.vx *= Math.pow(.4, dt); }  // firework glitter falls and brakes
+      if (a.kind === 'fwspark') {
+        a.vy += (a.gravity || 135) * dt;
+        a.vx *= Math.pow(a.drag || .72, dt);
+      }
+      if (a.kind === 'fwsmoke') {
+        a.r += 12 * dt; a.vx *= Math.pow(.55, dt); a.vy -= 5 * dt;
+      }
       if (a.kind === 'smoke') { a.r += dt * 6; a.x -= dt * (560 - a.y) * .05; }  // wind shear grows with altitude
       if (a.a !== undefined) a.a += dt * 3;
       if (a.life !== undefined) a.life -= dt;
@@ -1154,21 +1180,38 @@
       else if (p.kind === 'firework') {
         if (p.rise) {
           p.riseY -= 540 * dt;
-          // Short-lived streak sparks trace the ascent (skipped at low quality).
-          if (bgQuality() > 0 && Math.random() < .7) ambient.push({ kind: 'fwspark', x: p.bx + (Math.random() - .5) * 3, y: p.riseY, vx: 0, vy: 40, life: .3, color: '#ffe9a8' });
+          // A hot rocket core, falling gold embers and a faint smoke corkscrew
+          // make the launch readable before the shell opens.
+          if (bgQuality() > 0 && Math.random() < .82) {
+            ambient.push({ kind: 'fwspark', x: p.bx + (Math.random() - .5) * 4, y: p.riseY, vx: (Math.random() - .5) * 18, vy: 55, life: .42, max: .42, size: 2.4, gravity: 95, color: '#fff1b8' });
+            if (Math.random() < .22) ambient.push({ kind: 'fwsmoke', x: p.bx, y: p.riseY + 12, vx: (Math.random() - .5) * 14, vy: 18, r: 5, life: 1.1, max: 1.1 });
+          }
           if (p.riseY <= p.burstY) {
             p.rise = false;
-            const n = [12, 24, 40][bgQuality()];
+            const quality = bgQuality();
+            const n = [18, 42, 72][quality];
             const pal = stages[stageIndex].theme === 'palace' ? ['#ff9ccf', '#ffe15a', '#ff5a9d'] : ['#31e8ff', '#ff3e9d', '#ffe15a'];
-            ambient.push({ kind: 'fwflash', x: p.bx, y: p.burstY, life: .3, color: pal[Math.floor(Math.random() * 3)] });
+            const main = pal[Math.floor(Math.random() * pal.length)];
+            const inner = pal[(pal.indexOf(main) + 1) % pal.length];
+            ambient.push({ kind: 'fwflash', x: p.bx, y: p.burstY, life: .42, max: .42, color: main });
+            // Structured chrysanthemum shell: near-even spokes with small
+            // physical imperfections, a bright crown and contrasting pistil.
             for (let i = 0; i < n; i++) {
-              const a2 = i / n * Math.PI * 2 + Math.random() * .2;
-              const sp = 90 + Math.random() * 140;
-              ambient.push({ kind: 'fwspark', x: p.bx, y: p.burstY, vx: Math.cos(a2) * sp, vy: Math.sin(a2) * sp, life: .9 + Math.random() * .5, color: pal[i % 3] });
+              const a2 = i / n * Math.PI * 2 + (Math.random() - .5) * .055;
+              const sp = 185 + Math.random() * 72;
+              const life = 1.65 + Math.random() * .7;
+              ambient.push({ kind: 'fwspark', x: p.bx, y: p.burstY, vx: Math.cos(a2) * sp, vy: Math.sin(a2) * sp, life, max: life, size: 2 + Math.random() * 1.8, gravity: 118 + Math.random() * 38, drag: .78, color: i % 7 === 0 ? '#fff7d6' : main });
             }
+            for (let i = 0; i < Math.round(n * .48); i++) {
+              const a2 = i / (n * .48) * Math.PI * 2 + .08;
+              const sp = 82 + Math.random() * 35;
+              const life = 1.1 + Math.random() * .45;
+              ambient.push({ kind: 'fwspark', x: p.bx, y: p.burstY, vx: Math.cos(a2) * sp, vy: Math.sin(a2) * sp, life, max: life, size: 1.8, gravity: 92, color: inner });
+            }
+            for (let i = 0; i < 7 + quality * 3; i++) ambient.push({ kind: 'fwsmoke', x: p.bx + (Math.random() - .5) * 24, y: p.burstY + (Math.random() - .5) * 18, vx: (Math.random() - .5) * 35, vy: -8 + Math.random() * 24, r: 8 + Math.random() * 10, life: 1.8 + Math.random(), max: 2.8 });
             // The queen's downfall earns a celebratory volley cadence.
             const festival = stages[stageIndex].theme === 'palace' && ['transition', 'final'].includes(bossState);
-            p.timer = festival ? .7 + Math.random() : 4 + Math.random() * 5;
+            p.timer = festival ? .35 + Math.random() * .6 : 3.5 + Math.random() * 4.5;
           }
         } else {
           p.timer -= dt;
@@ -1584,21 +1627,24 @@
     const sprite = frameReady(bossSets[stageIndex].idle[0]) ? bossSets[stageIndex].idle[0] : bossSprites[stageIndex];
     let w = 460, h = 380;
     if (sprite && sprite.complete && sprite.naturalWidth) {
-      h = stageIndex === 1 ? 640 : 560;
+      h = stageIndex === 4 ? 980 : stageIndex === 1 ? 640 : 560;
       w = Math.round(h * sprite.naturalWidth / sprite.naturalHeight);
     }
     // The contact box is pulled inside the artwork: several sprites are wide
     // enough to overlap the player's own movement limit, which turned simply
     // standing at the right edge into passive contact damage.
-    const bossY = stageIndex === 1 ? 30 : 90;
-    const hitInset = Math.round(w * (stageIndex === 1 ? .22 : .16));
-    enemies.push({ type: 'boss', x: VW + 380, y: bossY, baseY: bossY, w, h, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8, hitInset, hitInsetY: Math.round(h * .08), tier: 0, tierBanner: 0, crit: false });
+    const bossY = stageIndex === 4 ? 0 : stageIndex === 1 ? 30 : 90;
+    const hitInset = Math.round(w * (stageIndex === 4 ? .40 : stageIndex === 1 ? .22 : .16));
+    const hitInsetY = Math.round(h * (stageIndex === 4 ? .18 : .08));
+    enemies.push({ type: 'boss', x: VW + 380, y: bossY, baseY: bossY, w, h, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8, hitInset, hitInsetY, tier: 0, tierBanner: 0, crit: false });
     bossState = 'active';
     musicStep = 0; musicClock = 0;
     clearEnemyFire();
     shake = 18; flash = .55;
     playBgm(stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle', true);
-    sfx('boss'); sfx('warning'); sfx('bossRoar'); sfx('bossQuake');
+    sfx('warning');
+    if (isFinalBoss) royalSfx('entrance');
+    else { sfx('boss'); sfx('bossRoar'); sfx('bossQuake'); }
     bossVoice(stageIndex, 'appear');
   }
 
@@ -1931,7 +1977,10 @@
     e.dying -= dt;
     const k = clamp(1 - e.dying / e.dyingMax, 0, 1);
     shake = Math.max(shake, 9 * (1 - k * .55));
-    e.y += 12 * dt;
+    // The final queen has authored collapse poses; keep their shared baseline
+    // stable so the kneeling/prone cells land on the floor instead of sliding
+    // through it. Other bosses retain the old heavy downward settling motion.
+    e.y += (e.type === 'boss' && stageIndex === 4 ? 3 : 12) * dt;
     for (let i = 0; i < 2; i++) {
       particles.push({
         x: e.x + Math.random() * e.w, y: e.y + Math.random() * e.h,
@@ -1964,7 +2013,8 @@
     burst(e.x + e.w / 2, e.y + e.h / 2, stages[idx].accent2, 40, 420);
     burstDebris(e.x + e.w / 2, e.y + e.h / 2, ['#fff', stages[idx].accent], 14, 300);
     e.tierBanner = 1.9;
-    sfx('boss'); sfx('bossSuperHit');
+    sfx('boss');
+    if (idx === 4) royalSfx('phase'); else sfx('bossSuperHit');
     bossVoice(idx, e.tier >= 2 ? 'attack' : 'serious');
     e.sp = .9; e.fire = .5;
     if (idx === 4 && e.tier === 1) summonConsorts(e);
@@ -1976,7 +2026,11 @@
     e.telType = type; e.telMax = sec; e.tel = sec;
     e.telX = opts.x; e.telY = opts.y;
     if (stageIndex === 1) e.attackIdx = type === 'claw' ? 0 : type === 'tailslam' ? 2 : 1;
-    sfx('boss');
+    if (stageIndex === 4) {
+      e.attackIdx = type === 'cannon' ? 3 : type === 'ring' ? 2
+        : type === 'lattice' || type === 'curtain' || type === 'curtain2' || type === 'wave' ? 1 : 0;
+      royalSfx('charge');
+    } else sfx('boss');
   }
 
   function updateBoss(e, dt) {
@@ -2152,8 +2206,10 @@
   }
 
   function bossFan(e, n) {
-    e.attackT = .45;
-    const ox = e.x + 18, oy = e.y + e.h / 2;
+    if (stageIndex === 4) { setBossAttackPose(e, 0, .62); e.fire = Math.max(e.fire, .72); }
+    else e.attackT = .45;
+    const ox = stageIndex === 4 ? e.x + e.w * .27 : e.x + 18;
+    const oy = stageIndex === 4 ? e.y + e.h * .36 : e.y + e.h / 2;
     n = Math.max(5, Math.round((n + 2) * difficulties[difficultyKey].barrage));
     const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
     for (let i = 0; i < n; i++) {
@@ -2161,6 +2217,7 @@
       enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 285, vy: Math.sin(a) * 285, r: 10, life: 6, damage: 24, boss: true });
     }
     burst(ox, oy, '#ff3e9d', 15, 240); shake = Math.max(shake, 4);
+    if (stageIndex === 4) royalSfx('cast');
   }
 
   function bossBubbles(e) {
@@ -2292,8 +2349,8 @@
   }
 
   function bossHeartSpiral(e, arms = 2) {
-    e.attackT = .45;
-    const cx = e.x + 40, cy = e.y + e.h / 2;
+    setBossAttackPose(e, 2, .38);
+    const cx = e.x + e.w * .27, cy = e.y + e.h * .36;
     for (let i = 0; i < arms; i++) {
       const a = e.spiral + i / arms * Math.PI * 2;
       enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210, r: 10, life: 6, damage: 21, heart: true, grazeMul: .7 });
@@ -2301,6 +2358,8 @@
   }
 
   function bossHeartWall(e) {
+    setBossAttackPose(e, 1, .72);
+    e.fire = Math.max(e.fire, .82);
     // The opening is measured in pixels, not lanes: one 85px lane leaves 59px of
     // real clearance, narrower than the player's own 68px airborne hitbox.
     const half = 112 * difficulties[difficultyKey].gapW;
@@ -2310,23 +2369,26 @@
       if (Math.abs(y - gapY) < half) continue;
       enemyBullets.push({ x: e.x - 30, y, vx: -245, vy: 0, r: 11, life: 8, damage: 24, heart: true, grazeMul: .4 });
     }
-    sfx('boss');
+    royalSfx('cast');
   }
 
   function bossHeartRing(e) {
-    const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
+    setBossAttackPose(e, 2, .8);
+    e.fire = Math.max(e.fire, .9);
+    const cx = e.x + e.w * .27, cy = e.y + e.h * .36;
     const n = Math.max(8, Math.round(13 * difficulties[difficultyKey].barrage));
     for (let i = 0; i < n; i++) {
       const a = i / n * Math.PI * 2;
       enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, r: 10, life: 7, damage: 23, heart: true, homing: .5 });
     }
-    burst(cx, cy, '#ff9ccf', 12, 210); sfx('boss');
+    burst(cx, cy, '#ff9ccf', 12, 210); royalSfx('cast');
   }
 
   // A full-height wall of shot with one corridor, opened at the height the
   // player was standing when the telegraph fired. At a real 168 px/s there is
   // no reaching a randomly placed gap, so anchoring it is the only fair option.
   function bossCurtain(e, side) {
+    if (stageIndex === 4) { setBossAttackPose(e, 1, .68); e.fire = Math.max(e.fire, .78); }
     const D = difficulties[difficultyKey];
     const half = 112 * D.gapW;                    // easy 168 / normal 112 / hard 95
     const anchor = e.telY === undefined ? player.y + 55 : e.telY;
@@ -2341,7 +2403,8 @@
       enemyBullets.push({ x: VW + 26, y, vx: -sp, vy: 0, r: 12, life: 9, damage: 20, grazeMul: .4, ...tag });
     }
     e.curtainY = cy;
-    sfx('boss');
+    if (stageIndex === 4) { if (side === 0) royalSfx('cast'); }
+    else sfx('boss');
   }
 
   // Inverse of the curtain: columns of fire everywhere except the lane the
@@ -2449,24 +2512,28 @@
   // Deliberately static — a sweeping version is unavoidable at the player's
   // real top speed, so instead a second band answers on the opposite side.
   function bossHeartCannon(e) {
+    setBossAttackPose(e, 3, 1.05);
+    e.fire = Math.max(e.fire, 1.15);
     const D = difficulties[difficultyKey];
     const h = D.gapW > 1.2 ? 200 : D.gapW < .9 ? 320 : 280;
     const py = clamp(player.y + 55, 60, 660);
     hazards.push({
-      kind: 'beam', x: e.x + 20, y: py, w: 1400, h, ang: Math.PI,
+      kind: 'beam', x: e.x + e.w * .24, y: py, w: 1400, h, ang: Math.PI,
       warn: telFor(h / 2 + 34), live: .62, fade: .32, lock: 0, t: 0,
       damage: 38, color: '#ff3e9d',
     });
-    for (let i = 0; i < 4; i++) delayedBursts.push({ x: e.x + 40, y: e.y + e.h * .4, t: .26 + i * .28, color: '#ff9ccf' });
-    shake = Math.max(shake, 10); sfx('bossSuperHit');
+    for (let i = 0; i < 4; i++) delayedBursts.push({ x: e.x + e.w * .27, y: e.y + e.h * .36, t: .26 + i * .28, color: '#ff9ccf' });
+    shake = Math.max(shake, 14); royalSfx('impact');
   }
 
   // Four arms whose bullets leave at staggered speeds, so the volley unrolls
   // into a rose instead of a flat ring.
   function bossRoseLattice(e) {
+    setBossAttackPose(e, 1, .75);
+    e.fire = Math.max(e.fire, .85);
     const D = difficulties[difficultyKey];
     const arms = 4, per = Math.max(7, Math.round(9 * D.barrage));
-    const cx = e.x + 40, cy = e.y + e.h * .45;
+    const cx = e.x + e.w * .27, cy = e.y + e.h * .36;
     for (let a = 0; a < arms; a++) {
       const ang = (e.spiral || 0) + a / arms * Math.PI * 2;
       for (let i = 0; i < per; i++) {
@@ -2474,7 +2541,7 @@
       }
     }
     burst(cx, cy, '#ff5a9d', 12, 220);
-    sfx('boss');
+    royalSfx('cast');
   }
 
   // Two shootable hearts orbiting the queen from act two, so she can never be
@@ -2483,6 +2550,17 @@
     for (const side of [-1, 1]) {
       enemies.push({ type: 'consort', x: e.x + 40, y: e.y + e.h / 2, w: 74, h: 74, hp: 8, maxHp: 8, vx: 0, t: 0, wave: false, points: 400, fire: 1.6, orbit: side > 0 ? 0 : Math.PI });
     }
+  }
+
+  function applyTestMaxLoadout() {
+    player.power = 3; player.spread = 3; player.speed = 3;
+    health = maxHealth; ammo = ammoMax; ammoPackStock = AMMO_PACK_MAX;
+    // Do not use the regular invincibility timer here: drawPlayer intentionally
+    // blinks that state at 25% opacity, which made the max-loadout preview look
+    // translucent. hurt() itself ignores damage in this localhost-only mode.
+    charmStock = 3; player.inv = 0;
+    if (special !== 100) { special = 100; updateSpecialButton(); }
+    if (bombStock !== 3) { bombStock = 3; updateBombButton(); }
   }
 
   function update(dt) {
@@ -2499,6 +2577,7 @@
       stepShoppers(dt);
     }
     if (state !== 'playing' || paused) return;
+    if (testMaxLoadout) applyTestMaxLoadout();
     elapsed += dt;
     if (bossState === 'waiting') stageTime += dt;
     stageBanner = Math.max(0, stageBanner - dt);
@@ -3064,7 +3143,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // over a few seconds (updateDyingBoss / drawDeathDissolve) instead of
       // vanishing on the killing frame. The culling filter keeps it alive
       // while e.dying > 0; hp<=0 already makes it non-collidable everywhere.
-      e.dying = e.dyingMax = isBoss ? 3.4 : 2.2;
+      // Give the queen's authored fall enough screen time to read: stagger,
+      // kneel, then remain down. Other bosses keep the compact dissolve.
+      e.dying = e.dyingMax = isBoss && stageIndex === 4 ? 7.2 : isBoss ? 3.4 : 2.2;
       e.tel = 0; e.telType = null; e.mode = null; e.ghost = false; e.fade = 1;
       sfx('bossQuake');
     }
@@ -3089,9 +3170,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       stageBanner = 2.2;
     }
     if (isBoss) {
-      bossState = stageIndex === stages.length - 1 ? 'final' : 'transition'; stageTransition = 4.6;
+      bossState = stageIndex === stages.length - 1 ? 'final' : 'transition';
+      // The final clear card waits until the queen has visibly hit the floor.
+      // This also creates a deliberate breath before the ending cutscene.
+      stageTransition = stageIndex === stages.length - 1 ? 10.5 : 4.6;
       clearEnemyFire(); bullets = []; musicStep = 0; musicClock = 0;
       sfx('bossCollapse'); sfx('thunder'); bossVoice(stageIndex, 'death');
+      if (stageIndex === stages.length - 1) setTimeout(() => sfx('fireworks'), 650);
       const stage = stages[stageIndex];
       for (let i = 0; i < 14; i++) {
         delayedBursts.push({ x: e.x + Math.random() * e.w, y: e.y + Math.random() * e.h, t: .08 + i * .11, color: i % 3 ? '#ffe15a' : stage.accent2, boom: i % 2 === 0 });
@@ -3104,6 +3189,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
 
   function hurt(damage) {
+    if (testMaxLoadout) {
+      health = maxHealth;
+      player.inv = 0;
+      return;
+    }
     health = Math.max(0, health - damage * difficulties[difficultyKey].damage); player.inv = 1.4; player.hit = .45; combo = 0; shake = 18; flash = .7; hitStop = Math.max(hitStop, .07);
     stageDamaged = true;
     // Getting hit knocks the shot power down one level (Gradius-style risk/reward),
@@ -3266,7 +3356,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // before RESULT. The ending theme starts exactly when the cameo screen
     // appears, not underneath the preceding cutscene slides.
     clearTimeout(resultTimeout);
-    if (cleared) resultTimeout = setTimeout(() => showStory(STORY.ending, () => { endingScreen.classList.add('is-visible'); playBgm('ending', true); }), 450);
+    if (cleared) resultTimeout = setTimeout(() => showStory(
+      STORY.ending,
+      () => { endingScreen.classList.add('is-visible'); playBgm('ending', true); },
+      { typeDelay: 82 }
+    ), 1200);
     else resultTimeout = setTimeout(() => showStory(STORY.gameover, () => gameOverScreen.classList.add('is-visible')), 450);
   }
 
@@ -7503,11 +7597,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       else if (a.kind === 'spark') { ctx.globalAlpha = Math.max(0, Math.min(1, a.life * 1.6)); ctx.fillStyle = '#ffe15a'; ctx.fillRect(a.x, a.y, 4, 4); ctx.fillStyle = 'rgba(255,138,53,.6)'; ctx.fillRect(a.x - a.vx * .02, a.y - a.vy * .02, 3, 3); }
       else if (a.kind === 'rain') { ctx.globalAlpha = .32 + Math.min(1, lightning * 2.4) * .3; ctx.strokeStyle = '#9fe8d8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x + a.vx * .022, a.y + a.vy * .022); ctx.stroke(); }
       else if (a.kind === 'fwspark') {
-        // Firework glitter: additive dots with a twinkle, fading with life.
+        // Long-exposure-like streak, white-hot seed and irregular glitter.
         ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = Math.max(0, Math.min(1, a.life * 1.6)) * (.6 + Math.sin(elapsed * 14 + a.x) * .4);
-        ctx.fillStyle = a.color || '#ffe15a';
-        ctx.fillRect(a.x - 2, a.y - 2, 4, 4);
+        const fa = clamp(a.life / (a.max || 1), 0, 1) * (.72 + Math.sin(elapsed * 22 + a.x * .13) * .28);
+        ctx.globalAlpha = fa;
+        ctx.strokeStyle = a.color || '#ffe15a'; ctx.lineWidth = a.size || 2;
+        ctx.shadowColor = a.color || '#ffe15a'; ctx.shadowBlur = 7;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x - a.vx * .065, a.y - a.vy * .065); ctx.stroke();
+        ctx.globalAlpha = Math.min(1, fa * 1.25); ctx.fillStyle = '#fff';
+        ctx.fillRect(a.x - 1, a.y - 1, 2, 2);
       }
       else if (a.kind === 'fwflash') {
         // The burst's initial bloom: one soft additive sphere that pops the
@@ -7517,6 +7615,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         const fg = ctx.createRadialGradient(a.x, a.y, 3, a.x, a.y, 70);
         fg.addColorStop(0, '#fff'); fg.addColorStop(.35, a.color || '#ffe15a'); fg.addColorStop(1, 'rgba(255,200,120,0)');
         ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(a.x, a.y, 70, 0, Math.PI * 2); ctx.fill();
+      }
+      else if (a.kind === 'fwsmoke') {
+        // Smoke is briefly lit from inside, then cools to blue-grey.
+        const sa = clamp(a.life / (a.max || 2.8), 0, 1) * .16;
+        const sg = ctx.createRadialGradient(a.x - a.r * .2, a.y - a.r * .2, 1, a.x, a.y, a.r);
+        sg.addColorStop(0, `rgba(255,225,180,${sa})`);
+        sg.addColorStop(.45, `rgba(105,92,125,${sa * .65})`);
+        sg.addColorStop(1, 'rgba(45,38,65,0)');
+        ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.fill();
       }
       else if (a.kind === 'dust') {
         // Gold motes twinkling inside the god rays.
@@ -7718,7 +7825,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const boss = enemies.find(e => e.type === 'boss' && e.tel > 0 && e.telType);
     if (!boss) return;
     const tp = clamp(1 - boss.tel / (boss.telMax || 1), 0, 1);
-    const mx = boss.x + 40, my = boss.y + boss.h * .42;
+    const mx = stageIndex === 4 ? boss.x + boss.w * .27 : boss.x + 40;
+    const my = stageIndex === 4 ? boss.y + boss.h * .36 : boss.y + boss.h * .42;
     const col = BOSS_TINT[stageIndex].hit;
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     const r = 8 + tp * tp * 62;
@@ -9920,7 +10028,18 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // into the same 230×190 authoring box the procedural art used, so the
     // caller's hitbox scaling keeps working. Procedural art is the fallback
     // until the image finishes loading.
-    const sprite = pickPoseFrame(bossSets[stageIndex], e) || (frameReady(bossSprites[stageIndex]) ? bossSprites[stageIndex] : null);
+    const finalDefeat = e.dying > 0 && stageIndex === 4;
+    let sprite;
+    if (finalDefeat) {
+      // Sheet 2 begins with a coherent defeat run: clutch chest, reel back,
+      // hunch, kneel, lie prone. Hold the prone cell for the quiet aftermath;
+      // the remaining recovery cells are used by the normal 8-frame hurt cycle.
+      const fall = readyFrames(bossSets[stageIndex].hurt).slice(0, 5);
+      const k = clamp(1 - e.dying / e.dyingMax, 0, .999);
+      const step = k < .12 ? 0 : k < .25 ? 1 : k < .39 ? 2 : k < .54 ? 3 : 4;
+      sprite = fall[Math.min(step, fall.length - 1)];
+    }
+    sprite ||= pickPoseFrame(bossSets[stageIndex], e) || (frameReady(bossSprites[stageIndex]) ? bossSprites[stageIndex] : null);
     if (sprite) {
       // The spawn hitbox already carries the art's aspect ratio, so filling the
       // whole 230×190 authoring box draws the sprite undistorted. The main
@@ -9928,7 +10047,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // hurt); body language on top: breathing, a hard forward lean while
       // dashing, a pain jitter while hurt, a strobe while teleporting.
       const hurt = e.hurtT > 0;
-      const breath = Math.sin(e.t * 2.6) * .022;
+      const breath = finalDefeat ? 0 : Math.sin(e.t * 2.6) * .022;
       let lean = Math.sin(e.t * 1.4) * .02;
       if (e.mode === 'dash') lean = -.18;
       else if (e.mode === 'return') lean = .09;
@@ -9957,8 +10076,26 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const kx = e.w / 230, ky = e.h / 190;
       const dw = sprite.naturalWidth * px / kx, dh = sprite.naturalHeight * px / ky;
       const dx0 = (230 - dw) / 2 + (hurt ? Math.sin(e.t * 52) * 3 : 0);
-      const dy0 = 190 - dh + Math.sin(e.t * 2.2) * 5;
-      if (e.dying > 0) { drawDeathDissolve(sprite, dx0, dy0, dw, dh, e); ctx.restore(); return; }
+      // Living art deliberately extends below the viewport to sell her scale.
+      // During the authored collapse, progressively lift that off-screen
+      // baseline onto the palace floor (world y=650), so the prone body rests
+      // on visible tiles rather than sinking beneath the canvas.
+      const deathK = finalDefeat ? clamp(1 - e.dying / e.dyingMax, 0, 1) : 0;
+      const floorT = finalDefeat ? clamp((deathK - .28) / .28, 0, 1) : 0;
+      const floorLift = 67 * floorT * floorT * (3 - 2 * floorT);
+      const dy0 = 190 - dh - floorLift + (finalDefeat ? 0 : Math.sin(e.t * 2.2) * 5);
+      if (e.dying > 0) {
+        if (finalDefeat) {
+          // Do not shred the authored prone pose. It remains solid for most of
+          // the aftermath, then exhales away just before the ending begins.
+          const k = clamp(1 - e.dying / e.dyingMax, 0, 1);
+          ctx.globalAlpha *= k < .82 ? 1 : clamp((1 - k) / .18, 0, 1);
+          ctx.drawImage(sprite, dx0, dy0, dw, dh);
+        } else {
+          drawDeathDissolve(sprite, dx0, dy0, dw, dh, e);
+        }
+        ctx.restore(); return;
+      }
       // Dissolving into scanlines: the sprite is sliced and the strips drift
       // apart. Has to happen here, before the early return below.
       if (e.dissolve > 0) {
@@ -10527,7 +10664,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = stage.accent2; ctx.font = '9px "Press Start 2P", monospace'; ctx.fillText(`BOSS: ${stage.boss}`, VW / 2, by + 160);
       ctx.restore(); ctx.textAlign = 'left';
     }
-    if ((bossState === 'transition' || bossState === 'final') && state === 'playing') {
+    const showClearCard = bossState === 'transition' || (bossState === 'final' && stageTransition <= 2.8);
+    if (showClearCard && state === 'playing') {
       ctx.globalAlpha = .92; ctx.fillStyle = 'rgba(7,4,25,.86)'; ctx.fillRect(0, 240, VW, 236);
       ctx.textAlign = 'center'; ctx.fillStyle = '#ffe15a'; ctx.font = '25px "Press Start 2P", monospace';
       ctx.fillText(bossState === 'final' ? 'MISSION COMPLETE!' : 'STAGE CLEAR!', VW / 2, 296);
@@ -10671,6 +10809,48 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       gain.gain.setValueAtTime(mixedVolume, now); gain.gain.exponentialRampToValueAtTime(.001, now + dur);
       o.start(now); o.stop(now + dur);
     } catch (_) { /* audio is optional */ }
+  }
+
+  // The final queen gets a miniature sound stack rather than one effect: a
+  // sampled impact/charge layer, a low ceremonial chord and glassy upper bells.
+  // It reuses bundled audio only, so the finale stays offline and dependency-free.
+  function royalSfx(kind) {
+    if (!soundOn) return;
+    if (kind === 'entrance') {
+      sfx('bossRoar'); sfx('bossQuake');
+      setTimeout(() => sfx('bossSuperHit'), 150);
+    } else if (kind === 'phase') {
+      sfx('bossSuperHit'); sfx('bossRoar');
+      setTimeout(() => sfx('special'), 90);
+    } else if (kind === 'impact') {
+      sfx('special'); sfx('bossSuperHit');
+      setTimeout(() => sfx('bigBoom'), 80);
+    } else if (kind === 'cast') {
+      sfx('special');
+      setTimeout(() => sfx('bossSuperHit'), 70);
+    } else {
+      sfx('boss');
+    }
+    try {
+      ensureAudio();
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+      const root = kind === 'entrance' || kind === 'phase' ? 98 : kind === 'impact' ? 73.42 : 146.83;
+      const ratios = [1, 1.25, 1.5, 2, 3];
+      ratios.forEach((ratio, i) => {
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.type = i < 2 ? 'triangle' : 'sine';
+        o.frequency.setValueAtTime(root * ratio, now + i * .018);
+        if (i >= 3) o.frequency.exponentialRampToValueAtTime(root * ratio * 1.012, now + .5);
+        o.connect(g); g.connect(audioCtx.destination);
+        const gain = i < 2 ? .032 : .018;
+        g.gain.setValueAtTime(.001, now + i * .018);
+        g.gain.exponentialRampToValueAtTime(gain, now + .035 + i * .018);
+        g.gain.exponentialRampToValueAtTime(.001, now + (kind === 'entrance' ? 1.25 : .72) + i * .05);
+        o.start(now + i * .018); o.stop(now + (kind === 'entrance' ? 1.3 : .8) + i * .05);
+      });
+    } catch (_) { /* optional finale embellishment */ }
   }
 
   function setPaused(value) {
@@ -10897,7 +11077,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     window.__types = () => enemies.map(en => en.type);
     window.__boss = () => {
       const b = enemies.find(en => en.type === 'boss');
-      return b ? { tier: b.tier, hp: b.hp, maxHp: b.maxHp, telType: b.telType, mode: b.mode, ghost: !!b.ghost, crit: !!b.crit, x: b.x, y: b.y } : null;
+      return b ? { tier: b.tier, hp: b.hp, maxHp: b.maxHp, telType: b.telType, mode: b.mode, ghost: !!b.ghost, crit: !!b.crit, dying: b.dying || 0, x: b.x, y: b.y } : null;
+    };
+    window.__parkBoss = () => {
+      const b = enemies.find(en => en.type === 'boss');
+      if (b) { b.x = VW - b.w - 40; b.y = b.baseY; b.mode = null; b.ghost = false; b.fade = 1; }
+    };
+    window.__setBossDying = progress => {
+      const b = enemies.find(en => en.type === 'boss' && en.dying > 0);
+      if (b) b.dying = b.dyingMax * (1 - clamp(progress, 0, .99));
     };
     window.__damage = n => { const b = enemies.find(en => en.type === 'boss'); if (b) b.hp = Math.max(1, b.hp - n); };
     window.__D = () => difficulties[difficultyKey];
@@ -10930,6 +11118,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // --- Test modes: ?stage=N starts at the beginning of a stage; ?boss=N and
   // ?mid=N start just before that encounter with normal trash spawns held back.
   // ?power=1..3 and ?wide=1..3 set weapon levels for direct combat checks.
+  // localhost-only ?max=1 locks every combat stat/resource and HP at full.
   // N is 1..5. If multiple modes are present, boss > mid > stage takes priority.
   // ?ending=1 skips straight to the full-clear ending -> staff roll -> RESULT
   // sequence, bypassing gameplay entirely.
@@ -10937,6 +11126,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const q = new URLSearchParams(location.search);
     const directPower = clamp(parseInt(q.get('power'), 10) || 1, 1, 3);
     const directWide = clamp(parseInt(q.get('wide'), 10) || 1, 1, 3);
+    testMaxLoadout = LOCAL_DEV && q.get('max') === '1';
     // Dev switch for the soundtrack unlock: ?unlock=1 sets the flag, ?unlock=0 clears it.
     if (q.get('unlock') !== null) {
       if (q.get('unlock') === '0') localStorage.removeItem('grochan-hard-clear');
@@ -10956,6 +11146,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         resetGame();
         player.power = directPower;
         player.spread = directWide;
+        if (testMaxLoadout) applyTestMaxLoadout();
         if (wantBikini) bikiniOwned = true;
         stageIndex = shopN - 1;
         stageResult = { kills: 0, time: 0, noDamageBonus: 0, timeBonus: 0 };
@@ -10974,6 +11165,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         resetGame();
         player.power = directPower;
         player.spread = directWide;
+        if (testMaxLoadout) applyTestMaxLoadout();
         if (wantBikini) bikiniOwned = true;
         stageIndex = n - 1; stageBanner = mode === 'stage' ? 3 : 0; bossState = 'waiting';
         midBossDone = mode === 'boss';

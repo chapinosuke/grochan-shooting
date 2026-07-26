@@ -9,6 +9,23 @@
 | `assets/images/bosses/sheets/abyss-siren-{1,2}.webp` | ユーザー提供（ChatGPT生成の人魚ポーズシート） | 本プロジェクト内で使用する素材としてユーザーから提供 |
 | `assets/images/bosses/poses/abyss-siren_{idle1,idle2,attack1,attack2,attack3,hurt1,hurt2}.webp` | 上記シートから切り出し・位置揃え | 同上 |
 
+## ラスボス（QUEEN OF HEARTBREAK）
+
+2026-07-26 にユーザーから提供された透過PNGのポーズシートを左右反転・分割し、指定のnear-lossless WebPへ変換。
+
+| ゲーム内ファイル | 出典 | ライセンス・利用許諾 |
+| --- | --- | --- |
+| `assets/images/bosses/sheets/heartbreak-queen-{1,2}.webp` | ユーザー提供（ChatGPT生成の仮面の女王ポーズシート） | 本プロジェクト内で使用する素材としてユーザーから提供 |
+| `assets/images/bosses/poses/heartbreak-queen_{idle1..4,attack1..4,hurt1..8}.webp` | 上記シート全16ポーズを切り出し・必要な攻撃のみ左右反転・位置揃え | 同上 |
+
+旧ラスボス `stage5_{idle,attack,hurt}.webp` は削除せず、再利用候補として保留中。
+
+## 花火効果音
+
+| ゲーム内ファイル | 出典 | ライセンス |
+| --- | --- | --- |
+| `assets/sfx/fireworks-finale.mp3` | 効果音ラボ「連続打ち上げ花火」（`fireworks-barrage1.mp3`） | フリー・商用利用可・クレジット不要。公式配布音源を96kbps / 44.1kHz MP3へ変換 |
+
 ## プレイヤー衣装（ビキニ）
 
 2026-07-25 にユーザーから提供。元PNGを `cwebp -q 88 -alpha_q 100` でwebp化したもの。
