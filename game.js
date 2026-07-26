@@ -3422,6 +3422,29 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // gameplay sprites (which draw in drawGame) so only scenery drifts.
   function camBreath() { return { x: Math.sin(elapsed * .07) * 4, y: Math.cos(elapsed * .05) * 3 }; }
 
+  // 64px tile of paired light/dark speckle, built once and reused as a repeating
+  // pattern. Half the pixels lift and half drop by the same tiny amount, so it
+  // dithers the sky's gradient steps away without tinting or brightening it.
+  let skyDitherPattern;
+  function skyDither() {
+    if (skyDitherPattern !== undefined) return skyDitherPattern;
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const img = g.createImageData(64, 64);
+    for (let i = 0; i < 64 * 64; i++) {
+      const v = Math.sin(i * 12.9898) * 43758.5453;
+      const f = v - Math.floor(v);
+      const tone = f < .5 ? 0 : 255;
+      img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = tone;
+      // Deliberately near-invisible: dither you can see is just noise.
+      img.data[i * 4 + 3] = 2 + ((f * 100) % 5);
+    }
+    g.putImageData(img, 0, 0);
+    skyDitherPattern = ctx.createPattern(c, 'repeat');
+    return skyDitherPattern;
+  }
+
   function drawBackdrop() {
     const stage = stages[stageIndex];
     const br = camBreath();
@@ -3433,6 +3456,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       return grad;
     });
     ctx.fillStyle = g; ctx.fillRect(-30, -30, VW + 60, VH + 60);
+    // A three-stop gradient stretched over 720px bands visibly on a flat panel.
+    // One tile of paired light/dark noise breaks the steps up without shifting
+    // the sky's brightness — the cheapest realism in the whole backdrop.
+    const dp = skyDither();
+    if (dp) { ctx.save(); ctx.fillStyle = dp; ctx.fillRect(-30, -30, VW + 60, VH + 60); ctx.restore(); }
     const dir = backgroundDirector();
     // Chapter tint goes under the scenery — it should read as the light in the
     // air, not as a filter over the buildings.
@@ -4787,13 +4815,19 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // and a warm glow leaks up from the neon ground for depth.
   function drawAtmosphere(stage) {
     ctx.save();
+    // Aerial perspective is densest along the horizon and thins BOTH ways — up
+    // into clear sky and down into the near ground. A ramp that just gets
+    // heavier toward the bottom of the screen fogs the foreground, which is the
+    // one part of the frame that should stay crisp.
     const haze = cachedGrad('haze' + stageIndex, () => {
-      const grad = ctx.createLinearGradient(0, 300, 0, 660);
+      const grad = ctx.createLinearGradient(0, 250, 0, 690);
       grad.addColorStop(0, 'rgba(0,0,0,0)');
-      grad.addColorStop(1, hexA(stage.sky[1], .3));
+      grad.addColorStop(.5, hexA(stage.sky[1], .12));
+      grad.addColorStop(.8, hexA(stage.sky[1], .34));   // the horizon band itself
+      grad.addColorStop(1, hexA(stage.sky[1], .14));
       return grad;
     });
-    ctx.fillStyle = haze; ctx.fillRect(0, 300, VW, 360);
+    ctx.fillStyle = haze; ctx.fillRect(0, 250, VW, 440);
     const glow = cachedGrad('atmoGlow' + stageIndex, () => {
       const grad = ctx.createLinearGradient(0, VH, 0, VH - 150);
       grad.addColorStop(0, hexA(stage.accent2, .16));
@@ -5674,10 +5708,39 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.fillStyle = hexA(stage.accent2, .8); ctx.fillRect(0, ground, VW, 3);
   }
 
+  // Cumulus, not three arcs on a rectangle: a crown of six unequal lobes over a
+  // flat base, with the shadowed underside and the top-left lit rim a real cloud
+  // has. The lobe sizes are hashed off the cloud's own y/scale, so each one is
+  // individual and stays that way as it drifts (no per-frame randomness).
   function drawCloud(c, color = '#d7ddff', alpha = .11) {
-    ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = color;
-    ctx.fillRect(c.x, c.y + 25 * c.s, 150 * c.s, 30 * c.s);
-    ctx.beginPath(); ctx.arc(c.x + 35*c.s, c.y + 28*c.s, 30*c.s, Math.PI, 0); ctx.arc(c.x + 85*c.s, c.y + 24*c.s, 43*c.s, Math.PI, 0); ctx.arc(c.x + 128*c.s, c.y + 30*c.s, 27*c.s, Math.PI, 0); ctx.fill(); ctx.restore();
+    const s = c.s, base = c.y + 30 * s;
+    const seed = c.y * .37 + c.s * 11.3;
+    const n = k => { const v = Math.sin(seed + k * 2.7) * 43758.5453; return v - Math.floor(v); };
+    const lobes = [];
+    for (let i = 0; i < 6; i++) {
+      const t = i / 5, swell = Math.sin(t * Math.PI);
+      lobes.push({
+        x: c.x + (14 + t * 122) * s,
+        y: c.y + (30 - swell * 13 - n(i) * 7) * s,
+        r: (11 + swell * 20 + n(i + 9) * 9) * s,
+      });
+    }
+    const path = () => {
+      ctx.beginPath(); ctx.moveTo(c.x + 2 * s, base);
+      for (const L of lobes) ctx.arc(L.x, L.y, L.r, Math.PI, 0);
+      ctx.lineTo(c.x + 148 * s, base); ctx.closePath();
+    };
+    ctx.save();
+    ctx.globalAlpha = alpha; ctx.fillStyle = color;
+    path(); ctx.fill();
+    path(); ctx.clip();
+    // Flat, shadowed base — the single detail that stops a cloud reading as a blob.
+    ctx.globalAlpha = alpha * .5; ctx.fillStyle = '#0a1030';
+    ctx.fillRect(c.x - 10 * s, base - 13 * s, 175 * s, 26 * s);
+    // Lit crown, on the same top-left key light the rest of the game uses.
+    ctx.globalAlpha = alpha * .75; ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.ellipse(c.x + 58 * s, c.y + 6 * s, 52 * s, 11 * s, -.13, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
 
   function drawSearchlight(p, stage) {
@@ -7533,7 +7596,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function drawCity(offset, ground, color, unit, alpha, depth = 16) {
     const stage = stages[stageIndex];
     const vpx = VW / 2, vpy = 552;
-    const front = color, sideCol = shade(color, .58), edge = stage.accent;
+    // Aerial perspective, through the same fogMix model every other backdrop
+    // layer already uses so the city agrees with them. `alpha` encodes how far
+    // back a layer sits, so it maps straight onto a depth: distant blocks take
+    // on the sky's colour and lose face-to-face contrast, which is what reads
+    // as distance. Fading alone just makes them thin, not far away.
+    const z = (1 - alpha) * 2000;
+    const front = fogMix(color, z);
+    const sideCol = fogMix(mixHex(color, '#000000', .42), z);
+    const edge = fogMix(stage.accent, z * .5);
     ctx.save(); ctx.globalAlpha = alpha;
     for (let i = -2; i < 28; i++) {
       const x = i * unit + offset;
@@ -7553,9 +7624,21 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = front; ctx.fillRect(x, topY, w, h);
       // neon vertical edge where the two faces meet
       ctx.globalAlpha = alpha * .5; ctx.fillStyle = edge; ctx.fillRect(fx - (dir > 0 ? 2 : 0), topY, 2, h); ctx.globalAlpha = alpha;
-      // lit windows on the front face
-      ctx.fillStyle = i % 3 ? stage.accent : stage.accent2;
-      for (let yy = topY + 14; yy < ground - 10; yy += 18) for (let xx = x + 8; xx < x + w - 6; xx += 14) if ((xx + yy + i) % 3 > 1) ctx.fillRect(xx, yy, 4, 6);
+      // Lit windows. A single colour at one brightness reads as a printed
+      // pattern; a real tower has most windows dark, the lit ones at scattered
+      // brightnesses, and a minority burning warm incandescent among the neon.
+      const cool = fogMix(i % 3 ? stage.accent : stage.accent2, z * .6);
+      const warm = fogMix('#ffd79a', z * .6);
+      for (let yy = topY + 14; yy < ground - 10; yy += 18) {
+        for (let xx = x + 8; xx < x + w - 6; xx += 14) {
+          const s = (xx * 7 + yy * 13 + i * 31) & 1023;
+          if (s % 5 < 2) continue;                       // most panes are dark
+          ctx.globalAlpha = alpha * (.42 + (s % 9) / 13);
+          ctx.fillStyle = s % 13 === 0 ? warm : cool;
+          ctx.fillRect(xx, yy, 4, 6);
+        }
+      }
+      ctx.globalAlpha = alpha;
     }
     ctx.restore();
   }
@@ -10651,6 +10734,16 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
   function hexA(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
   function shade(hex, f) { const n = parseInt(hex.slice(1), 16); const r = Math.min(255, Math.round(((n >> 16) & 255) * f)); const g = Math.min(255, Math.round(((n >> 8) & 255) * f)); const b = Math.min(255, Math.round((n & 255) * f)); return `rgb(${r},${g},${b})`; }
+  // Blend two hex colours. Used for aerial perspective: distant scenery is mixed
+  // toward the sky's own colour rather than just faded out, which is what the
+  // air between camera and subject actually does to it.
+  // Returns hex, not rgb(), so results compose: mixHex(mixHex(...), ...) works,
+  // and hexA/shade still accept the output.
+  function mixHex(a, b, t) {
+    const x = parseInt(a.slice(1), 16), y = parseInt(b.slice(1), 16), k = clamp(t, 0, 1);
+    const m = (s) => Math.round(((x >> s) & 255) + (((y >> s) & 255) - ((x >> s) & 255)) * k);
+    return '#' + ((1 << 24) | (m(16) << 16) | (m(8) << 8) | m(0)).toString(16).slice(1);
+  }
 
   function starPath(cx, cy, outer, inner, points) { ctx.beginPath(); for (let i=0;i<points*2;i++){ const a=-Math.PI/2+i*Math.PI/points; const r=i%2?inner:outer; const x=cx+Math.cos(a)*r, y=cy+Math.sin(a)*r; i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.closePath(); }
 
