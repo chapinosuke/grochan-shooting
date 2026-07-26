@@ -146,7 +146,7 @@
   const BOSS_VOICE_VOL = .8;
   const bossVoiceCfg = [
     { char: 'thief-boy', rate: 1.05 },            // st1 MASQUERADE 仮面の道化
-    { char: 'swordman', rate: 0.72 },             // st2 SERVER GOLEM 鋼鉄巨人
+    { char: 'witch', rate: 0.82 },                // st2 ABYSS SIREN 深海の人魚
     { char: 'necromancer-oldwoman', rate: 0.88 }, // st3 INFERNO DJINN 炎上魔人
     { char: 'wizard', rate: 0.85 },               // st4 BOT GENERAL ロボ将軍
     { char: 'witch', rate: 1.0 }                  // st5 QUEEN 女王
@@ -300,12 +300,12 @@
     {
       name: 'TOKYO MIDNIGHT', boss: 'MASQUERADE', midBoss: 'HEART BREAKER', theme: 'neon', subtitle: '渋谷スクランブル、眠らない東京の夜',
       sky: ['#120b3e', '#3b1878', '#f044a0'], far: '#28145e', city: '#100b34', accent: '#31e8ff', accent2: '#ff3e9d',
-      spawnTable: [['drone', 5], ['bat', 4], ['spinner', 3], ['tank', 2], ['racer', 4], ['seeker', 1]],
+      spawnTable: [['crow', 5], ['alleycat', 3], ['neonmoth', 4], ['drone', 2], ['racer', 2]],
       melody: [440, 523.25, 659.25, 523.25, 392, 493.88, 587.33, 493.88, 349.23, 440, 523.25, 659.25, 392, 493.88, 659.25, 783.99],
       bass: [110, 110, 98, 98, 87.31, 87.31, 98, 123.47]
     },
     {
-      name: 'AQUA HIGHWAY', boss: 'SERVER GOLEM', midBoss: 'DEEP BLUE DIVA', theme: 'aqua', subtitle: '潮風のハイウェイを駆け抜けろ',
+      name: 'AQUA HIGHWAY', boss: 'ABYSS SIREN', midBoss: 'DEEP BLUE DIVA', theme: 'aqua', subtitle: '潮風のハイウェイを駆け抜けろ',
       sky: ['#041b3d', '#075987', '#20c5c9'], far: '#123c68', city: '#071d42', accent: '#65fff2', accent2: '#2f8cff',
       // Stage 2 fields real deep-sea fauna instead of the shared mecha roster:
       // dumbo octopus, humpback anglerfish, oarfish and a giant moray, with the
@@ -318,21 +318,21 @@
     {
       name: 'SUNSET FACTORY', boss: 'INFERNO DJINN', midBoss: 'BLAZE EMPRESS', theme: 'factory', subtitle: '燃える夕日と鋼鉄の罠',
       sky: ['#351036', '#a42f4f', '#ff9f43'], far: '#592141', city: '#28132e', accent: '#ffe15a', accent2: '#ff5a36',
-      spawnTable: [['tank', 5], ['turret', 4], ['ember', 5], ['drone', 2], ['walker', 4], ['spinner', 2]],
+      spawnTable: [['slagling', 5], ['rivetbeetle', 4], ['furnacehound', 3], ['turret', 2], ['walker', 2]],
       melody: [329.63, 329.63, 392, 329.63, 311.13, 329.63, 392, 440, 329.63, 329.63, 392, 493.88, 440, 392, 329.63, 293.66],
       bass: [82.41, 82.41, 82.41, 82.41, 77.78, 77.78, 98, 98]
     },
     {
       name: 'CYBER STORM', boss: 'BOT GENERAL', midBoss: 'VOLT PHANTOM', theme: 'storm', subtitle: '雷鳴とどろく電脳空域',
       sky: ['#071d24', '#13554b', '#48b849'], far: '#164636', city: '#071f25', accent: '#72ff68', accent2: '#31e8ff',
-      spawnTable: [['glitch', 5], ['spinner', 4], ['bat', 2], ['turret', 3], ['seeker', 4], ['racer', 2]],
+      spawnTable: [['cloudray', 5], ['voltbug', 4], ['packetwyrm', 3], ['glitch', 3], ['seeker', 2]],
       melody: [293.66, 349.23, 440, 349.23, 293.66, 369.99, 440, 587.33, 293.66, 349.23, 466.16, 440, 349.23, 293.66, 246.94, 293.66],
       bass: [73.42, 73.42, 87.31, 87.31, 73.42, 73.42, 92.5, 110]
     },
     {
       name: 'HEART PALACE', boss: 'QUEEN OF HEARTBREAK', midBoss: 'LORD CENSOR', theme: 'palace', subtitle: '決戦、ハートの女王の宮殿',
       sky: ['#25051d', '#72114e', '#d82065'], far: '#4d123d', city: '#21061d', accent: '#ffe15a', accent2: '#ff3e9d',
-      spawnTable: [['cupid', 5], ['drone', 2], ['bat', 3], ['spinner', 3], ['tank', 3], ['knight', 4], ['seeker', 2]],
+      spawnTable: [['rosebud', 5], ['cardguard', 4], ['teacup', 3], ['cupid', 3], ['knight', 2]],
       melody: [261.63, 311.13, 392, 523.25, 466.16, 392, 311.13, 261.63, 233.08, 293.66, 349.23, 466.16, 392, 349.23, 293.66, 261.63],
       bass: [65.41, 65.41, 77.78, 77.78, 98, 98, 58.27, 65.41]
     }
@@ -351,7 +351,7 @@
     ],
     interludes: [
       [{ img: 'assets/images/story/int1_shard1.webp', text: 'MASQUERADEを撃破！仮面の道化は、みんなのハートを「いいね」に変えて集めていた。残る反応は海の方へ！' }],
-      [{ img: 'assets/images/story/int2_transmission.webp', text: 'SERVER GOLEMの中には、ぬすまれたハートがぎっしり。「……気をつけて。それ、炎上の燃料にされてる……」くろ子の通信だ！' }],
+      [{ img: 'assets/images/story/int2_transmission.webp', text: 'ABYSS SIRENを退けると、深海に閉じこめられていたハートがいっせいに浮かび上がった。「……次は灼熱地帯。気をつけて……」くろ子の通信だ！' }],
       [{ img: 'assets/images/story/int3_resolve.webp', text: 'INFERNO DJINNを鎮火！怒りや悲しみをあおるほど、炎上魔人は大きくなっていた。「もう、だれの心も燃やさせない！」' }],
       [{ img: 'assets/images/story/int4_palace_reveal.webp', text: 'BOT GENERALの自動投稿軍団が停止。命令の発信元は、嵐の雲の上——ハートの宮殿。黒幕の女王が待っている！' }],
     ],
@@ -389,10 +389,11 @@
     return set;
   };
   const GEN_COUNTS = { idle: 1, attack: 1, hurt: 1 }, SHEET_COUNTS = { idle: 2, attack: 3, hurt: 2 };
-  // Stage bosses: the four hand-made SNS villains + the queen finale.
+  // Stage bosses. SERVER GOLEM's complete set remains in assets as a held
+  // design; ABYSS SIREN takes the active stage-2 slot without deleting it.
   const bossSets = [
     loadSet('masquerade', SHEET_COUNTS),
-    loadSet('server-golem', SHEET_COUNTS),
+    loadSet('abyss-siren', SHEET_COUNTS),
     loadSet('inferno-djinn', SHEET_COUNTS),
     loadSet('bot-general', SHEET_COUNTS),
     loadSet('stage5', GEN_COUNTS),
@@ -410,7 +411,7 @@
   // palette so they read as damage rather than as more scenery.
   const BOSS_TINT = [
     { hit: '#9ff4ff', crit: '#ff3e9d' },  // MASQUERADE   pale scan -> magenta cracks
-    { hit: '#ffffff', crit: '#ff8a35' },  // SERVER GOLEM white spray -> warning amber
+    { hit: '#f3d5ff', crit: '#b832ff' },  // ABYSS SIREN pearl flash -> abyss violet
     { hit: '#7ad7ff', crit: '#fff3bd' },  // INFERNO DJINN doused blue -> white heat
     { hit: '#ff4d4d', crit: '#72ff68' },  // BOT GENERAL   error red -> glitch green
     { hit: '#ffffff', crit: '#7a1848' },  // QUEEN         pure white -> bruised violet
@@ -466,6 +467,14 @@
     // timer jumping up) advances to the next pose in the set
     if ((e.attackT || 0) > (e.prevAttackT || 0)) e.attackIdx = ((e.attackIdx || 0) + 1) % 3;
     e.prevAttackT = e.attackT || 0;
+  }
+
+  // ABYSS SIREN's sheet depicts a specific move in every attack frame. Pin the
+  // frame instead of cycling it so the on-screen motion always matches the art.
+  function setBossAttackPose(e, frame, duration = .58) {
+    e.attackIdx = frame;
+    e.attackT = duration;
+    e.prevAttackT = duration;
   }
 
   let storySlides = null, storyStep = 0, storyDone = null;
@@ -1354,9 +1363,10 @@
   //   ORGANIC … living creatures: no rivets, no crown, no squad badge, no
   //             cracked plating — flesh doesn't spall, it scars and bleeds light
   //   SOLO    … too big or too slow to make sense seven-abreast in a formation
-  const GROUND_TYPES = ['tank', 'turret', 'ember', 'walker'];
-  const ORGANIC_TYPES = ['bat', 'jelly', 'manta', 'dumbo', 'angler', 'oarfish', 'moray'];
-  const SOLO_TYPES = ['moray', 'oarfish'];
+  const GROUND_TYPES = ['tank', 'turret', 'ember', 'walker', 'alleycat', 'slagling', 'furnacehound', 'cardguard', 'teacup'];
+  const ORGANIC_TYPES = ['bat', 'jelly', 'manta', 'dumbo', 'angler', 'oarfish', 'moray',
+    'crow', 'alleycat', 'neonmoth', 'slagling', 'furnacehound', 'cloudray', 'voltbug', 'packetwyrm', 'rosebud'];
+  const SOLO_TYPES = ['moray', 'oarfish', 'packetwyrm'];
   const isGroundType = t => GROUND_TYPES.includes(t);
   const isOrganic = t => ORGANIC_TYPES.includes(t);
 
@@ -1389,6 +1399,19 @@
     else if (type === 'walker') e = { type, x: VW + 90, y: 548, baseY: 548, w: 84, h: 92, hp: 8, maxHp: 8, vx: 92 + rank * 18, t: Math.random() * 2, wave: false, points: 760, fire: .85 };
     else if (type === 'seeker') e = { type, x: VW + 80, y, baseY: y, w: 68, h: 68, hp: 5, maxHp: 5, vx: 155 + rank * 30, t: Math.random() * 6, wave: true, points: 520, fire: 1.15 };
     else if (type === 'knight') e = { type, x: VW + 80, y: Math.min(y, 500), baseY: Math.min(y, 500), w: 72, h: 82, hp: 7, maxHp: 7, vx: 115 + rank * 20, t: Math.random() * 6, wave: true, points: 680, fire: 1.3 };
+    // --- Stage-signature small fry --------------------------------------
+    else if (type === 'crow') e = { type, x: VW + 70, y, baseY: y, w: 76, h: 54, hp: 2, maxHp: 2, vx: 235 + rank * 44, t: Math.random() * 6, wave: true, points: 210, fire: 99 };
+    else if (type === 'alleycat') e = { type, x: VW + 80, y: 570, baseY: 570, w: 82, h: 64, hp: 4, maxHp: 4, vx: 155 + rank * 28, t: Math.random() * 6, wave: false, points: 390, fire: 1.8 };
+    else if (type === 'neonmoth') e = { type, x: VW + 70, y, baseY: y, w: 78, h: 68, hp: 3, maxHp: 3, vx: 120 + rank * 26, t: Math.random() * 6, wave: true, points: 330, fire: 2 };
+    else if (type === 'slagling') e = { type, x: VW + 70, y: 586, baseY: 586, w: 62, h: 54, hp: 3, maxHp: 3, vx: 132 + rank * 24, t: Math.random() * 6, wave: false, points: 360, fire: 2.1 };
+    else if (type === 'rivetbeetle') e = { type, x: VW + 80, y, baseY: y, w: 82, h: 62, hp: 6, maxHp: 6, vx: 115 + rank * 22, t: Math.random() * 6, wave: true, points: 610, fire: 1.55 };
+    else if (type === 'furnacehound') e = { type, x: VW + 90, y: 556, baseY: 556, w: 104, h: 82, hp: 8, maxHp: 8, vx: 168 + rank * 30, t: Math.random() * 6, wave: false, points: 850, fire: 1.45 };
+    else if (type === 'cloudray') e = { type, x: VW + 90, y, baseY: y, w: 98, h: 60, hp: 4, maxHp: 4, vx: 142 + rank * 30, t: Math.random() * 6, wave: true, points: 520, fire: 1.8 };
+    else if (type === 'voltbug') e = { type, x: VW + 70, y, baseY: y, w: 68, h: 66, hp: 3, maxHp: 3, vx: 190 + rank * 38, t: Math.random() * 6, wave: true, points: 430, fire: 1.4 };
+    else if (type === 'packetwyrm') e = { type, x: VW + 120, y, baseY: y, w: 154, h: 64, hp: 10, maxHp: 10, vx: 92 + rank * 18, t: Math.random() * 6, wave: true, points: 1200, fire: 1.7 };
+    else if (type === 'rosebud') e = { type, x: VW + 70, y, baseY: y, w: 72, h: 72, hp: 4, maxHp: 4, vx: 118 + rank * 24, t: Math.random() * 6, wave: true, points: 520, fire: 1.75 };
+    else if (type === 'cardguard') e = { type, x: VW + 80, y: 554, baseY: 554, w: 74, h: 86, hp: 7, maxHp: 7, vx: 110 + rank * 20, t: Math.random() * 6, wave: false, points: 760, fire: 1.3 };
+    else if (type === 'teacup') e = { type, x: VW + 80, y: 582, baseY: 582, w: 82, h: 56, hp: 5, maxHp: 5, vx: 145 + rank * 24, t: Math.random() * 6, wave: false, points: 590, fire: 1.65 };
     // --- AQUA HIGHWAY deep-sea fauna -------------------------------------
     // Dumbo octopus (メンダコ): the slowest thing in the stage, drifting on its
     // ear fins. Soft, cheap to kill, but it fogs the lane with ink on the way out.
@@ -1424,7 +1447,7 @@
       e.flank = true; e.x = -e.w - 20;
       burst(30, e.y + e.h / 2, stages[stageIndex].accent2, 10, 200);
     }
-    const canDive = ['bat', 'racer', 'cupid', 'knight'].includes(e.type);
+    const canDive = ['bat', 'racer', 'cupid', 'knight', 'crow', 'voltbug'].includes(e.type);
     e.behavior = flank ? 'cruise' : formation ? (formation.shape === 'snake' ? 'snake' : 'formation') : canDive && Math.random() < .48 ? 'dive' : Math.random() < .24 ? 'stagger' : 'cruise';
     if (e.behavior === 'snake') e.wave = false;   // the chain sine replaces the solo bob
     e.fireMax = e.fire;
@@ -1561,12 +1584,15 @@
     const sprite = frameReady(bossSets[stageIndex].idle[0]) ? bossSets[stageIndex].idle[0] : bossSprites[stageIndex];
     let w = 460, h = 380;
     if (sprite && sprite.complete && sprite.naturalWidth) {
-      h = 560; w = Math.round(h * sprite.naturalWidth / sprite.naturalHeight);
+      h = stageIndex === 1 ? 640 : 560;
+      w = Math.round(h * sprite.naturalWidth / sprite.naturalHeight);
     }
     // The contact box is pulled inside the artwork: several sprites are wide
     // enough to overlap the player's own movement limit, which turned simply
     // standing at the right edge into passive contact damage.
-    enemies.push({ type: 'boss', x: VW + 380, y: 90, baseY: 90, w, h, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8, hitInset: Math.round(w * .16), hitInsetY: Math.round(h * .08), tier: 0, tierBanner: 0, crit: false });
+    const bossY = stageIndex === 1 ? 30 : 90;
+    const hitInset = Math.round(w * (stageIndex === 1 ? .22 : .16));
+    enemies.push({ type: 'boss', x: VW + 380, y: bossY, baseY: bossY, w, h, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8, hitInset, hitInsetY: Math.round(h * .08), tier: 0, tierBanner: 0, crit: false });
     bossState = 'active';
     musicStep = 0; musicClock = 0;
     clearEnemyFire();
@@ -1661,6 +1687,51 @@
     }
     if (e.type === 'walker') {
       for (const lift of [-250, -355]) enemyBullets.push({ x: e.x, y: e.y + 28, vx: Math.cos(aim) * 190, vy: lift, gravity: 420, r: 10, life: 5, damage: 20, fire: true });
+      return;
+    }
+    if (e.type === 'alleycat') {
+      // The cat swats a neon sign shard along the pavement.
+      enemyBullets.push({ x: e.x + 4, y: e.y + 43, vx: Math.cos(aim) * 265, vy: -170, gravity: 360, r: 8, life: 4.5, damage: 15, heart: true });
+      return;
+    }
+    if (e.type === 'neonmoth') {
+      for (const spread of [-.28, 0, .28]) enemyBullets.push({ x: e.x + 16, y: e.y + 34, vx: Math.cos(aim + spread) * 155, vy: Math.sin(aim + spread) * 155, r: 8, life: 5.5, damage: 13, lure: true, drift: 55 });
+      return;
+    }
+    if (e.type === 'slagling') {
+      enemyBullets.push({ x: e.x + 10, y: e.y + 22, vx: Math.cos(aim) * 180, vy: -235, gravity: 430, r: 10, life: 4.5, damage: 18, fire: true });
+      return;
+    }
+    if (e.type === 'rivetbeetle') {
+      for (const spread of [-.12, .12]) enemyBullets.push({ x: e.x + 8, y: e.y + 31, vx: Math.cos(aim + spread) * 290, vy: Math.sin(aim + spread) * 290, r: 8, life: 5, damage: 17, fire: true });
+      return;
+    }
+    if (e.type === 'furnacehound') {
+      for (let i = 0; i < 4; i++) enemyBullets.push({ x: e.x + 5, y: e.y + 35, vx: Math.cos(aim + (i - 1.5) * .13) * 240, vy: Math.sin(aim + (i - 1.5) * .13) * 240, r: 9, life: 4.5, damage: 18, fire: true });
+      return;
+    }
+    if (e.type === 'cloudray') {
+      for (const spread of [-.2, .2]) enemyBullets.push({ x: e.x + 10, y: e.y + 31, vx: Math.cos(aim + spread) * 210, vy: Math.sin(aim + spread) * 210, r: 9, life: 5.5, damage: 17, volt: true, drift: 65 });
+      return;
+    }
+    if (e.type === 'voltbug') {
+      enemyBullets.push({ x: e.x + 12, y: e.y + 33, vx: Math.cos(aim) * 340, vy: Math.sin(aim) * 340, r: 8, life: 4.5, damage: 17, volt: true, homing: .3 });
+      return;
+    }
+    if (e.type === 'packetwyrm') {
+      for (let i = 0; i < 5; i++) enemyBullets.push({ x: e.x + 8, y: e.y + 32, vx: Math.cos(aim + (i - 2) * .16) * 245, vy: Math.sin(aim + (i - 2) * .16) * 245, r: 9, life: 5.5, damage: 18, volt: true });
+      return;
+    }
+    if (e.type === 'rosebud') {
+      for (const spread of [-.24, 0, .24]) enemyBullets.push({ x: e.x + 18, y: e.y + 36, vx: Math.cos(aim + spread) * 190, vy: Math.sin(aim + spread) * 190, r: 9, life: 6, damage: 16, heart: true, homing: .28 });
+      return;
+    }
+    if (e.type === 'cardguard') {
+      enemyBullets.push({ x: e.x + 4, y: e.y + 32, vx: Math.cos(aim) * 315, vy: Math.sin(aim) * 315, r: 10, life: 5, damage: 20, heart: true });
+      return;
+    }
+    if (e.type === 'teacup') {
+      for (const spread of [-.18, .18]) enemyBullets.push({ x: e.x + 10, y: e.y + 18, vx: Math.cos(aim + spread) * 170, vy: Math.sin(aim + spread) * 170 - 80, gravity: 80, r: 10, life: 5.5, damage: 16, bubble: true });
       return;
     }
     // Dumbo octopus: a slow ink screen, not aimed fire. Three blots fanned
@@ -1790,7 +1861,7 @@
         e.geyserX = clamp(player.x + 56 + (Math.random() - .5) * 420, 70, VW - 90);
         e.geyserT = .55;
       }
-      if (e.geyserT > 0) { e.geyserT -= dt; if (e.geyserT <= 0) golemGeyser(e.geyserX); }
+      if (e.geyserT > 0) { e.geyserT -= dt; if (e.geyserT <= 0) sirenRockSpout(e.geyserX); }
     } else if (cfg.style === 'ascend') {
       if (e.hideAtk <= 0) {
         e.hideAtk = .62;
@@ -1829,7 +1900,7 @@
       // Surfaces behind the player on the far left — the one moment she is flanked.
       e.x = 120; e.y = e.homeY;
       shockwaves.push({ x: e.x + e.w / 2, y: e.homeY + e.h / 2, r: 14, speed: 520, life: .8, max: .8, color: '#65fff2' });
-      bossBubbles(e); sfx('bubble');
+      sirenOrbVolley(e); sfx('bubble');
     } else if (cfg.style === 'ascend') {
       // Comes down somewhere in the player's half — the only boss that can end
       // up on her left — and throws fire along the floor in both directions.
@@ -1904,6 +1975,7 @@
   function bossTelegraph(e, type, sec, opts = {}) {
     e.telType = type; e.telMax = sec; e.tel = sec;
     e.telX = opts.x; e.telY = opts.y;
+    if (stageIndex === 1) e.attackIdx = type === 'claw' ? 0 : type === 'tailslam' ? 2 : 1;
     sfx('boss');
   }
 
@@ -1973,11 +2045,18 @@
       }
     } else if (idx === 1) {
       e.y = bobY(e.baseY + 30, 80);
-      if (engaged && e.fire <= 0) { bossBubbles(e); e.fire = e.phase2 ? .48 : .7; }
+      if (engaged && e.fire <= 0) { sirenOrbVolley(e); e.fire = e.phase2 ? .52 : .74; }
       if (engaged && e.sp <= 0 && !(e.tel > 0)) {
-        const pick = e.tier >= 1 && Math.random() < .45 ? 'flood' : 'wave';
-        bossTelegraph(e, pick, pick === 'flood' ? telFor(40) : telFor(90), { y: clamp(player.y + 55, 130, 590) });
-        e.sp = [4.6, 3.2, 2.6][e.tier || 0];
+        const roll = Math.random();
+        const pick = e.tier >= 2
+          ? (roll < .34 ? 'claw' : roll < .67 ? 'abyssorb' : 'tailslam')
+          : e.tier >= 1
+            ? (roll < .48 ? 'claw' : roll < .78 ? 'abyssorb' : 'tailslam')
+            : (roll < .58 ? 'claw' : 'abyssorb');
+        bossTelegraph(e, pick, telFor(pick === 'tailslam' ? 90 : pick === 'abyssorb' ? 70 : 55), {
+          x: clamp(player.x + 56, 100, VW - 120), y: clamp(player.y + 55, 100, 620),
+        });
+        e.sp = [4.7, 3.4, 2.8][e.tier || 0];
       }
     } else if (idx === 2) {
       e.y = bobY(e.baseY + 50, 55);
@@ -2064,6 +2143,9 @@
     else if (type === 'crossbeam') bossCrossBeam(e);
     else if (type === 'heatbeam') bossHeatBeam(e);
     else if (type === 'flood') bossDataFlood(e);
+    else if (type === 'claw') sirenClawRake(e);
+    else if (type === 'abyssorb') sirenAbyssOrb(e);
+    else if (type === 'tailslam') sirenTailSlam(e);
     else if (type === 'railgun') bossRailgun(e, e.phase2 ? 3 : 2);
     else if (type === 'cannon') bossHeartCannon(e);
     else if (type === 'lattice') bossRoseLattice(e);
@@ -2090,6 +2172,61 @@
       enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 190, vy: Math.sin(a) * 190, r: 11, life: 7, damage: 17, bubble: true, drift: 220 });
     }
     sfx('bubble');
+  }
+
+  function sirenOrbVolley(e) {
+    setBossAttackPose(e, 1, .5); // attack2: both hands launch a purple orb
+    const ox = e.x + 28, oy = e.y + e.h * .4;
+    const aim = Math.atan2(player.y + 45 - oy, player.x + 40 - ox);
+    for (const spread of [-.2, 0, .2]) {
+      const a = aim + spread;
+      enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 235, vy: Math.sin(a) * 235, r: 11, life: 6.5, damage: 18, abyss: true, drift: 42 });
+    }
+    burst(ox, oy, '#ca55ff', 12, 220); sfx('boss');
+  }
+
+  function sirenClawRake(e) {
+    setBossAttackPose(e, 0, .72); // attack1: extended claws and painted slash arcs
+    e.fire = Math.max(e.fire, .8);
+    const ox = e.x + 30, oy = e.y + e.h * .36;
+    const aim = Math.atan2(player.y + 45 - oy, player.x + 40 - ox);
+    const n = Math.max(3, Math.round(4 * difficulties[difficultyKey].barrage));
+    for (let i = 0; i < n; i++) {
+      const a = aim + (i - (n - 1) / 2) * .18;
+      enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 350, vy: Math.sin(a) * 350, r: 15, life: 4.2, damage: 23, claw: true, grazeMul: .55 });
+    }
+    burst(ox, oy, '#e45cff', 18, 300); shake = Math.max(shake, 8); sfx('hurt');
+  }
+
+  function sirenAbyssOrb(e) {
+    setBossAttackPose(e, 1, .85); // attack2: the large illustrated magic sphere
+    e.fire = Math.max(e.fire, .95);
+    const ox = e.x + 26, oy = e.y + e.h * .4;
+    const aim = Math.atan2(player.y + 45 - oy, player.x + 40 - ox);
+    enemyBullets.push({ x: ox, y: oy, vx: Math.cos(aim) * 165, vy: Math.sin(aim) * 165, r: 30, life: 8, damage: 32, abyss: true, homing: .22, grazeMul: .35, giant: true });
+    const satellites = Math.max(4, Math.round(5 * difficulties[difficultyKey].barrage));
+    for (let i = 0; i < satellites; i++) {
+      const a = aim + (i - (satellites - 1) / 2) * .16;
+      enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 260, vy: Math.sin(a) * 260, r: 8, life: 6, damage: 15, abyss: true });
+    }
+    shockwaves.push({ x: ox, y: oy, r: 12, speed: 420, life: .7, max: .7, color: '#d75cff' });
+    shake = Math.max(shake, 11); flash = Math.max(flash, .18); sfx('special');
+  }
+
+  function sirenTailSlam(e) {
+    setBossAttackPose(e, 2, .9); // attack3: raised tail smashing rock and seabed
+    e.fire = Math.max(e.fire, 1.0);
+    const x = e.telX === undefined ? clamp(player.x + 56, 100, VW - 120) : e.telX;
+    const D = difficulties[difficultyKey];
+    const rocks = Math.max(7, Math.round(10 * D.barrage));
+    for (let i = 0; i < rocks; i++) {
+      const spread = (i - (rocks - 1) / 2) * 21;
+      enemyBullets.push({ x: x + spread, y: 685 + Math.abs(spread) * .08, vx: spread * .32, vy: -430 - Math.random() * 170, gravity: 650, r: 10 + Math.random() * 6, life: 3.1, damage: 22, rock: true, grazeMul: .45 });
+    }
+    hazards.push({ kind: 'field', x, y: 650, w: 390, h: 72 / D.gapW, ang: Math.PI, warn: .08, live: .35, fade: .32, lock: 0, t: 0, damage: 28, color: '#b832ff' });
+    burstDebris(x, 650, ['#6d5a75', '#c94cff', '#ffffff'], 26, 420);
+    shockwaves.push({ x, y: 650, r: 18, speed: 560, life: .8, max: .8, color: '#d75cff' });
+    shake = Math.max(shake, 18); flash = Math.max(flash, .25); sfx('bossQuake');
   }
 
   function bossBubbleWall(e) {
@@ -2231,6 +2368,15 @@
       enemyBullets.push({ x: x + (Math.random() - .5) * 34, y: 700 + i * 36, vx: 0, vy: -540, r: 14, life: 3.2, damage: 21, bubble: true, grazeMul: .4 });
     }
     burst(x, 660, '#65fff2', 26, 340); shake = Math.max(shake, 11); sfx('bubble');
+  }
+
+  function sirenRockSpout(x) {
+    for (let i = 0; i < 9; i++) {
+      enemyBullets.push({ x: x + (Math.random() - .5) * 48, y: 690 + i * 24, vx: (Math.random() - .5) * 90, vy: -500 - Math.random() * 130, gravity: 620, r: 10 + Math.random() * 5, life: 3, damage: 20, rock: true, grazeMul: .4 });
+    }
+    burstDebris(x, 660, ['#65516d', '#c94cff', '#ffffff'], 18, 360);
+    shockwaves.push({ x, y: 660, r: 14, speed: 430, life: .65, max: .65, color: '#c94cff' });
+    shake = Math.max(shake, 12); sfx('bossQuake');
   }
 
   // Three screen-wide bands staggered by .8s. The first lands on the player's
@@ -2731,16 +2877,23 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         }
       } else if (e.wave) {
         const amp = e.type === 'bat' ? 55 : e.type === 'spinner' ? 42 : e.type === 'jelly' ? 74 : e.type === 'cupid' ? 62 : e.type === 'manta' ? 46 : e.type === 'knight' ? 28
-          : e.type === 'dumbo' ? 66 : e.type === 'angler' ? 26 : e.type === 'oarfish' ? 52 : 30;
+          : e.type === 'dumbo' ? 66 : e.type === 'angler' ? 26 : e.type === 'oarfish' ? 52
+            : e.type === 'crow' ? 48 : e.type === 'neonmoth' ? 68 : e.type === 'rivetbeetle' ? 34
+              : e.type === 'cloudray' ? 56 : e.type === 'voltbug' ? 76 : e.type === 'packetwyrm' ? 42 : e.type === 'rosebud' ? 52 : 30;
         const freq = e.type === 'jelly' ? 1.5 : e.type === 'manta' ? 1.2 : e.type === 'cupid' ? 2.2 : e.type === 'knight' ? 1.7
-          : e.type === 'dumbo' ? 1.1 : e.type === 'angler' ? .8 : e.type === 'oarfish' ? .9 : 3.2;
+          : e.type === 'dumbo' ? 1.1 : e.type === 'angler' ? .8 : e.type === 'oarfish' ? .9
+            : e.type === 'crow' ? 2.4 : e.type === 'neonmoth' ? 1.35 : e.type === 'rivetbeetle' ? 2
+              : e.type === 'cloudray' ? 1.1 : e.type === 'voltbug' ? 2.8 : e.type === 'packetwyrm' ? 1.25 : e.type === 'rosebud' ? 1.5 : 3.2;
         e.y = e.baseY + Math.sin(e.t * freq) * amp;
       }
       e.fire -= dt / (difficulty.fireGap * (isStage1() ? STAGE1_EASE.fire : 1));
       if (e.fire <= 0 && e.x < VW - 90) {
         enemyShoot(e);
         const cadence = e.type === 'tank' ? 1.1 : e.type === 'turret' ? 1.4 : e.type === 'spinner' ? 1.8 : e.type === 'glitch' ? 1.9 : e.type === 'cupid' ? 2 : e.type === 'racer' ? 1.5 : e.type === 'manta' ? 1.9 : e.type === 'walker' ? 1.25 : e.type === 'seeker' ? 1.45 : e.type === 'knight' ? 1.7
-          : e.type === 'dumbo' ? 2.4 : e.type === 'angler' ? 2.2 : e.type === 'oarfish' ? 2.6 : e.type === 'moray' ? 2.9 : 2.1 + Math.random();
+          : e.type === 'dumbo' ? 2.4 : e.type === 'angler' ? 2.2 : e.type === 'oarfish' ? 2.6 : e.type === 'moray' ? 2.9
+            : e.type === 'alleycat' ? 2.1 : e.type === 'neonmoth' ? 2.35 : e.type === 'slagling' ? 2.4 : e.type === 'rivetbeetle' ? 1.9
+              : e.type === 'furnacehound' ? 1.75 : e.type === 'cloudray' ? 2.1 : e.type === 'voltbug' ? 1.75 : e.type === 'packetwyrm' ? 2.2
+                : e.type === 'rosebud' ? 2.15 : e.type === 'cardguard' ? 1.75 : e.type === 'teacup' ? 2.05 : 2.1 + Math.random();
         e.fire = cadence * (e.variant === 'elite' ? .76 : 1);
         e.fireMax = e.fire;
       }
@@ -3977,18 +4130,18 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }
       ctx.restore();
     }
-    // SERVER GOLEM corrupts the sea into a cold storage grid while retaining
+    // ABYSS SIREN stains the sea with a violet magic lattice while retaining
     // enough transparency for the ocean and projectiles to read.
     if (d.boss || d.warning) {
       const flick = d.warning ? .5 + Math.sin(elapsed * 14) * .35 : .55;
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .12 * flick;
-      ctx.strokeStyle = stage.accent; ctx.lineWidth = 1;
+      ctx.strokeStyle = '#c94cff'; ctx.lineWidth = 1;
       for (let y = 300; y < 660; y += 30) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(VW, y + 18); ctx.stroke(); }
       for (let x = -100; x < VW + 100; x += 64) { ctx.beginPath(); ctx.moveTo(VW / 2, 300); ctx.lineTo(x, 680); ctx.stroke(); }
       for (let i = 0; i < 20; i++) {
         const px = (i * 193 + elapsed * (28 + i % 3 * 9)) % (VW + 100) - 50;
         const py = 160 + (i * 47) % 390;
-        ctx.fillStyle = i % 3 ? stage.accent : '#ffffff'; ctx.fillRect(px, py, 5 + i % 6, 5 + i % 6);
+        ctx.fillStyle = i % 3 ? '#c94cff' : '#ffffff'; ctx.fillRect(px, py, 5 + i % 6, 5 + i % 6);
       }
       ctx.restore();
     }
@@ -7458,7 +7611,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillRect(safeX - half, 0, 2, VH); ctx.fillRect(safeX + half - 2, 0, 2, VH);
     } else if (BOSS_HIDE[stageIndex].style === 'submerge' && boss.geyserT > 0) {
       ctx.globalAlpha = .2 + Math.abs(Math.sin(elapsed * 18)) * .2;
-      ctx.fillStyle = '#ff8a35'; ctx.fillRect(boss.geyserX - 32, 636, 64, 24);
+      ctx.fillStyle = '#c94cff'; ctx.fillRect(boss.geyserX - 32, 636, 64, 24);
     } else if (BOSS_HIDE[stageIndex].style === 'ascend') {
       // A shadow on the floor growing as the djinn falls from directly above.
       const k = 1 - clamp(boss.hideClock / BOSS_HIDE[2].away, 0, 1);
@@ -7472,7 +7625,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     curtain: '鏡のカーテン', heatwall: 'ヒートウォール', flood: 'データ・フラッド',
     railgun: 'チャージ・レールガン', cannon: 'ハートブレイク・キャノン', lattice: 'ローズ・ラティス',
     pillar: '火柱', strike: '雷撃', dash: '突進', wave: '波', fan: '扇', ring: 'リング',
-    crossbeam: 'クロスシザー', heatbeam: 'ヒートプレス',
+    crossbeam: 'クロスシザー', heatbeam: 'ヒートプレス', claw: '深淵の爪',
+    abyssorb: 'アビス・オーブ', tailslam: '深海テールクラッシュ',
   };
 
   // Drawn over the boss rather than under it: a charge orb at the muzzle, rings
@@ -7783,6 +7937,40 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   }
 
   function drawEnemyBullet(b) {
+    if (b.abyss) {
+      const pulse = 1 + Math.sin(elapsed * 12 + b.x * .03) * .1;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const glow = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, b.r * 2.3);
+      glow.addColorStop(0, '#ffffff'); glow.addColorStop(.2, '#f2b6ff'); glow.addColorStop(.55, 'rgba(201,76,255,.72)'); glow.addColorStop(1, 'rgba(113,25,181,0)');
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 2.3 * pulse, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#f19cff'; ctx.lineWidth = b.giant ? 4 : 2;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * (1.25 + .14 * Math.sin(elapsed * 8)), elapsed * 2, elapsed * 2 + Math.PI * 1.55); ctx.stroke();
+      ctx.restore(); return;
+    }
+    if (b.claw) {
+      const a = Math.atan2(b.vy || 0, b.vx || -1);
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(a); ctx.globalCompositeOperation = 'lighter';
+      ctx.strokeStyle = '#f29aff'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath(); ctx.arc(0, i * 8, b.r * 1.35, -.78, .78); ctx.stroke();
+      }
+      ctx.strokeStyle = 'rgba(201,76,255,.42)'; ctx.lineWidth = 11;
+      ctx.beginPath(); ctx.arc(0, 0, b.r * 1.55, -.72, .72); ctx.stroke();
+      ctx.restore(); return;
+    }
+    if (b.rock) {
+      b.seed ??= Math.floor(Math.random() * 1000);
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(elapsed * 3 + b.seed);
+      ctx.fillStyle = '#3d3348'; ctx.strokeStyle = '#c94cff'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < 7; i++) {
+        const a = i / 7 * Math.PI * 2, rr = b.r * (.72 + ((b.seed + i * 37) % 30) / 100);
+        ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * rr, Math.sin(a) * rr);
+      }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#786785'; ctx.beginPath(); ctx.arc(-b.r * .2, -b.r * .25, b.r * .22, 0, Math.PI * 2); ctx.fill();
+      ctx.restore(); return;
+    }
     if (b.heart) {
       ctx.save(); ctx.globalAlpha = .3; ctx.fillStyle = '#ff9ccf'; heartPath(b.x, b.y, b.r + 7); ctx.fill();
       ctx.globalAlpha = 1; ctx.fillStyle = '#ff3e9d'; heartPath(b.x, b.y, b.r); ctx.fill();
@@ -8042,6 +8230,413 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
+  // Hand-authored silhouettes for the four non-aqua stage rosters.  Each one
+  // has a readable locomotion loop and a visible source for its projectile;
+  // this keeps them feeling like characters rather than palette-swapped guns.
+  function drawSignatureEnemy(e) {
+    if (e.type === 'crow') {
+      const flap = Math.sin(e.t * 11), tail = Math.sin(e.t * 4) * 3;
+      // Wing undersides first. Six separate primaries flex from a shared wrist,
+      // so the bird reads as feathers and joints rather than two black triangles.
+      ctx.fillStyle = '#120b2a';
+      for (const s of [-1, 1]) {
+        ctx.beginPath(); ctx.moveTo(38, 27); ctx.quadraticCurveTo(40 + s * 25, 17 - flap * s * 13, 39 + s * 37, 6 - flap * s * 17);
+        ctx.quadraticCurveTo(44 + s * 22, 34, 38, 40); ctx.closePath(); ctx.fill();
+        const primaryCount = [3, 5, 6][bgQuality()];
+        for (let i = 0; i < primaryCount; i++) {
+          const rootX = 39 + s * (8 + i * 3), rootY = 25 - flap * s * (3 + i), len = 20 + i * 3;
+          const feather = ctx.createLinearGradient(rootX, rootY, rootX + s * len, rootY - 12);
+          feather.addColorStop(0, '#3a2a67'); feather.addColorStop(.5, i % 2 ? '#20183f' : '#2d2053'); feather.addColorStop(1, '#090719');
+          ctx.strokeStyle = feather; ctx.lineWidth = 6 - i * .45; ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.moveTo(rootX, rootY); ctx.quadraticCurveTo(rootX + s * len * .55, rootY - flap * s * 8, rootX + s * len, rootY - 10 - flap * s * 7); ctx.stroke();
+        }
+      }
+      const body = ctx.createRadialGradient(28, 18, 2, 42, 31, 31);
+      body.addColorStop(0, '#7864ad'); body.addColorStop(.35, '#30265e'); body.addColorStop(1, '#0b0920');
+      ctx.fillStyle = body; ctx.beginPath(); ctx.ellipse(42, 31, 25, 18, -.12, 0, Math.PI * 2); ctx.fill();
+      // Breast contour feathers overlap like scales and catch the Tokyo neon.
+      ctx.strokeStyle = 'rgba(177,139,235,.32)'; ctx.lineWidth = 1.4;
+      for (let row = 0; row < 3; row++) for (let i = 0; i < 4 - row; i++) {
+        const fx = 32 + i * 8 + row * 4, fy = 29 + row * 6;
+        ctx.beginPath(); ctx.arc(fx, fy, 5, .1, Math.PI - .1); ctx.stroke();
+      }
+      ctx.fillStyle = '#16102f';
+      for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(59, 30 + i * 3); ctx.lineTo(76 + i * 2, 18 + i * 8 + tail); ctx.lineTo(62, 40); ctx.closePath(); ctx.fill(); }
+      // Head, throat hackles and a two-piece beak with an actual gape.
+      ctx.fillStyle = '#21183e'; ctx.beginPath(); ctx.arc(24, 29, 15, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(24, 38); ctx.lineTo(34, 47); ctx.lineTo(40, 36); ctx.closePath(); ctx.fill();
+      const beak = ctx.createLinearGradient(2, 29, 20, 39); beak.addColorStop(0, '#ff92c8'); beak.addColorStop(.55, '#c53379'); beak.addColorStop(1, '#58143e');
+      ctx.fillStyle = beak; ctx.beginPath(); ctx.moveTo(16, 27); ctx.lineTo(-2, 34); ctx.lineTo(17, 36); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#1a0921'; ctx.beginPath(); ctx.moveTo(16, 36); ctx.lineTo(1, 36); ctx.lineTo(18, 41); ctx.closePath(); ctx.fill();
+      // Legs tuck under flight posture; silver tag marks this urban flock.
+      ctx.strokeStyle = '#9b5794'; ctx.lineWidth = 2.5; for (const x of [39,49]) { ctx.beginPath(); ctx.moveTo(x, 43); ctx.lineTo(x - 2, 50); ctx.lineTo(x - 8, 52); ctx.stroke(); }
+      ctx.fillStyle = '#31e8ff'; ctx.beginPath(); ctx.roundRect(48, 37, 10, 7, 2); ctx.fill(); ctx.fillStyle = '#140d29'; ctx.font = '5px monospace'; ctx.fillText('109', 49, 42);
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = hexA('#31e8ff', .45);
+      ctx.beginPath(); ctx.ellipse(39, 19, 15, 4, -.25, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      drawFishEye(27, 27, 5.5, e);
+      ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.arc(27, 27, 1.3, 0, Math.PI * 2); ctx.fill();
+      return true;
+    }
+    if (e.type === 'alleycat') {
+      const run = Math.sin(e.t * 10), ear = Math.max(0, Math.sin(e.t * 3));
+      // A counter-balancing tail has three fur volumes and a luminous tip.
+      ctx.strokeStyle = '#281441'; ctx.lineWidth = 13; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(68, 35); ctx.bezierCurveTo(88, 17, 95, 42, 78, 48); ctx.stroke();
+      ctx.strokeStyle = '#7040a8'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(69, 33); ctx.bezierCurveTo(88, 19, 92, 40, 79, 45); ctx.stroke();
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = '#31e8ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(84, 43); ctx.quadraticCurveTo(92, 38, 87, 31); ctx.stroke(); ctx.restore();
+      // Four anatomically jointed legs with shoulder, hock, paw and toe pads.
+      for (let i = 0; i < 4; i++) {
+        const lx = 31 + i * 12, phase = i % 2 ? -run : run, kneeX = lx + phase * 6;
+        ctx.strokeStyle = '#25113d'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(lx, 41); ctx.lineTo(kneeX, 52); ctx.lineTo(lx + phase * 12, 62); ctx.stroke();
+        ctx.fillStyle = '#9b58c5'; ctx.beginPath(); ctx.ellipse(lx + phase * 14, 63, 8, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ff8ac2'; for (let t = 0; t < 3; t++) { ctx.beginPath(); ctx.arc(lx + phase * 10 + t * 3, 63, 1, 0, Math.PI * 2); ctx.fill(); }
+      }
+      const fur = ctx.createLinearGradient(15, 12, 69, 55);
+      fur.addColorStop(0, '#b85cff'); fur.addColorStop(.48, '#6330a2'); fur.addColorStop(1, '#26113d');
+      ctx.fillStyle = fur; ctx.beginPath(); ctx.ellipse(50, 35, 29, 18, 0, 0, Math.PI * 2); ctx.fill();
+      // Shoulder and haunch masses prevent a sausage torso; striped fur follows them.
+      ctx.fillStyle = 'rgba(194,112,255,.28)'; ctx.beginPath(); ctx.ellipse(34, 34, 13, 14, 0, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.ellipse(65, 36, 14, 15, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#3c1b60'; ctx.lineWidth = 4;
+      for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(43 + i * 8, 20); ctx.quadraticCurveTo(47 + i * 8, 28, 43 + i * 8, 35); ctx.stroke(); }
+      ctx.beginPath(); ctx.arc(20, 31, 17, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(8, 20); ctx.lineTo(11, 5 - ear * 3); ctx.lineTo(21, 18); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(23, 17); ctx.lineTo(33, 6 + ear * 3); ctx.lineTo(34, 23); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#e06db5'; ctx.beginPath(); ctx.moveTo(11, 17); ctx.lineTo(12, 10); ctx.lineTo(17, 18); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(26, 17); ctx.lineTo(32, 11); ctx.lineTo(32, 21); ctx.closePath(); ctx.fill();
+      // Muzzle volume, nose, mouth and cheek tufts.
+      ctx.fillStyle = '#c786dd'; ctx.beginPath(); ctx.ellipse(7, 38, 11, 8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ff8ac2'; ctx.beginPath(); ctx.moveTo(1, 34); ctx.lineTo(-4, 38); ctx.lineTo(2, 41); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#2b123e'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(1, 41); ctx.quadraticCurveTo(7, 45, 12, 40); ctx.stroke();
+      drawKawaiiEyes(10, 31, 23, 9, 3);
+      ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1;
+      for (const s of [-1, 1]) for (let i = 0; i < 2; i++) { ctx.beginPath(); ctx.moveTo(6, 39 + s * 2); ctx.lineTo(-11, 38 + s * (5 + i * 4)); ctx.stroke(); }
+      // Reflective collar, brass bell and a tiny Shibuya ward tag.
+      ctx.fillStyle = '#31e8ff'; ctx.fillRect(31, 22, 29, 5); ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.arc(43, 29, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ff3e9d'; ctx.beginPath(); ctx.roundRect(50, 24, 10, 9, 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = '5px monospace'; ctx.fillText('渋', 52, 30);
+      return true;
+    }
+    if (e.type === 'neonmoth') {
+      const beat = Math.sin(e.t * 6.5) * 7, charge = clamp(1 - e.fire / Math.max(.1, e.fireMax), 0, 1);
+      for (const s of [-1, 1]) {
+        const wing = ctx.createLinearGradient(39, 12, 39 + s * 35, 58);
+        wing.addColorStop(0, '#fff0b8'); wing.addColorStop(.35, '#ff70c9'); wing.addColorStop(1, '#55218e');
+        // Separate forewing and scalloped hindwing, both with a dark underside.
+        ctx.fillStyle = '#2a1546'; ctx.beginPath(); ctx.moveTo(39, 31); ctx.quadraticCurveTo(39 + s * 36, -1 + beat, 39 + s * 41, 17 + beat); ctx.quadraticCurveTo(39 + s * 29, 38, 39, 40); ctx.fill();
+        ctx.fillStyle = wing; ctx.beginPath(); ctx.moveTo(39, 30); ctx.bezierCurveTo(39 + s * 18, 7 + beat, 39 + s * 35, 2 + beat, 39 + s * 38, 17 + beat); ctx.quadraticCurveTo(39 + s * 27, 34, 39, 37); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(39, 35); ctx.quadraticCurveTo(39 + s * 31, 36 - beat * .3, 39 + s * 31, 56 - beat * .2); ctx.quadraticCurveTo(39 + s * 12, 54, 39, 42); ctx.closePath(); ctx.fill();
+        // Veins radiate from the thorax; eye-spots have three concentric pigments.
+        ctx.strokeStyle = 'rgba(89,26,97,.5)'; ctx.lineWidth = 1.3;
+        const veinCount = [3, 4, 5][bgQuality()];
+        for (let i = 0; i < veinCount; i++) { ctx.beginPath(); ctx.moveTo(39, 34); ctx.lineTo(39 + s * (16 + i * 5), 13 + i * 7 + beat * .3); ctx.stroke(); }
+        const ox = 39 + s * 24, oy = 22 + beat * .25; ctx.fillStyle = '#481059'; ctx.beginPath(); ctx.arc(ox, oy, 8, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#31e8ff'; ctx.beginPath(); ctx.arc(ox, oy, 5, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.arc(ox, oy, 2, 0, Math.PI * 2); ctx.fill();
+      }
+      // Fuzzy thorax, segmented abdomen and six folded legs.
+      ctx.fillStyle = '#1d1031'; ctx.beginPath(); ctx.ellipse(39, 39, 7, 25, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#7b3d86'; ctx.lineWidth = 2; for (let y = 30; y < 58; y += 6) { ctx.beginPath(); ctx.moveTo(33, y); ctx.lineTo(45, y); ctx.stroke(); }
+      const fuzz = ctx.createRadialGradient(34, 22, 1, 39, 25, 14); fuzz.addColorStop(0, '#ffe5ae'); fuzz.addColorStop(.45, '#f28bc8'); fuzz.addColorStop(1, '#582060'); ctx.fillStyle = fuzz; ctx.beginPath(); ctx.ellipse(39, 25, 12, 14, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#8f4a92'; ctx.lineWidth = 1.5; for (const s of [-1,1]) for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(36 + s * 3, 29 + i * 4); ctx.lineTo(39 + s * (12 + i * 2), 34 + i * 5); ctx.stroke(); }
+      // Feathery antennae: a central shaft with paired comb teeth.
+      ctx.strokeStyle = '#ffb3dc'; ctx.lineWidth = 2;
+      for (const s of [-1,1]) { ctx.beginPath(); ctx.moveTo(37 + s * 2, 16); ctx.quadraticCurveTo(32 + s * 11, 2, 24 + s * 15, 7); ctx.stroke(); for (let i = 0; i < 4; i++) { const ax = 34 + s * (i * 3), ay = 13 - i * 3; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax + s * 7, ay - 3); ctx.stroke(); } }
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .25 + charge * .55; ctx.fillStyle = '#ffe15a';
+      ctx.beginPath(); ctx.arc(39, 37, 12 + charge * 9, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      drawKawaiiEyes(33, 27, 40, 5, 2);
+      return true;
+    }
+    if (e.type === 'slagling') {
+      const bubble = Math.sin(e.t * 4), hop = Math.abs(Math.sin(e.t * 5)) * 4;
+      ctx.save(); ctx.translate(0, -hop);
+      // Three viscous feet stretch independently; the body is molten material,
+      // not a flame icon sitting on the floor.
+      for (let i = 0; i < 3; i++) {
+        const sx = 14 + i * 18, step = Math.sin(e.t * 5 + i * 2.1) * 4;
+        ctx.fillStyle = '#34110b'; ctx.beginPath(); ctx.ellipse(sx + step, 49, 12, 6, -.12 * step, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,107,38,.45)'; ctx.beginPath(); ctx.ellipse(sx + step - 2, 47, 6, 2, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      const slag = ctx.createRadialGradient(21, 18, 3, 31, 32, 30);
+      slag.addColorStop(0, '#fff09a'); slag.addColorStop(.28, '#ff9f43'); slag.addColorStop(.65, '#9a2817'); slag.addColorStop(1, '#2b1110');
+      ctx.fillStyle = slag; ctx.beginPath(); ctx.moveTo(5, 45); ctx.quadraticCurveTo(8, 12, 24, 17 + bubble * 3);
+      ctx.quadraticCurveTo(35, 2, 43, 22); ctx.quadraticCurveTo(60, 19, 58, 47); ctx.closePath(); ctx.fill();
+      // Cooled basalt rafts ride over the liquid core. Their irregular edges,
+      // bevels and orange seams are what make it read as slag rather than jelly.
+      const plates = [[10,27,21,18,29,28,20,36,9,34], [31,13,42,10,49,21,40,27,29,23], [34,35,48,28,56,37,51,46,39,47]];
+      for (const p of plates) {
+        ctx.fillStyle = '#3b2929'; ctx.beginPath(); ctx.moveTo(p[0], p[1]);
+        for (let i = 2; i < p.length; i += 2) ctx.lineTo(p[i], p[i + 1]); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#79513b'; ctx.lineWidth = 1.4; ctx.stroke();
+      }
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.moveTo(14, 35); ctx.lineTo(24, 27); ctx.lineTo(31, 38); ctx.lineTo(42, 29); ctx.lineTo(51, 36); ctx.stroke(); ctx.restore();
+      // Surface blisters rise, brighten and burst into tiny sparks.
+      for (let i = 0; i < 4; i++) {
+        const k = (e.t * .8 + i * .27) % 1, bx = 16 + (i * 17) % 38, by = 29 - k * 24;
+        ctx.fillStyle = hexA(i % 2 ? '#ff8a35' : '#ffe15a', 1 - k);
+        ctx.beginPath(); ctx.arc(bx, by, 3.5 - k * 2.4, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#211418'; ctx.beginPath(); ctx.ellipse(29, 40, 19, 9, 0, 0, Math.PI * 2); ctx.fill();
+      drawKawaiiEyes(18, 40, 41, 9, 3);
+      ctx.restore(); return true;
+    }
+    if (e.type === 'rivetbeetle') {
+      const buzz = Math.sin(e.t * 20) * 5;
+      // Amber flight wings unfold from below the heavy iron elytra.
+      for (const s of [-1, 1]) {
+        ctx.save(); ctx.translate(44, 31); ctx.scale(1, s);
+        const membrane = ctx.createLinearGradient(0, 0, 35, 18 + buzz);
+        membrane.addColorStop(0, 'rgba(255,225,90,.65)'); membrane.addColorStop(1, 'rgba(255,90,54,.08)');
+        ctx.fillStyle = membrane; ctx.beginPath(); ctx.moveTo(0, 0); ctx.bezierCurveTo(18, 2, 38, 8 + buzz, 35, 21 + buzz); ctx.quadraticCurveTo(14, 15, 0, 5); ctx.fill();
+        ctx.strokeStyle = 'rgba(96,35,18,.45)'; ctx.lineWidth = 1;
+        for (let i = 1; i < 5; i++) { ctx.beginPath(); ctx.moveTo(3, 3); ctx.lineTo(8 + i * 6, 4 + i * 3 + buzz * .5); ctx.stroke(); }
+        ctx.restore();
+      }
+      // Six articulated legs, each with a bright hot joint and hooked foot.
+      for (const side of [-1, 1]) for (let i = 0; i < 3; i++) {
+        const hipX = 31 + i * 16, hipY = 31 + side * 9, kneeX = hipX + 7, kneeY = hipY + side * (12 + i * 2);
+        ctx.strokeStyle = '#32181b'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.beginPath(); ctx.moveTo(hipX, hipY); ctx.lineTo(kneeX, kneeY); ctx.lineTo(kneeX + 11, kneeY + side * 5); ctx.stroke();
+        ctx.fillStyle = '#ff9f43'; ctx.beginPath(); ctx.arc(kneeX, kneeY, 2.5, 0, Math.PI * 2); ctx.fill();
+      }
+      const shell = ctx.createLinearGradient(10, 8, 70, 55);
+      shell.addColorStop(0, '#ffe7a0'); shell.addColorStop(.3, '#d96b2c'); shell.addColorStop(.72, '#743122'); shell.addColorStop(1, '#291316');
+      ctx.fillStyle = shell; ctx.beginPath(); ctx.ellipse(46, 31, 31, 24, 0, 0, Math.PI * 2); ctx.fill();
+      // Split elytra with forged ribs, countersunk rivets and scorched edges.
+      ctx.strokeStyle = '#351518'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(47, 8); ctx.quadraticCurveTo(45, 30, 47, 54); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,224,150,.25)'; ctx.lineWidth = 1.5;
+      for (const s of [-1, 1]) for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(47, 31, 10 + i * 7, s < 0 ? Math.PI * .55 : -Math.PI * .45, s < 0 ? Math.PI * 1.45 : Math.PI * .45); ctx.stroke(); }
+      for (const x of [28, 64]) for (const y of [18, 31, 44]) {
+        ctx.fillStyle = '#3a1b1b'; ctx.beginPath(); ctx.arc(x, y, 3.4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffcd59'; ctx.beginPath(); ctx.arc(x - 1, y - 1, 1.3, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = 'rgba(255,245,210,.25)'; ctx.beginPath(); ctx.ellipse(34, 17, 12, 4, -.35, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#36151a'; ctx.beginPath(); ctx.ellipse(15, 31, 14, 17, 0, 0, Math.PI * 2); ctx.fill();
+      // Stag-beetle mandibles, antenna clubs and a segmented throat collar.
+      ctx.strokeStyle = '#e59b49'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(8, 22); ctx.quadraticCurveTo(-8, 10, -9, 22); ctx.lineTo(-2, 27); ctx.moveTo(8, 40); ctx.quadraticCurveTo(-8, 52, -9, 40); ctx.lineTo(-2, 35); ctx.stroke();
+      ctx.strokeStyle = '#7e492c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(11, 19); ctx.quadraticCurveTo(0, 4, -7, 12); ctx.moveTo(11, 43); ctx.quadraticCurveTo(0, 58, -7, 50); ctx.stroke();
+      ctx.strokeStyle = '#c7652b'; for (let x = 23; x < 31; x += 4) { ctx.beginPath(); ctx.moveTo(x, 17); ctx.lineTo(x, 45); ctx.stroke(); }
+      drawKawaiiEyes(8, 31, 20, 8, 3); return true;
+    }
+    if (e.type === 'furnacehound') {
+      const run = Math.sin(e.t * 9), charge = clamp(1 - e.fire / Math.max(.1, e.fireMax), 0, 1);
+      // Chimney and exhaust live behind the silhouette. Smoke is layered puffs,
+      // so the hound reads as a mobile furnace before its face is even visible.
+      ctx.fillStyle = '#32171a'; ctx.fillRect(67, 4, 18, 28); ctx.fillStyle = '#79412e'; ctx.fillRect(64, 2, 24, 7);
+      for (let i = 0; i < 3; i++) {
+        const k = (e.t * .7 + i * .31) % 1;
+        ctx.fillStyle = `rgba(70,45,49,${.32 * (1 - k)})`; ctx.beginPath(); ctx.arc(76 + Math.sin(e.t + i) * 6, 1 - k * 25, 7 + k * 8, 0, Math.PI * 2); ctx.fill();
+      }
+      for (let i = 0; i < 4; i++) {
+        const x = 35 + i * 16, ph = i % 2 ? -run : run;
+        ctx.strokeStyle = '#351817'; ctx.lineWidth = 11; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(x, 54); ctx.lineTo(x + ph * 8, 72); ctx.lineTo(x + ph * 14, 78); ctx.stroke();
+        ctx.fillStyle = '#8b3d29'; ctx.beginPath(); ctx.arc(x + ph * 8, 72, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#ff9f43'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + ph * 7, 76); ctx.lineTo(x + ph * 14 + 8, 79); ctx.stroke();
+      }
+      const hide = ctx.createLinearGradient(12, 10, 94, 69);
+      hide.addColorStop(0, '#ffbd63'); hide.addColorStop(.36, '#bd482d'); hide.addColorStop(1, '#391519');
+      ctx.fillStyle = hide; ctx.beginPath(); ctx.ellipse(61, 43, 39, 24, 0, 0, Math.PI * 2); ctx.fill();
+      // Iron rib cage contains the pulsing white-hot firebox.
+      ctx.fillStyle = '#1d1216'; ctx.beginPath(); ctx.roundRect(47, 27, 43, 32, 9); ctx.fill();
+      const core = ctx.createRadialGradient(63, 40, 2, 67, 44, 22);
+      core.addColorStop(0, '#fffbd0'); core.addColorStop(.3, '#ffe15a'); core.addColorStop(.7, '#ff5a36'); core.addColorStop(1, '#501719');
+      ctx.fillStyle = core; ctx.beginPath(); ctx.ellipse(68, 43, 20, 14, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#4b2522'; ctx.lineWidth = 5;
+      for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(66, 43, 17 + i * 5, -1.1 + i * .08, 1.1 - i * .08); ctx.stroke(); }
+      ctx.fillStyle = '#2c171a'; ctx.beginPath(); ctx.moveTo(88, 29); ctx.lineTo(105, 21); ctx.lineTo(96, 38); ctx.lineTo(106, 46); ctx.lineTo(88, 52); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(28, 28); ctx.lineTo(10, 20); ctx.lineTo(15, 36); ctx.lineTo(4, 48); ctx.lineTo(30, 58); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#291016'; ctx.beginPath(); ctx.moveTo(15, 36); ctx.lineTo(-3, 43); ctx.lineTo(16, 51); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffe6ab'; for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.moveTo(11 + i * 4, 40); ctx.lineTo(13 + i * 4, 49); ctx.lineTo(16 + i * 4, 40); ctx.fill(); }
+      ctx.fillStyle = '#291016'; ctx.beginPath(); ctx.moveTo(39, 22); ctx.lineTo(44, 3); ctx.lineTo(52, 24); ctx.moveTo(66, 20); ctx.lineTo(74, 1); ctx.lineTo(79, 25); ctx.fill();
+      // Copper brow plate, cheek vents and a glowing nose ring give the head a
+      // built, handled history instead of a flat dog profile.
+      ctx.fillStyle = '#a95332'; ctx.beginPath(); ctx.moveTo(9, 22); ctx.lineTo(33, 20); ctx.lineTo(39, 31); ctx.lineTo(16, 34); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#ffbd63'; ctx.lineWidth = 2; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(27 + i * 4, 36); ctx.lineTo(30 + i * 4, 43); ctx.stroke(); }
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .25 + charge * .6; ctx.fillStyle = '#ff5a36'; ctx.beginPath(); ctx.arc(13, 43, 12 + charge * 11, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      drawKawaiiEyes(22, 33, 36, 8, 3); return true;
+    }
+    if (e.type === 'cloudray') {
+      const flap = Math.sin(e.t * 4.2) * 9, charge = clamp(1 - e.fire / Math.max(.1, e.fireMax), 0, 1);
+      // Long forked tail with charge crawling from the root to the tip.
+      ctx.strokeStyle = '#174839'; ctx.lineWidth = 7; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(75, 31); ctx.quadraticCurveTo(98, 22, 111, 36); ctx.quadraticCurveTo(119, 46, 127, 37); ctx.stroke();
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = hexA('#72ff68', .5 + charge * .5); ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(83, 30); ctx.lineTo(94, 37); ctx.lineTo(101, 31); ctx.lineTo(112, 43); ctx.lineTo(119, 37); ctx.lineTo(129, 44); ctx.stroke(); ctx.restore();
+      const cloud = ctx.createLinearGradient(0, 4, 0, 59);
+      cloud.addColorStop(0, '#e9fff2'); cloud.addColorStop(.42, '#79cfa0'); cloud.addColorStop(1, '#174839');
+      ctx.fillStyle = cloud; ctx.beginPath(); ctx.moveTo(6, 31); ctx.quadraticCurveTo(31, 7 + flap, 50, 20);
+      ctx.quadraticCurveTo(72, 2 - flap, 94, 31); ctx.quadraticCurveTo(70, 45 + flap, 50, 39); ctx.quadraticCurveTo(28, 50 - flap, 6, 31); ctx.fill();
+      // Billowing lobes make the wings volumetric cloud banks, while the darker
+      // underside preserves the manta silhouette against rain and scanlines.
+      const lobes = [[24,21,17,10],[45,15,20,12],[68,22,18,11],[31,39,19,10],[57,40,22,10]];
+      for (let i = 0; i < (bgQuality() ? lobes.length : 3); i++) {
+        const [x,y,rx,ry] = lobes[i], lg = ctx.createRadialGradient(x - 5, y - 5, 1, x, y, rx);
+        lg.addColorStop(0, i < 3 ? 'rgba(244,255,250,.72)' : 'rgba(130,220,173,.45)'); lg.addColorStop(1, 'rgba(23,72,57,0)');
+        ctx.fillStyle = lg; ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      // Electrical capillaries are visible through the thin storm membrane.
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = hexA('#bfffb9', .28 + charge * .38); ctx.lineWidth = 1.5;
+      for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(43, 30); ctx.lineTo(55 + s * 10, 22 + s * flap * .25); ctx.lineTo(73 + s * 13, 29 + s * 8); ctx.stroke(); }
+      ctx.restore();
+      ctx.fillStyle = 'rgba(255,255,255,.42)'; ctx.beginPath(); ctx.ellipse(36, 20, 24, 6, -.2, 0, Math.PI * 2); ctx.fill();
+      // Cephalic lobes curl around a dark mouth, borrowing the unmistakable ray anatomy.
+      ctx.strokeStyle = '#2b765a'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(19, 25); ctx.quadraticCurveTo(2, 20, 5, 30); ctx.moveTo(19, 37); ctx.quadraticCurveTo(2, 42, 5, 32); ctx.stroke();
+      ctx.fillStyle = '#0b2a22'; ctx.beginPath(); ctx.ellipse(11, 31, 5, 7, 0, 0, Math.PI * 2); ctx.fill();
+      drawFishEye(23, 29, 5, e); drawFishEye(36, 31, 5, e); return true;
+    }
+    if (e.type === 'voltbug') {
+      const buzz = Math.sin(e.t * 22) * 4, charge = clamp(1 - e.fire / Math.max(.1, e.fireMax), 0, 1);
+      // Four transparent wings with visible veins. The rear pair lags a few
+      // frames, avoiding the flat two-oval propeller look of the first pass.
+      for (const [side, rear] of [[-1,0],[-1,1],[1,0],[1,1]]) {
+        const wy = 33 + side * (13 + rear * 7) + side * buzz * (rear ? -.55 : 1);
+        ctx.fillStyle = rear ? 'rgba(49,232,255,.17)' : 'rgba(180,255,210,.28)';
+        ctx.beginPath(); ctx.ellipse(44 + rear * 7, wy, 29 - rear * 5, 8, side * (.18 + rear * .12), 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = rear ? 'rgba(49,232,255,.42)' : 'rgba(190,255,205,.55)'; ctx.lineWidth = 1;
+        for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(24, 33); ctx.lineTo(50 + i * 7, wy + side * (i - 1) * 2); ctx.stroke(); }
+      }
+      // Six dangling legs catch and release tiny static arcs.
+      for (const side of [-1, 1]) for (let i = 0; i < 3; i++) {
+        const x = 27 + i * 12, y = 33 + side * 12;
+        ctx.strokeStyle = '#0a3928'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 7, y + side * 9); ctx.lineTo(x + 13, y + side * 6); ctx.stroke();
+        if (charge > .65 && i === 1) { ctx.strokeStyle = '#d6ffd0'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x + 11, y + side * 6); ctx.lineTo(x + 15, y + side * 11); ctx.lineTo(x + 19, y + side * 7); ctx.stroke(); }
+      }
+      const shell = ctx.createRadialGradient(22, 20, 2, 38, 33, 29);
+      shell.addColorStop(0, '#efffeb'); shell.addColorStop(.28, '#72ff68'); shell.addColorStop(.7, '#177247'); shell.addColorStop(1, '#06251d');
+      ctx.fillStyle = shell; ctx.beginPath(); ctx.ellipse(41, 33, 27, 18, 0, 0, Math.PI * 2); ctx.fill();
+      // Separate luminous abdominal segments contract in sequence as it flies.
+      ctx.strokeStyle = '#0c5236'; ctx.lineWidth = 3;
+      for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(45, 33, 8 + i * 6, -.75, .75); ctx.stroke(); }
+      ctx.fillStyle = 'rgba(230,255,220,.42)'; ctx.beginPath(); ctx.ellipse(34, 24, 12, 4, -.25, 0, Math.PI * 2); ctx.fill();
+      // Faceted compound eyes flank a small armored head.
+      ctx.fillStyle = '#0a291e'; ctx.beginPath(); ctx.arc(14, 33, 14, 0, Math.PI * 2); ctx.fill();
+      for (const sy of [-1,1]) { ctx.fillStyle = '#bfffb9'; ctx.beginPath(); ctx.ellipse(8, 33 + sy * 6, 5, 4, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#174839'; ctx.beginPath(); ctx.arc(6, 33 + sy * 6, 1.8, 0, Math.PI * 2); ctx.fill(); }
+      ctx.strokeStyle = '#72ff68'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(10, 24); ctx.quadraticCurveTo(-2, 5, -7, 18); ctx.moveTo(10, 42); ctx.quadraticCurveTo(-2, 61, -7, 48); ctx.stroke();
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .2 + charge * .65; ctx.strokeStyle = '#d6ffd0'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(38, 33, 30 + charge * 8, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      return true;
+    }
+    if (e.type === 'packetwyrm') {
+      // A segmented data-dragon: its packets lag down the spine like a network queue.
+      const pts = [];
+      for (let i = 0; i < 7; i++) pts.push({ x: 28 + i * 20, y: 32 + Math.sin(e.t * 3 - i * .72) * (5 + i * .7) });
+      // Dorsal packet fins and a translucent data wake sit behind the body.
+      ctx.fillStyle = 'rgba(49,232,255,.12)'; ctx.beginPath(); ctx.moveTo(20, 32);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y - 24 + (i % 2) * 8);
+      for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x, pts[i].y); ctx.closePath(); ctx.fill();
+      for (let i = 1; i < pts.length; i++) {
+        const p = pts[i]; ctx.fillStyle = i % 2 ? '#31e8ff' : '#72ff68';
+        ctx.beginPath(); ctx.moveTo(p.x - 7, p.y - 10); ctx.lineTo(p.x, p.y - 25 + (i % 2) * 7); ctx.lineTo(p.x + 7, p.y - 9); ctx.closePath(); ctx.fill();
+      }
+      ctx.strokeStyle = 'rgba(49,232,255,.3)'; ctx.lineWidth = 15; ctx.lineCap = 'round'; ctx.beginPath();
+      pts.forEach((p, i) => ctx[i ? 'lineTo' : 'moveTo'](p.x, p.y)); ctx.stroke();
+      for (let i = pts.length - 1; i >= 0; i--) {
+        const p = pts[i], r = 17 - i * 1.2, g = ctx.createRadialGradient(p.x - 5, p.y - 6, 1, p.x, p.y, r);
+        g.addColorStop(0, '#eaffff'); g.addColorStop(.28, i % 2 ? '#31e8ff' : '#72ff68'); g.addColorStop(1, '#063b45');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+        // Each segment is a routed packet with header ticks and a checksum light.
+        ctx.strokeStyle = 'rgba(2,38,46,.55)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(p.x, p.y, r * .72, -.8, .8); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,.62)'; ctx.fillRect(p.x - 6, p.y - 7, 12, 3);
+        ctx.fillStyle = i % 2 ? '#ffe15a' : '#ff3e9d'; ctx.beginPath(); ctx.arc(p.x + 6, p.y + 4, 2, 0, Math.PI * 2); ctx.fill();
+      }
+      // Dragon skull: swept horns, cheek fins, open jaw and fibre-optic whiskers.
+      const head = ctx.createLinearGradient(0, 8, 25, 50); head.addColorStop(0, '#0c6670'); head.addColorStop(.5, '#083d4c'); head.addColorStop(1, '#021c28');
+      ctx.fillStyle = head; ctx.beginPath(); ctx.moveTo(24, 18); ctx.lineTo(8, 10); ctx.lineTo(11, 25); ctx.lineTo(-4, 31); ctx.lineTo(8, 47); ctx.lineTo(25, 43); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#d6ffd0'; ctx.beginPath(); ctx.moveTo(8, 32); ctx.lineTo(-12, 36); ctx.lineTo(7, 43); ctx.lineTo(20, 38); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#031820'; ctx.beginPath(); ctx.moveTo(7, 34); ctx.lineTo(-7, 36); ctx.lineTo(8, 39); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = '#31e8ff'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(13, 18); ctx.quadraticCurveTo(-1, 0, -11, 11); ctx.moveTo(19, 21); ctx.quadraticCurveTo(8, 1, 3, 7); ctx.stroke();
+      ctx.strokeStyle = 'rgba(114,255,104,.72)'; ctx.lineWidth = 1.5; for (const s of [-1,1]) { ctx.beginPath(); ctx.moveTo(7, 35 + s * 4); ctx.quadraticCurveTo(-12, 27 + s * 18, -22, 35 + s * 13); ctx.stroke(); }
+      drawKawaiiEyes(8, 28, 21, 11, 3); return true;
+    }
+    if (e.type === 'rosebud') {
+      const open = .5 + Math.sin(e.t * 2.5) * .16, charge = clamp(1 - e.fire / Math.max(.1, e.fireMax), 0, 1);
+      // A thorny prehensile stem curls behind the flower and visibly anchors its
+      // locomotion. Thorns alternate sides like a real rose cane.
+      ctx.strokeStyle = '#194b31'; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(38, 39); ctx.bezierCurveTo(55, 48, 48, 67, 65, 72); ctx.stroke();
+      ctx.strokeStyle = '#4bb566'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(38, 39); ctx.bezierCurveTo(55, 48, 48, 67, 65, 72); ctx.stroke();
+      for (let i = 0; i < 4; i++) { const x = 46 + i * 5, y = 49 + i * 6, s = i % 2 ? -1 : 1; ctx.fillStyle = '#b7db55'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + s * 11, y - 5); ctx.lineTo(x + s * 3, y + 4); ctx.closePath(); ctx.fill(); }
+      // Two veined leaves twist in opposite directions as the stem bobs.
+      for (const s of [-1, 1]) {
+        const lx = 54 + s * 10, ly = 59;
+        ctx.fillStyle = s < 0 ? '#287d4a' : '#43a85b'; ctx.beginPath(); ctx.moveTo(51, 58); ctx.quadraticCurveTo(lx, ly - 13, lx + s * 15, ly); ctx.quadraticCurveTo(lx, ly + 9, 51, 58); ctx.fill();
+        ctx.strokeStyle = 'rgba(205,255,175,.42)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(52, 58); ctx.lineTo(lx + s * 12, ly); ctx.stroke();
+      }
+      // Green sepals clasp the bud from behind, preventing the petals from
+      // reading as a free-floating pink circle.
+      ctx.fillStyle = '#236d43';
+      for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; ctx.beginPath(); ctx.moveTo(36, 35); ctx.lineTo(36 + Math.cos(a) * 31, 35 + Math.sin(a) * 25); ctx.lineTo(36 + Math.cos(a + .45) * 17, 35 + Math.sin(a + .45) * 15); ctx.closePath(); ctx.fill(); }
+      // Three nested petal whorls create a rose spiral rather than a daisy.
+      const petalRings = bgQuality() ? 3 : 2;
+      for (let ring = 0; ring < petalRings; ring++) for (let i = 7 - ring; i >= 0; i--) {
+        const count = 8 - ring, a = i / count * Math.PI * 2 + e.t * .08 + ring * .42, r = (20 - ring * 6) * open;
+        const px = 36 + Math.cos(a) * r, py = 33 + Math.sin(a) * r * .72, size = 14 - ring * 2;
+        const petal = ctx.createRadialGradient(px - 4, py - 5, 1, px, py, size + 4);
+        petal.addColorStop(0, ring === 2 ? '#fff0f8' : '#ffd2e9'); petal.addColorStop(.38, ring === 2 ? '#ff7fbc' : '#ff4f9b'); petal.addColorStop(1, '#68123f');
+        ctx.fillStyle = petal; ctx.beginPath(); ctx.ellipse(px, py, size, size + 5, a + Math.PI / 2, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,220,238,.22)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(px, py, size * .65, a, a + Math.PI * .8); ctx.stroke();
+      }
+      ctx.fillStyle = '#4d0d32'; ctx.beginPath(); ctx.arc(36, 33, 12, 0, Math.PI * 2); ctx.fill();
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .2 + charge * .55; ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.arc(36, 32, 11 + charge * 8, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      drawKawaiiEyes(29, 34, 43, 6, 2); return true;
+    }
+    if (e.type === 'cardguard') {
+      const march = Math.sin(e.t * 7) * 5;
+      // Boots, arms and spear all sit behind the card plane, giving the thin
+      // soldier a believable layered construction.
+      for (const s of [-1, 1]) {
+        ctx.strokeStyle = '#351126'; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(31 + s * 14, 68); ctx.lineTo(31 + s * 14 + march * s, 82); ctx.stroke();
+        ctx.fillStyle = '#6b274d'; ctx.beginPath(); ctx.ellipse(31 + s * 14 + march * s - 4, 83, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.strokeStyle = '#6b274d'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(18, 32); ctx.lineTo(0, 44); ctx.moveTo(59, 31); ctx.lineTo(70, 41); ctx.stroke();
+      ctx.fillStyle = '#fff0bd'; ctx.beginPath(); ctx.arc(0, 44, 6, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(70, 41, 6, 0, Math.PI * 2); ctx.fill();
+      // Extruded card stock: dark side face and gold bottom edge.
+      ctx.fillStyle = '#42112e'; ctx.beginPath(); ctx.roundRect(14, 6, 55, 72, 7); ctx.fill();
+      ctx.fillStyle = '#9f6a38'; ctx.beginPath(); ctx.moveTo(10, 69); ctx.lineTo(63, 69); ctx.lineTo(69, 78); ctx.lineTo(16, 78); ctx.closePath(); ctx.fill();
+      const card = ctx.createLinearGradient(12, 5, 67, 77); card.addColorStop(0, '#fff8dc'); card.addColorStop(.55, '#f1dca6'); card.addColorStop(1, '#9b653c');
+      ctx.fillStyle = card; ctx.beginPath(); ctx.roundRect(8, 2, 55, 72, 7); ctx.fill();
+      ctx.strokeStyle = '#d42362'; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(14, 8, 43, 59, 3); ctx.stroke();
+      // Corner indices, suit pip and embossed filigree make this an actual card.
+      ctx.fillStyle = '#d42362'; ctx.font = 'bold 10px monospace'; ctx.fillText('Q', 16, 20); ctx.save(); ctx.translate(55, 61); ctx.rotate(Math.PI); ctx.fillText('Q', 0, 0); ctx.restore();
+      ctx.fillStyle = '#d42362'; heartPath(36, 42, 14); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.35)'; heartPath(31, 36, 5); ctx.fill();
+      ctx.strokeStyle = 'rgba(155,101,60,.35)'; ctx.lineWidth = 1; for (let y = 25; y < 60; y += 8) { ctx.beginPath(); ctx.moveTo(16, y); ctx.quadraticCurveTo(36, y - 7, 56, y); ctx.stroke(); }
+      // Folded paper crown with bevel and five points.
+      ctx.fillStyle = '#351126'; ctx.beginPath(); ctx.moveTo(12, 5); ctx.lineTo(23, -10); ctx.lineTo(34, 4); ctx.lineTo(45, -11); ctx.lineTo(59, 5); ctx.lineTo(58, 12); ctx.lineTo(14, 12); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#8f315c'; ctx.beginPath(); ctx.moveTo(13, 3); ctx.lineTo(23, -7); ctx.lineTo(34, 5); ctx.lineTo(45, -8); ctx.lineTo(58, 3); ctx.lineTo(56, 8); ctx.lineTo(15, 8); ctx.closePath(); ctx.fill();
+      // Halberd has a shaft, counterweight, blade and heart cutout.
+      ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(68, 18); ctx.lineTo(74, 72); ctx.stroke();
+      ctx.fillStyle = '#fff1a8'; ctx.beginPath(); ctx.moveTo(68, 19); ctx.lineTo(74, 2); ctx.lineTo(81, 20); ctx.lineTo(75, 17); ctx.lineTo(72, 29); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#d42362'; heartPath(74, 15, 4); ctx.fill(); ctx.fillStyle = '#8f315c'; ctx.beginPath(); ctx.arc(74, 73, 6, 0, Math.PI * 2); ctx.fill();
+      drawKawaiiEyes(23, 28, 48, 7, 2); return true;
+    }
+    if (e.type === 'teacup') {
+      const rattle = Math.sin(e.t * 8) * 3, steam = Math.sin(e.t * 3), charge = clamp(1 - e.fire / Math.max(.1, e.fireMax), 0, 1);
+      // Tiny silver feet and a thick saucer establish a real tabletop object.
+      for (const x of [22,57]) { ctx.fillStyle = '#6b2a55'; ctx.fillRect(x, 48, 7, 8); ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.ellipse(x + 2, 56, 8, 3, 0, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = '#43152f'; ctx.beginPath(); ctx.ellipse(41, 53, 41, 9, 0, 0, Math.PI * 2); ctx.fill();
+      const saucer = ctx.createLinearGradient(0, 44, 0, 55); saucer.addColorStop(0, '#fff8e8'); saucer.addColorStop(.45, '#e7a9c5'); saucer.addColorStop(1, '#84355e');
+      ctx.fillStyle = saucer; ctx.beginPath(); ctx.ellipse(39, 49, 39, 8, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(39, 48, 31, 5, 0, 0, Math.PI * 2); ctx.stroke();
+      const china = ctx.createLinearGradient(9, 5, 62, 49); china.addColorStop(0, '#fffbe8'); china.addColorStop(.45, '#ffcfdf'); china.addColorStop(1, '#a74475');
+      ctx.fillStyle = china; ctx.beginPath(); ctx.moveTo(7, 10); ctx.quadraticCurveTo(10, 48, 48, 48); ctx.quadraticCurveTo(62, 32, 58, 10); ctx.closePath(); ctx.fill();
+      // Handle gets a dark back rim and bright porcelain front rim for thickness.
+      ctx.strokeStyle = '#6d234c'; ctx.lineWidth = 11; ctx.beginPath(); ctx.arc(60, 27, 16, -1.2, 1.2); ctx.stroke();
+      ctx.strokeStyle = '#f5b4cf'; ctx.lineWidth = 7; ctx.beginPath(); ctx.arc(59, 25, 15, -1.1, 1.1); ctx.stroke();
+      // Gold rim, painted roses, vines and a hairline crack in the china.
+      ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(33, 10, 27, 7, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = '#4d9a55'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(14, 33); ctx.quadraticCurveTo(28, 22, 46, 35); ctx.stroke();
+      for (const [x,y] of [[20,29],[36,31],[45,37]]) { ctx.fillStyle = '#e33c7d'; heartPath(x, y, 4); ctx.fill(); ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill(); }
+      ctx.strokeStyle = 'rgba(82,31,59,.45)'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(48, 12); ctx.lineTo(44, 21); ctx.lineTo(49, 27); ctx.lineTo(45, 34); ctx.stroke();
+      // Tea surface swirls faster during wind-up; bubbles rise from the vortex.
+      ctx.fillStyle = '#5e173e'; ctx.beginPath(); ctx.ellipse(33, 11, 27, 7, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#e18a9f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(33 + Math.sin(e.t * 4) * 3, 11, 17 - charge * 4, 3, 0, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 3; i++) { const k = (e.t * (1 + charge) + i * .33) % 1; ctx.fillStyle = hexA('#ffd7ea', .7 * (1 - k)); ctx.beginPath(); ctx.arc(22 + i * 10 + Math.sin(e.t + i) * 3, 9 - k * 17, 2.5 - k, 0, Math.PI * 2); ctx.fill(); }
+      // A teaspoon is carried like a lance and rattles against the saucer.
+      ctx.save(); ctx.translate(11, 37); ctx.rotate(-.7 + rattle * .03); ctx.strokeStyle = '#d9dfeb'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-26, 16); ctx.stroke(); ctx.fillStyle = '#f8fbff'; ctx.beginPath(); ctx.ellipse(-30, 19, 8, 5, -.6, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 3;
+      for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(22 + i * 12, 6); ctx.quadraticCurveTo(13 + i * 15 + rattle, -7, 25 + i * 10 + steam * 4, -18); ctx.stroke(); }
+      drawKawaiiEyes(20, 27, 45, 8, 2); return true;
+    }
+    return false;
+  }
+
   function drawEnemy(e) {
     const stage = stages[stageIndex];
     // A boss that has left the field is neither drawn nor collidable; the
@@ -8058,10 +8653,12 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // The two long sea creatures don't fill their box — the oarfish is a
       // vertical ribbon and the moray's body runs off past the right edge — so
       // a box-sized contact shadow would sit in open water beside them.
-      if (e.type !== 'oarfish' && e.type !== 'moray') drawEnemyShadow(e);
+      if (e.type !== 'oarfish' && e.type !== 'moray' && e.type !== 'packetwyrm') drawEnemyShadow(e);
       drawEnemyUnderglow(e, stage.accent2);
     }
-    if (e.type === 'drone') {
+    if (drawSignatureEnemy(e)) {
+      // Drawn above; the shared shield, damage and variant passes still follow.
+    } else if (e.type === 'drone') {
       // Recon pod: spinning rotor mast, camera-lens face, blinking LEDs, thrusters.
       // Rotor blur disc + crossed blades on the mast.
       ctx.save(); ctx.translate(32, 6);
@@ -10239,11 +10836,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
 
   // --- Test modes: ?stage=N starts at the beginning of a stage; ?boss=N and
   // ?mid=N start just before that encounter with normal trash spawns held back.
+  // ?power=1..3 and ?wide=1..3 set weapon levels for direct combat checks.
   // N is 1..5. If multiple modes are present, boss > mid > stage takes priority.
   // ?ending=1 skips straight to the full-clear ending -> staff roll -> RESULT
   // sequence, bypassing gameplay entirely.
   {
     const q = new URLSearchParams(location.search);
+    const directPower = clamp(parseInt(q.get('power'), 10) || 1, 1, 3);
+    const directWide = clamp(parseInt(q.get('wide'), 10) || 1, 1, 3);
     // Dev switch for the soundtrack unlock: ?unlock=1 sets the flag, ?unlock=0 clears it.
     if (q.get('unlock') !== null) {
       if (q.get('unlock') === '0') localStorage.removeItem('grochan-hard-clear');
@@ -10261,6 +10861,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (shopJump) {
       setTimeout(() => {
         resetGame();
+        player.power = directPower;
+        player.spread = directWide;
         if (wantBikini) bikiniOwned = true;
         stageIndex = shopN - 1;
         stageResult = { kills: 0, time: 0, noDamageBonus: 0, timeBonus: 0 };
@@ -10277,6 +10879,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     if (!shopJump && n >= 1 && n <= stages.length) {
       setTimeout(() => {
         resetGame();
+        player.power = directPower;
+        player.spread = directWide;
         if (wantBikini) bikiniOwned = true;
         stageIndex = n - 1; stageBanner = mode === 'stage' ? 3 : 0; bossState = 'waiting';
         midBossDone = mode === 'boss';

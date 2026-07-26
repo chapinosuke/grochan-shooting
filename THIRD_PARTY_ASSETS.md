@@ -1,4 +1,13 @@
-# Third-party audio assets
+# Third-party assets
+
+## ステージ2ボス（ABYSS SIREN）
+
+2026-07-26 にユーザーから提供された透過PNGのポーズシートを分割し、指定のnear-lossless WebPへ変換。
+
+| ゲーム内ファイル | 出典 | ライセンス・利用許諾 |
+| --- | --- | --- |
+| `assets/images/bosses/sheets/abyss-siren-{1,2}.webp` | ユーザー提供（ChatGPT生成の人魚ポーズシート） | 本プロジェクト内で使用する素材としてユーザーから提供 |
+| `assets/images/bosses/poses/abyss-siren_{idle1,idle2,attack1,attack2,attack3,hurt1,hurt2}.webp` | 上記シートから切り出し・位置揃え | 同上 |
 
 ## プレイヤー衣装（ビキニ）
 
@@ -72,12 +81,13 @@
 | ボス | 元キャラ（音源） | playbackRate |
 | --- | --- | --- |
 | MASQUERADE（仮面の道化） | 盗賊の少年（thief-boy） | 1.05 |
-| SERVER GOLEM（鋼鉄巨人） | 男剣士（swordman） | 0.72 |
+| ABYSS SIREN（深海の人魚） | 高飛車な魔女（witch） | 0.82 |
 | INFERNO DJINN（炎上魔人） | ネクロマンサー老婆（necromancer-oldwoman） | 0.88 |
 | BOT GENERAL（ロボ将軍） | 冷静な魔術師（wizard） | 0.85 |
 | QUEEN OF HEARTBREAK（女王） | 高飛車な魔女（witch） | 1.0 |
 
 各キャラの greeting/start/attack/damage/special/death/lose/win 系を取得（登場/フェーズ2/攻撃/被弾/撃破で使用）。
+旧ステージ2ボス SERVER GOLEM の画像・音声素材は削除せず、再利用候補として保留中。
 
 ## 重厚SFX（ボス戦）
 
