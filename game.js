@@ -272,10 +272,12 @@
   const AMMO_PACK_START = 3, AMMO_PACK_MAX = 5;
   // Bikini costume: a one-off shop purchase that only takes effect from stage 2
   // (it is sold in the stage-1 rest stop, so it is always "next stage onward").
-  // While worn it trickles HP and ammo back, which is the whole reason to buy it.
+  // While worn it trickles HP and ammo back and gives a light move-speed nudge.
   let bikiniOwned = false;
   let bikiniRegenHp = 0, bikiniRegenAmmo = 0;   // fractional carry, applied at 1.0
   const BIKINI_HP_PER_SEC = 0.9, BIKINI_AMMO_PER_SEC = 2.2;
+  // ~half a SPEED chip (chip is ~28–32%/lv). "A bit quicker", not a full upgrade.
+  const BIKINI_SPEED_MUL = 1.14;
   const bikiniOn = () => bikiniOwned && stageIndex >= 1;
   let ammoPackStock = AMMO_PACK_START;  // stocked full-reload packs, auto-used when the mag hits empty
   let reloadFlash = 0;    // "スペアマガジン!" rising tag timer, armed when a spare auto-fires
@@ -2994,7 +2996,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         if (motionBuf.length > 12) motionBuf.shift();
       }
     }
-    const speedBoost = 1 + (player.speed - 1) * .32;
+    const bikiniSpeed = bikiniOn() ? BIKINI_SPEED_MUL : 1;
+    const speedBoost = (1 + (player.speed - 1) * .32) * bikiniSpeed;
     player.takeoff = Math.max(0, player.takeoff - dt);
     // Clear vertical intent (ignore tiny stick noise so walking is not cancelled).
     const upHeld = keys.has('ArrowUp') || keys.has('KeyW') || padInput.y < -.45;
@@ -3004,7 +3007,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const wantTakeoff = upHeld || (pointer.active && pointer.y < 120);
       if (wantTakeoff) {
         player.grounded = false;
-        player.vy = -340;
+        player.vy = -340 * bikiniSpeed;
         player.takeoff = .28;
         burst(player.x + 55, GROUND_Y + 130, '#31e8ff', 12, 140);
       } else {
@@ -3019,8 +3022,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       if (pointer.active) {
         const targetX = Math.min(pointer.x - player.w * .45, VW * .58);
         const targetY = pointer.y - player.h * .5;
-        player.vx += (targetX - player.x) * dt * 18;
-        player.vy += (targetY - player.y) * dt * 18;
+        player.vx += (targetX - player.x) * dt * 18 * bikiniSpeed;
+        player.vy += (targetY - player.y) * dt * 18 * bikiniSpeed;
       } else {
         player.vx += ax * 1250 * speedBoost * dt;
         player.vy += ay * 1250 * speedBoost * dt;
@@ -3029,7 +3032,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const drag = Math.pow(.0009, dt);
     player.vx *= drag; player.vy *= drag;
     const speed = Math.hypot(player.vx, player.vy);
-    const maxMoveSpeed = (player.grounded ? 380 : 420) * (1 + (player.speed - 1) * .28);
+    const maxMoveSpeed = (player.grounded ? 380 : 420) * (1 + (player.speed - 1) * .28) * bikiniSpeed;
     if (speed > maxMoveSpeed) { player.vx *= maxMoveSpeed / speed; player.vy *= maxMoveSpeed / speed; }
     // Face the direction of travel: flip to look back while retreating (moving left).
     // Hysteresis on vx so a near-still drift doesn't cause the sprite to jitter.
