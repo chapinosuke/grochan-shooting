@@ -428,6 +428,15 @@
     loadSet('stage4', GEN_COUNTS),
     loadSet('lord-censor', SHEET_COUNTS),
   ];
+  // Which of them are drawn standing on something. Four of the five have legs
+  // and shoes — a robot, an idol on platform sandals, an armoured empress, a
+  // gentleman in a frock coat — and hovering them 170px above the floor while
+  // they bob up and down read as flying, which none of them can do. They set up
+  // on the stage floor instead (y=650, where the player lands and ground
+  // enemies walk) and get ABYSS SIREN's planted body language. VOLT PHANTOM is
+  // a wraith that tapers into smoke below the waist, so it keeps the hover.
+  const MID_PLANTED = [true, true, true, false, true];
+  const MID_FLOOR = 650;
   // Two colours per boss: one for the moment a shot lands, one for the state it
   // enters once it is nearly dead. Both are deliberately foreign to the stage
   // palette so they read as damage rather than as more scenery.
@@ -1700,7 +1709,10 @@
     if (midSprite.complete && midSprite.naturalWidth) {
       h = 340; w = Math.round(h * midSprite.naturalWidth / midSprite.naturalHeight);
     }
-    enemies.push({ type: 'midboss', x: VW + 240, y: 140, baseY: 140, w, h, hp, maxHp: hp, vx: 0, t: 0, wave: false, points: 6200 + stageIndex * 1200, fire: .55, sp: 2.1, variant: 'standard' });
+    // The sprite is bottom-aligned in its box, so putting the box bottom on the
+    // floor puts the soles on the floor.
+    const midY = MID_PLANTED[stageIndex] ? MID_FLOOR - h : 140;
+    enemies.push({ type: 'midboss', x: VW + 240, y: midY, baseY: midY, w, h, hp, maxHp: hp, vx: 0, t: 0, wave: false, points: 6200 + stageIndex * 1200, fire: .55, sp: 2.1, variant: 'standard' });
     bossState = 'midboss-active';
     clearEnemyFire(); shake = 14; flash = .45;
     playBgm('midBoss', true); sfx('boss'); sfx('warning');
@@ -1710,7 +1722,8 @@
     stepPoseTimers(e, dt);
     const midPark = VW - e.w - 50;
     if (e.x > midPark) e.x -= 300 * dt;
-    e.y = clamp(e.baseY + Math.sin(e.t * (1.25 + stageIndex * .1)) * (70 + stageIndex * 6), 20, VH - e.h - 30);
+    if (MID_PLANTED[stageIndex]) e.y = e.baseY;
+    else e.y = clamp(e.baseY + Math.sin(e.t * (1.25 + stageIndex * .1)) * (70 + stageIndex * 6), 20, VH - e.h - 30);
     const fg = difficulties[difficultyKey].fireGap;
     e.fire -= dt / fg; e.sp -= dt / fg;
     const engaged = e.x <= midPark + 20;
@@ -10190,10 +10203,22 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // Hitbox carries the sprite aspect (see spawnMidBoss) → fill the box.
       const hurt = e.hurtT > 0;
       const breath = Math.sin(e.t * 3.2) * .03;
+      // Standing mid-bosses shear about their soles rather than rotating about
+      // them: the same trick ABYSS SIREN uses, so the body sways, leans into
+      // each attack and shudders when hit without the feet leaving the floor.
+      const planted = MID_PLANTED[stageIndex];
       ctx.save();
       ctx.translate(79, 132);
-      ctx.rotate(Math.sin(e.t * 1.8) * .05 + (hurt ? Math.sin(e.t * 48) * .05 : 0));
-      ctx.scale(1 - breath, 1 + breath);
+      if (planted) {
+        const sway = Math.sin(e.t * 1.8) * .028 + Math.sin(e.t * 3.3) * .01;
+        const lunge = clamp((e.attackT || 0) / .5, 0, 1) * .05;
+        const shudder = hurt ? .04 + Math.sin(e.t * 46) * .03 : 0;
+        ctx.transform(1, 0, sway + lunge + shudder, 1, 0, 0);
+        ctx.scale(1 - breath * .5, 1 + breath);
+      } else {
+        ctx.rotate(Math.sin(e.t * 1.8) * .05 + (hurt ? Math.sin(e.t * 48) * .05 : 0));
+        ctx.scale(1 - breath, 1 + breath);
+      }
       ctx.translate(-79, -132);
       ctx.shadowColor = hurt ? 'rgba(255,80,80,.95)' : hexA(stage.accent, .9);
       ctx.shadowBlur = hurt ? 26 : 18 + Math.sin(e.t * 7) * 6;
@@ -10203,7 +10228,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const px = e.h / midIdle.naturalHeight;
       const kx = e.w / 158, ky = e.h / 132;
       const dw = midSprite.naturalWidth * px / kx, dh = midSprite.naturalHeight * px / ky;
-      const mdx = (158 - dw) / 2, mdy = 132 - dh + Math.sin(e.t * 2.6) * 4;
+      // Right-edge anchored for the same reason as drawBoss: these cells are
+      // cropped tight and the attack ones reach left, so centring them threw
+      // the body off the right edge of the screen. Planted mid-bosses also drop
+      // the drift bob — their soles are on the floor.
+      const mdx = 158 - dw, mdy = 132 - dh + (planted ? 0 : Math.sin(e.t * 2.6) * 4);
       if (e.dying > 0) { drawDeathDissolve(midSprite, mdx, mdy, dw, dh, e); ctx.restore(); return; }
       ctx.drawImage(midSprite, mdx, mdy, dw, dh);
       ctx.restore();
@@ -10483,7 +10512,19 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const px = e.h / idleF.naturalHeight;
       const kx = e.w / 230, ky = e.h / 190;
       const dw = sprite.naturalWidth * px / kx, dh = sprite.naturalHeight * px / ky;
-      const dx0 = (230 - dw) / 2 + (hurt ? Math.sin(e.t * 52) * 3 : 0);
+      // Anchored by the frame's right edge, not its centre. Every boss faces
+      // left, and the sets whose cells were cropped tight (masquerade,
+      // bot-general, lord-censor) are far wider in the attack cells because the
+      // strike reaches out toward the player. Centring those spent that extra
+      // width on BOTH sides, which shoved the body several hundred pixels right
+      // — off the screen edge — and snapped it back when the pose ended. The
+      // crops are tight, so the right edge is the character's back in every
+      // cell, and holding it still keeps the body put and the strike on screen.
+      // Sets authored on one shared canvas (siren, oyabun, queen) have dw=230
+      // in every cell, so for them this is exactly the old centring.
+      // The pain jitter slides the whole frame, which would skid the rock along
+      // the water; on her perch that shudder is carried by the shear above.
+      const dx0 = 230 - dw + (hurt && !perched ? Math.sin(e.t * 52) * 3 : 0);
       // Living art deliberately extends below the viewport to sell her scale.
       // During the authored collapse, progressively lift that off-screen
       // baseline onto the palace floor (world y=650), so the prone body rests
