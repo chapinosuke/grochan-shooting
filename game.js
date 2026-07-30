@@ -88,8 +88,10 @@
   // old .3 it landed at an effective -29dB, 4dB below the final-boss theme it
   // takes over from. .45 puts it at -25.4dB, just under that theme, which is
   // where the finale belongs. Its low peak means there is still ~12dB of
-  // headroom, so nothing clips.
-  const bgmVolumes = { title: .3, opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32, gameOver: .28, ending: .45 };
+  // headroom, so nothing clips. `Game Over, Again` is the other quiet master
+  // (mean -17.9dB): .42 lands it at -25.4dB too — audibly present without
+  // making defeat louder than the fight that caused it.
+  const bgmVolumes = { title: .3, opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32, gameOver: .42, ending: .45 };
   // The ending theme plays through once and stops (the staff roll holds on
   // FIN afterward instead of looping the credits), unlike every other track.
   Object.entries(bgmTracks).forEach(([key, track]) => { track.loop = key !== 'ending'; track.preload = 'auto'; track.volume = bgmVolumes[key]; });
