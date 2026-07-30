@@ -1675,7 +1675,12 @@
     // box; for the oyabun that dead canvas means two seconds of empty screen
     // before any of him crossed it, so he starts with his ART just off the edge.
     const spawnX = VW + (stageIndex === 2 ? -Math.round(w * .29) : 380);
-    enemies.push({ type: 'boss', x: spawnX, y: bossY, baseY: bossY, w, h, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8, hitInset, hitInsetY, tier: 0, tierBanner: 0, crit: false });
+    const boss = { type: 'boss', x: spawnX, y: bossY, baseY: bossY, w, h, hp: bossHp, maxHp: bossHp, vx: 0, t: 0, wave: false, points: 18000 + stageIndex * 4000, fire: .7, sp: 2.8, hitInset, hitInsetY, tier: 0, tierBanner: 0, crit: false };
+    // ABYSS SIREN's rock is drawn into her own frame, so sliding her in from off
+    // the right edge sails a sea stack across the bay. She starts parked at her
+    // spot and below the waterline instead, and breaches out of it.
+    if (stageIndex === 1) { boss.x = VW - w - 40; boss.y = VH + 70; boss.mode = 'surface'; }
+    enemies.push(boss);
     bossState = 'active';
     musicStep = 0; musicClock = 0;
     clearEnemyFire();
@@ -1877,6 +1882,9 @@
     e.mode = 'hideOut'; e.hideClock = cfg.out; e.hideT = cfg.cd;
     e.homeX = VW - e.w - 40; e.homeY = e.y;
     e.hideAtk = 0; e.dissolve = 0; e.fade = 1; e.tel = 0; e.telType = null;
+    // ABYSS SIREN leaves by going under, and the only way that reads as a dive
+    // rather than a rock sinking is the water she takes with her.
+    if (e.type === 'boss' && stageIndex === 1) sirenSpray(e, 36, 1.5);
     sfx('teleport');
   }
 
@@ -1986,9 +1994,14 @@
       e.x = e.homeX; e.y = e.homeY;
       bossFan(e, 9);
     } else if (cfg.style === 'submerge') {
-      // Surfaces behind the player on the far left — the one moment she is flanked.
-      e.x = 120; e.y = e.homeY;
+      // She comes back up onto her own rock — the seat is hers for the whole
+      // fight, and surfacing anywhere else would drag the outcrop with her. The
+      // pressure the old flank provided is paid for by the swell she rides in
+      // on, which bursts the seabed open under the player.
+      e.x = e.homeX; e.y = e.homeY;
       shockwaves.push({ x: e.x + e.w / 2, y: e.homeY + e.h / 2, r: 14, speed: 520, life: .8, max: .8, color: '#65fff2' });
+      sirenSpray(e, 42, 1.6); sirenSurge(e, 1.3);
+      sirenRockSpout(clamp(player.x + 56, 90, VW - 120));
       sirenOrbVolley(e); sfx('bubble');
     } else if (cfg.style === 'ascend') {
       // Comes down somewhere in the player's half — the only boss that can end
@@ -2026,7 +2039,9 @@
     // FLAME OYABUN goes down on his own two feet, so settle him back onto the
     // standing line he spawned on rather than letting him drift on downward
     // through the floor. baseY, not a literal, so it tracks his spawn height.
-    if (e.type === 'boss' && stageIndex === 2) e.y += (e.baseY - e.y) * Math.min(1, dt * 2.2);
+    // ABYSS SIREN shares that treatment for the same reason: she burns away on
+    // a rock, and the rock has no business sliding down through the water.
+    if (e.type === 'boss' && (stageIndex === 2 || stageIndex === 1)) e.y += (e.baseY - e.y) * Math.min(1, dt * 2.2);
     else e.y += (e.type === 'boss' && stageIndex === 4 ? 3 : 12) * dt;
     for (let i = 0; i < 2; i++) {
       particles.push({
@@ -2088,6 +2103,28 @@
     const idx = stageIndex;
     stepPoseTimers(e, dt);
     if (e.mode && e.mode.startsWith('hide')) { updateBossHide(e, dt); return; }
+    // The siren's entrance: the outcrop rises out of the bay at her spot, water
+    // pouring off it the whole way up. She holds fire until she has broken the
+    // surface, the same grace the other bosses get from their walk-in.
+    if (e.mode === 'surface') {
+      e.y += (e.baseY - e.y) * Math.min(1, dt * 2.6);
+      // Her rock is still below the frame on the way up, so the water is thrown
+      // from the waterline she is breaking through rather than from its base.
+      for (let i = 0; i < 2; i++) {
+        particles.push({
+          x: e.x + e.w * (.18 + Math.random() * .74), y: 650 - Math.random() * 22,
+          vx: -70 - Math.random() * 90, vy: -190 - Math.random() * 280,
+          life: .4 + Math.random() * .5, max: .9, size: 4 + Math.random() * 8,
+          color: Math.random() < .6 ? '#dff6ff' : '#8ff6ff', gravity: 480,
+        });
+      }
+      if (e.y - e.baseY < 10) {
+        e.y = e.baseY; e.mode = 'hover';
+        sirenSpray(e, 40, 1.7); sirenSurge(e, 1.2);
+        shake = Math.max(shake, 20); sfx('bubble');
+      }
+      return;
+    }
     const parkX = VW - e.w - 40;
     if (e.x > parkX && e.mode !== 'dash' && e.mode !== 'return') e.x -= 250 * dt;
     // He is the only boss with an actual gait, so the approach is a walk rather
@@ -2152,7 +2189,14 @@
         }
       }
     } else if (idx === 1) {
-      e.y = bobY(e.baseY + 30, 80);
+      // She is sitting on a rock, so she is the one boss that never repositions:
+      // an outcrop drifting up and down the screen reads as a floating prop, not
+      // as a seat. Her perch is fixed and only rides the swell a few pixels. The
+      // energy comes from everywhere else instead — drawBoss whips her upper
+      // body over a base that never moves, and sirenPerch keeps the sea working
+      // against the rock. Still, never static.
+      e.y = e.baseY + Math.sin(e.t * .85) * 3;
+      sirenPerch(e, dt);
       if (engaged && e.fire <= 0) { sirenOrbVolley(e); e.fire = e.phase2 ? .52 : .74; }
       if (engaged && e.sp <= 0 && !(e.tel > 0)) {
         const roll = Math.random();
@@ -2317,6 +2361,85 @@
     sfx('bubble');
   }
 
+  // --- ABYSS SIREN: a boss that stays put but never stands still -------------
+  // Everyone else expresses aggression by moving. She cannot: she is seated on
+  // a rock and the rock is part of her sprite, so travelling with it would sail
+  // a sea stack through the air. Two channels carry the fight instead — a surge
+  // impulse that drawBoss turns into a whip of her upper body over a dead-still
+  // base, and the water, which is worked hard: spray off the outcrop, swells
+  // breaking against it, foam kicked out by every attack.
+
+  // Where the waterline meets her rock, in world coordinates. The art is
+  // bottom-aligned inside the hitbox, so the base is the bottom of the box; the
+  // stone itself occupies the middle 20%–92% of the frame's width.
+  const sirenBase = (e) => ({ y: e.y + e.h - 6, x0: e.x + e.w * .2, x1: e.x + e.w * .92 });
+
+  // Every attack rears her up and throws her forward. Read by drawBoss, decayed
+  // by sirenPerch — the boss's whole recoil budget in one number.
+  function sirenSurge(e, amount) { e.surge = Math.max(e.surge || 0, amount); }
+
+  // Foam thrown off the rock: plain particles, so it costs nothing and the
+  // shared additive pass draws it in front of her.
+  function sirenSpray(e, n, speed = 1, atX = null) {
+    const b = sirenBase(e);
+    const span = b.x1 - b.x0;
+    for (let i = 0; i < n; i++) {
+      const x = atX === null ? b.x0 + Math.random() * span : atX + (Math.random() - .5) * 100;
+      const a = -Math.PI / 2 + (Math.random() - .5) * 1.6;
+      const v = (170 + Math.random() * 300) * speed;
+      particles.push({
+        x, y: b.y - Math.random() * 30,
+        vx: Math.cos(a) * v - 80, vy: Math.sin(a) * v,
+        life: .35 + Math.random() * .5, max: .85,
+        size: 3 + Math.random() * 7,
+        color: Math.random() < .5 ? '#dff6ff' : Math.random() < .72 ? '#8ff6ff' : '#c9a6ff',
+        gravity: 430,
+      });
+    }
+  }
+
+  // A swell breaking against the seaward face of the outcrop. Runs on its own
+  // clock, faster once she is angry, so the rock is never a still object even
+  // in the gaps between her attacks.
+  function sirenWaveCrash(e) {
+    const b = sirenBase(e);
+    const x = b.x0 + Math.random() * (b.x1 - b.x0) * .45;
+    sirenSpray(e, 14, 1.15, x);
+    for (let i = 0; i < 3; i++) {
+      particles.push({
+        x: x + (Math.random() - .5) * 120, y: b.y - Math.random() * 14,
+        vx: -110 - Math.random() * 90, vy: -30 - Math.random() * 40,
+        life: .5 + Math.random() * .4, max: .9, size: 6 + Math.random() * 8,
+        color: 'rgba(223,246,255,.8)', gravity: 150,
+      });
+    }
+  }
+
+  // Ambient life, once per frame while she is on her rock.
+  function sirenPerch(e, dt) {
+    e.surge = Math.max(0, (e.surge || 0) - dt * 2.6);
+    const b = sirenBase(e);
+    // Mist off wet stone. Kept down at the waterline and weighted to the
+    // seaward face: scattered up the rock it reads as dust on the sprite
+    // instead of spray coming off it.
+    e.mistT = (e.mistT || 0) - dt;
+    if (e.mistT <= 0) {
+      e.mistT = .08;
+      const bias = Math.random() * Math.random();   // near the front edge, mostly
+      particles.push({
+        x: b.x0 + bias * (b.x1 - b.x0), y: b.y - Math.random() * 12,
+        vx: -40 - Math.random() * 60, vy: -50 - Math.random() * 70,
+        life: .6 + Math.random() * .6, max: 1.2, size: 3 + Math.random() * 5,
+        color: Math.random() < .55 ? '#8ff6ff' : '#c9a6ff', gravity: 40,
+      });
+    }
+    e.crashT = (e.crashT || 0) - dt;
+    if (e.crashT <= 0) {
+      e.crashT = 2.6 - (e.tier || 0) * .55 + Math.random() * .7;
+      sirenWaveCrash(e);
+    }
+  }
+
   function sirenOrbVolley(e) {
     setBossAttackPose(e, 1, .5); // attack2: both hands launch a purple orb
     const ox = e.x + 28, oy = e.y + e.h * .4;
@@ -2326,6 +2449,7 @@
       enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 235, vy: Math.sin(a) * 235, r: 11, life: 6.5, damage: 18, abyss: true, drift: 42 });
     }
     burst(ox, oy, '#ca55ff', 12, 220); sfx('boss');
+    sirenSurge(e, .55); sirenSpray(e, 6, .8);
   }
 
   function sirenClawRake(e) {
@@ -2339,6 +2463,8 @@
       enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 350, vy: Math.sin(a) * 350, r: 15, life: 4.2, damage: 23, claw: true, grazeMul: .55 });
     }
     burst(ox, oy, '#e45cff', 18, 300); shake = Math.max(shake, 8); sfx('hurt');
+    // The rake throws her whole torso across the rock, and the water answers.
+    sirenSurge(e, .95); sirenSpray(e, 16, 1.2);
   }
 
   function sirenAbyssOrb(e) {
@@ -2354,6 +2480,7 @@
     }
     shockwaves.push({ x: ox, y: oy, r: 12, speed: 420, life: .7, max: .7, color: '#d75cff' });
     shake = Math.max(shake, 11); flash = Math.max(flash, .18); sfx('special');
+    sirenSurge(e, 1.0); sirenSpray(e, 14, 1.1);
   }
 
   function sirenTailSlam(e) {
@@ -2370,6 +2497,9 @@
     burstDebris(x, 650, ['#6d5a75', '#c94cff', '#ffffff'], 26, 420);
     shockwaves.push({ x, y: 650, r: 18, speed: 560, life: .8, max: .8, color: '#d75cff' });
     shake = Math.max(shake, 18); flash = Math.max(flash, .25); sfx('bossQuake');
+    // The tail comes down on her own rock first — the seat detonates a sheet of
+    // water before the strike lands out where the player is standing.
+    sirenSurge(e, 1.35); sirenSpray(e, 26, 1.45);
   }
 
   function bossBubbleWall(e) {
@@ -10230,6 +10360,30 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     }
   }
 
+  // The sea working against ABYSS SIREN's seat. Drawn in her authoring box once
+  // the body transform is released, and undone through the box's non-uniform
+  // scale (kx/ky) so the foam keeps its real-world proportions. Three bands
+  // breathing out of phase read as surf even when she is perfectly still, and
+  // they all swell with her recoil, so an attack lands in the water too.
+  function drawSirenWash(e, kx, ky) {
+    const surge = e.surge || 0;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.shadowBlur = 0;
+    for (let i = 0; i < 3; i++) {
+      const ph = e.t * (1.55 + i * .5) + i * 2.1;
+      const swell = .55 + Math.sin(ph) * .45 + surge * .5;
+      const rx = (104 + i * 34) / kx;
+      const ry = (11 + i * 6) * swell / ky;
+      const cx = 128 + (Math.sin(ph * .7 + i) * 24 - 8) / kx;
+      const cy = 190 - (4 + i * 9 + Math.sin(ph * 1.3) * 5) / ky;
+      ctx.globalAlpha = .07 + swell * .12;
+      ctx.fillStyle = i === 1 ? '#dff6ff' : '#7fe9ff';
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
   function drawBoss(e) {
     const stage = stages[stageIndex];
     // Generated pixel-art boss sprite (side view, facing the player). Drawn
@@ -10284,6 +10438,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // Authored defeat runs carry their own body language; the idle breathing
       // and bobbing would fight the drawn pose, so both stop for them.
       const authoredFall = finalDefeat || oyabunDefeat;
+      // ABYSS SIREN's rock is drawn into her own frame, so the shared body
+      // language does not fit her: rotating swings a sea stack through the air
+      // and the drift bob floats it off the water. She gets a bottom-anchored
+      // shear instead — displacement grows with height above the stone, so her
+      // crown travels several pixels per sway while the base travels one — and
+      // her recoil (e.surge) rides the same channel.
+      const perched = stageIndex === 1 && !authoredFall;
+      const surge = perched && !(e.dying > 0) ? (e.surge || 0) : 0;
       const breath = authoredFall ? 0 : Math.sin(e.t * 2.6) * .022;
       let lean = Math.sin(e.t * 1.4) * .02;
       if (e.mode === 'dash') lean = -.18;
@@ -10295,13 +10457,22 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // "something is about to happen" the same way either time.
       if (e.blink > 0 || e.tel > 0) ctx.globalAlpha = .3 + Math.abs(Math.sin(e.t * 34)) * .6;
       ctx.translate(115, 190);
-      ctx.rotate(lean);
-      ctx.scale(1 - breath, 1 + breath);
+      if (perched) {
+        // Two swaying rates so the idle never loops visibly, a forward whip on
+        // every attack, and a fast pain shudder — all of it above the rock.
+        const sway = Math.sin(e.t * 1.9) * .017 + Math.sin(e.t * 3.7) * .006;
+        const whip = surge * .075 + (hurt ? .035 + Math.sin(e.t * 44) * .026 : 0);
+        ctx.transform(1, 0, sway + whip, 1, 0, 0);
+        ctx.scale(1 - breath * .5, 1 + breath + surge * .05);
+      } else {
+        ctx.rotate(lean);
+        ctx.scale(1 - breath, 1 + breath);
+      }
       ctx.translate(-115, -190);
       const tint = BOSS_TINT[stageIndex];
       const crit = e.hp / e.maxHp < .25;
       ctx.shadowColor = hurt ? 'rgba(255,80,80,.95)' : crit ? hexA(tint.crit, .95) : hexA(stage.accent2, .85);
-      ctx.shadowBlur = hurt ? 34 : 26 + Math.sin(e.t * 5) * 8;
+      ctx.shadowBlur = hurt ? 34 : 26 + Math.sin(e.t * 5) * 8 + surge * 26;
       ctx.imageSmoothingEnabled = false;
       // Undistorted, size-stable fit: every frame is drawn at the same
       // world-pixels-per-source-pixel scale, derived from the idle frame that
@@ -10320,7 +10491,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const deathK = finalDefeat ? clamp(1 - e.dying / e.dyingMax, 0, 1) : 0;
       const floorT = finalDefeat ? clamp((deathK - .28) / .28, 0, 1) : 0;
       const floorLift = 67 * floorT * floorT * (3 - 2 * floorT);
-      const dy0 = 190 - dh - floorLift + (authoredFall ? 0 : Math.sin(e.t * 2.2) * 5);
+      // The shared 5px drift bob would lift her rock clear of the waterline, so
+      // her frame stays welded to the bottom of the box.
+      const dy0 = 190 - dh - floorLift + (authoredFall || perched ? 0 : Math.sin(e.t * 2.2) * 5);
       if (e.dying > 0) {
         if (authoredFall) {
           // Do not shred an authored pose. It stays solid for most of the count
@@ -10363,6 +10536,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         ctx.drawImage(tintSprite(sprite, useHit ? tint.hit : tint.crit), dx0, dy0, dw, dh);
       }
       ctx.restore();
+      // Outside the body transform, so the surf never shears with her.
+      if (perched) drawSirenWash(e, kx, ky);
       return;
     }
     // Procedural fallback corpse: no strips to tear, so fade and judder.
