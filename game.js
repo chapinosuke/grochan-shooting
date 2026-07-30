@@ -4289,6 +4289,305 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
+  // --- Colossal landmarks --------------------------------------------------
+  // One object per stage that does not fit in the frame, parked far beyond the
+  // scrolling far rows and crawling at a fraction of their speed. Scale is a
+  // comparison, and the panorama had nothing to compare against: every silhouette
+  // was roughly building-sized and moved at roughly building speed. These are
+  // ten times that and move at a tenth of it, so the eye reads real distance —
+  // and every one of them is a shape the stage already implies (the tower over
+  // Tokyo, the bridge the highway is heading for, the furnace the plant feeds,
+  // the storm cell, the cathedral the palace belongs to).
+  //
+  // All are drawn through bgLayerZ at z≈4200-5200 (far side of FOG_D), so
+  // fogMix sinks them toward the sky on its own and they need no hand-tuned
+  // alpha. Gated on bgQuality like the rest of the scenic layers.
+  // Called from inside each theme backdrop, between its sky block and its far
+  // rows — NOT from drawBackdrop. The backdrops repaint in depth order, so a
+  // single late call site would have painted a "distant" object over the near
+  // city. Here the skyline, islands, tanks and spires all pass in front of it,
+  // which is the whole point.
+  const COLOSSUS_Z = 4600;
+  function drawColossus(stage) {
+    const d = backgroundDirector();
+    if (d.q <= 0 || !sceneLayersOn) return;
+    const theme = stage.theme;
+    if (theme === 'neon') drawColossalTower(stage, d);
+    else if (theme === 'aqua') drawColossalPylon(stage, d);
+    else if (theme === 'factory') drawColossalFurnace(stage, d);
+    else if (theme === 'storm') drawColossalThunderhead(stage, d);
+    else drawColossalDome(stage, d);
+  }
+
+  // Shared frame for all five: draw in SCREEN intent (where on the frame the
+  // shape should land), and let bgLayerZ supply only the depth behaviour —
+  // camera parallax and scale. LX/LY convert a screen coordinate into the
+  // layer's own space, LU a screen length. Writing these in raw layer units
+  // was unworkable: at z≈4600 a pixel of intent is six layer pixels.
+  //
+  // Colour deliberately takes its fog from a NEARER depth than the geometry
+  // (COLOSSUS_FOG). At true 4600 the fog mix is ~88% sky and the object simply
+  // vanishes — physically right, dramatically useless. Half that keeps a
+  // readable silhouette while still reading as far away. .18 is as far as it can
+  // go before the shape stops being a silhouette and starts being a cut-out.
+  const COLOSSUS_FOG = .18;
+  function colossusFrame(z) {
+    const s = FOCAL / (FOCAL + z);
+    return {
+      s,
+      LX: sx => VW / 2 + (sx - VW / 2) / s,
+      LY: sy => HORIZON_Y + (sy - HORIZON_Y) / s,
+      LU: u => u / s,
+      col: c => fogMix(c, z * COLOSSUS_FOG),
+    };
+  }
+
+  // TOKYO MIDNIGHT: a supertall whose top third is all the frame can hold. The
+  // stage already owns a lattice tower at mid depth, so this is deliberately a
+  // different silhouette — a slab, stepped and window-lit, standing well behind
+  // the skyline. Everything below y~320 is hidden by the city, so the design
+  // lives in the sky band: that is where the width, the steps and the beacon are.
+  function drawColossalTower(stage, d) {
+    const z = COLOSSUS_Z;
+    const { LX, LY, LU, col } = colossusFrame(z);
+    bgLayerZ(z, () => {
+      const cx = LX(470 - (elapsed * 1.1) % 26);
+      // The city's own towers top out around y=190, so everything below that is
+      // hidden and the design has to live in the 60..190 sky band: that is where
+      // the setbacks, the crown and the spire go, and why it is this wide.
+      const body = col('#0d0620');
+      const slab = (sy0, sy1, w) => ctx.fillRect(cx - LU(w), LY(sy1), LU(w * 2), LY(sy0) - LY(sy1));
+      ctx.save();
+      ctx.fillStyle = body;
+      slab(620, 188, 146);          // shaft, feet lost in the skyline
+      slab(188, 126, 104);          // first setback
+      slab(126, 82, 62);            // crown
+      ctx.fillRect(cx - LU(5), LY(36), LU(10), LY(82) - LY(36));   // spire
+      // Moon-side rim: the one light in the sky is up-right, so the right flank
+      // catches it. Without this the slab is a hole in the sky, not a building.
+      ctx.fillStyle = hexA('#ffe9b8', .13);
+      for (const [sy0, sy1, w] of [[620, 188, 146], [188, 126, 104], [126, 82, 62]]) {
+        ctx.fillRect(cx + LU(w - 8), LY(sy1), LU(8), LY(sy0) - LY(sy1));
+      }
+      // Window grid, dense enough to say "occupied" and sparse enough to stay cheap.
+      ctx.fillStyle = hexA(stage.accent, .3);
+      for (let r = 0; r < 5; r++) {
+        const sy = 118 - r * 9;
+        for (let c = -2; c <= 2; c++) ctx.fillRect(cx + LU(c * 22) - LU(5), LY(sy), LU(9), LU(5));
+      }
+      ctx.fillStyle = hexA(stage.accent2, .2);
+      for (let r = 0; r < 8; r++) {
+        const sy = 182 - r * 12;
+        for (let c = -3; c <= 3; c++) ctx.fillRect(cx + LU(c * 38) - LU(7), LY(sy), LU(13), LU(6));
+      }
+      // Aviation beacon on the spire.
+      const beacon = Math.max(0, Math.sin(elapsed * 1.5));
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = .25 + beacon * .6;
+      const by = LY(32), r = LU(44);
+      const bg = ctx.createRadialGradient(cx, by, 0, cx, by, r);
+      bg.addColorStop(0, 'rgba(255,130,150,.95)'); bg.addColorStop(1, 'rgba(255,60,110,0)');
+      ctx.fillStyle = bg;
+      ctx.beginPath(); ctx.arc(cx, by, r, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    });
+  }
+
+  // AQUA HIGHWAY: the main pylon of the bridge the road is heading for. Its top
+  // stays inside the frame on purpose — a cropped column reads as a pole, while
+  // the saddle and the cables leaving it read as a bridge, and the bridge is
+  // what tells you how far away it is.
+  function drawColossalPylon(stage, d) {
+    const z = COLOSSUS_Z + 400;
+    const { LX, LY, LU, col } = colossusFrame(z);
+    bgLayerZ(z, () => {
+      const cx = LX(884 - (elapsed * 1.5) % 34);
+      const sea = LY(556), steel = col('#173f66'), lit = col('#2f6f9e');
+      ctx.save();
+      // Two thick legs converging toward the saddle, crossbeams between them.
+      ctx.fillStyle = steel;
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * LU(20), sea);
+        ctx.lineTo(cx + side * LU(52), sea);
+        ctx.lineTo(cx + side * LU(34), LY(110));
+        ctx.lineTo(cx + side * LU(14), LY(110));
+        ctx.closePath(); ctx.fill();
+      }
+      for (const [sy, w, h] of [[430, 48, 15], [300, 40, 13], [176, 33, 12]]) {
+        ctx.fillRect(cx - LU(w), LY(sy), LU(w * 2), LU(h));
+      }
+      ctx.fillRect(cx - LU(40), LY(110), LU(80), LU(20));            // saddle
+      // Moonlit left flank (the stage's moon is up-left).
+      ctx.fillStyle = hexA('#cdf6ff', .12);
+      for (const side of [-1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * LU(52), sea);
+        ctx.lineTo(cx + side * LU(44), sea);
+        ctx.lineTo(cx + side * LU(28), LY(110));
+        ctx.lineTo(cx + side * LU(34), LY(110));
+        ctx.closePath(); ctx.fill();
+      }
+      // Main cables from the saddle out past both screen edges, plus hangers.
+      ctx.strokeStyle = lit; ctx.lineWidth = LU(5);
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + side * LU(18), LY(114));
+        ctx.quadraticCurveTo(cx + side * LU(430), LY(360), cx + side * LU(980), LY(506));
+        ctx.stroke();
+      }
+      ctx.lineWidth = LU(2); ctx.globalAlpha = .5;
+      for (let i = -8; i <= 8; i++) {
+        if (!i) continue;
+        const t = Math.abs(i) / 8, hx = cx + Math.sign(i) * LU(120 * Math.abs(i));
+        const hy = LY(114 + (506 - 114) * t * t * .92);
+        ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(hx, LY(520)); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      // The deck it carries, running into the haze both ways.
+      ctx.fillStyle = col('#11395f'); ctx.fillRect(cx - LU(980), LY(520), LU(1960), LU(16));
+      ctx.fillStyle = hexA(stage.accent, .28); ctx.fillRect(cx - LU(980), LY(518), LU(1960), LU(3));
+      ctx.restore();
+    });
+  }
+
+  // SUNSET FACTORY: the blast furnace the whole plant feeds. The sky here is the
+  // brightest of any stage, so this one reads as a dark mass against it — and the
+  // smoke column leaving the top of the frame is half the height cue.
+  function drawColossalFurnace(stage, d) {
+    const z = COLOSSUS_Z - 200;
+    const { LX, LY, LU, col } = colossusFrame(z);
+    bgLayerZ(z, () => {
+      const cx = LX(300 - (elapsed * 1.3) % 30);
+      const base = LY(620), iron = col('#2c1128'), dark = col('#1d0a20');
+      ctx.save();
+      // Smoke column first, so the stack overlaps it.
+      ctx.fillStyle = hexA('#3a1a30', .5);
+      for (let i = 0; i < 7; i++) {
+        const t = i / 6;
+        const sy = 150 - t * 190, w = 46 + t * 74;
+        const sway = Math.sin(elapsed * .18 + i * .8) * (10 + t * 34);
+        ctx.globalAlpha = .5 - t * .34;
+        ctx.beginPath(); ctx.ellipse(cx + LU(sway), LY(sy), LU(w), LU(30 + t * 26), 0, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      // Barrel on splayed legs, tapering into a fat stack.
+      ctx.fillStyle = iron;
+      ctx.beginPath();
+      ctx.moveTo(cx - LU(112), base);
+      ctx.lineTo(cx - LU(88), LY(430));
+      ctx.lineTo(cx - LU(52), LY(340));
+      ctx.lineTo(cx - LU(44), LY(150));
+      ctx.lineTo(cx + LU(44), LY(150));
+      ctx.lineTo(cx + LU(52), LY(340));
+      ctx.lineTo(cx + LU(88), LY(430));
+      ctx.lineTo(cx + LU(112), base);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = dark;
+      for (const [sy, w] of [[414, 94], [378, 84], [344, 70], [300, 52], [240, 50]]) ctx.fillRect(cx - LU(w), LY(sy), LU(w * 2), LU(12));
+      // Sun-side rim (the sun sits dead centre at 640,468, so the right flank).
+      ctx.fillStyle = hexA('#ffc078', .16);
+      ctx.fillRect(cx + LU(37), LY(340), LU(8), LY(150) - LY(340));
+      ctx.fillRect(cx + LU(80), LY(430), LU(9), LY(340) - LY(430));
+      ctx.globalCompositeOperation = 'lighter';
+      // Tap hole spilling light, and the throat at the top of the stack.
+      const tapY = LY(572), tapR = LU(130);
+      const tap = ctx.createRadialGradient(cx - LU(30), tapY, 0, cx - LU(30), tapY, tapR);
+      tap.addColorStop(0, hexA('#ffe15a', .5)); tap.addColorStop(.45, hexA('#ff5a36', .22)); tap.addColorStop(1, 'rgba(255,90,54,0)');
+      ctx.fillStyle = tap; ctx.globalAlpha = .55 + Math.sin(elapsed * 1.7) * .2;
+      ctx.beginPath(); ctx.arc(cx - LU(30), tapY, tapR, 0, Math.PI * 2); ctx.fill();
+      const mY = LY(156), mR = LU(104);
+      const mouth = ctx.createRadialGradient(cx, mY, 0, cx, mY, mR);
+      mouth.addColorStop(0, hexA('#ffe15a', .45)); mouth.addColorStop(1, 'rgba(255,120,50,0)');
+      ctx.fillStyle = mouth; ctx.globalAlpha = .5 + Math.sin(elapsed * .9 + 1) * .18;
+      ctx.beginPath(); ctx.arc(cx, mY, mR, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    });
+  }
+
+  // CYBER STORM: the cell itself. An anvil-topped thunderhead taller than the
+  // frame that lights from within on the same clock as the stage's bolts, so
+  // the sky finally has a source instead of flashing everywhere at once.
+  function drawColossalThunderhead(stage, d) {
+    const z = COLOSSUS_Z + 800;
+    const { LX, LY, LU, col } = colossusFrame(z);
+    const surge = Math.min(1, Math.max(0, lightning) * 2.4);
+    bgLayerZ(z, () => {
+      const cx = LX(430 - (elapsed * 1.8) % 40);
+      const body = col('#0f4442'), lit = col('#37a882');
+      // Screen-space lobes: a stack of cauliflower blobs widening into the anvil.
+      const lobes = [
+        [0, 570, 150, 66], [-46, 470, 118, 58], [50, 452, 108, 54],
+        [-12, 356, 140, 66], [-88, 302, 96, 48], [92, 292, 102, 50],
+        [0, 214, 186, 72], [-152, 186, 122, 50], [156, 176, 128, 52],
+        [-262, 162, 96, 40], [270, 154, 100, 42],
+      ];
+      ctx.save();
+      ctx.fillStyle = body;
+      for (const [dx, sy, w, h] of lobes) {
+        ctx.beginPath(); ctx.ellipse(cx + LU(dx), LY(sy), LU(w), LU(h), 0, 0, Math.PI * 2); ctx.fill();
+      }
+      // Only the upper lobes carry a lit crown — the top of a cloud is its lit
+      // side, and that is what makes it a volume instead of a stain.
+      ctx.globalAlpha = .45 + surge * .55;
+      ctx.fillStyle = lit;
+      for (const [dx, sy, w, h] of lobes.slice(6)) {
+        ctx.beginPath(); ctx.ellipse(cx + LU(dx), LY(sy - h * .34), LU(w * .8), LU(h * .5), 0, 0, Math.PI * 2); ctx.fill();
+      }
+      // Internal illumination, placed at the bolt so the cell is its source.
+      if (surge > .02) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = surge * .85;
+        const gx = LX(clamp(lightningX, 120, 900)), gy = LY(360), gr = LU(260);
+        const gl = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+        gl.addColorStop(0, 'rgba(200,255,230,.6)'); gl.addColorStop(.45, 'rgba(114,255,104,.22)'); gl.addColorStop(1, 'rgba(114,255,104,0)');
+        ctx.fillStyle = gl;
+        ctx.beginPath(); ctx.arc(gx, gy, gr, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+    });
+  }
+
+  // HEART PALACE: the one interior in the game, so there is no horizon to park a
+  // colossus on — depth here means the corridor itself. Two more column bays are
+  // pushed far behind the existing pair (z 1280 / 620), fog-sunk and nearly still,
+  // which doubles the apparent length of the nave, plus the far wall's arch ring
+  // closing it off so the eye has somewhere to land at the end.
+  function drawColossalDome(stage, d) {
+    const z = COLOSSUS_Z;
+    const { LX, LY, LU, col } = colossusFrame(z);
+    bgLayerZ(z, () => {
+      const cx = LX(640);
+      const stone = col('#4a1236'), trim = col('#8a2c58');
+      ctx.save();
+      // Far wall: three concentric arches receding to the vanishing point.
+      for (let i = 2; i >= 0; i--) {
+        const w = 150 + i * 46, h = 300 + i * 52;
+        ctx.globalAlpha = .5 - i * .12;
+        ctx.fillStyle = i ? stone : trim;
+        ctx.beginPath();
+        ctx.moveTo(cx - LU(w), LY(620));
+        ctx.lineTo(cx - LU(w), LY(620 - h * .55));
+        ctx.quadraticCurveTo(cx, LY(620 - h), cx + LU(w), LY(620 - h * .55));
+        ctx.lineTo(cx + LU(w), LY(620));
+        ctx.closePath(); ctx.fill();
+      }
+      // Light coming from beyond it, so the corridor ends in glare not in a wall.
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = .5 + Math.sin(elapsed * .5) * .1;
+      const gy = LY(470), gr = LU(190);
+      const g = ctx.createRadialGradient(cx, gy, 0, cx, gy, gr);
+      g.addColorStop(0, hexA('#ffe15a', .4)); g.addColorStop(.5, hexA(stage.accent2, .14)); g.addColorStop(1, 'rgba(255,225,90,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(cx, gy, gr, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    });
+    // The extra bays are real nave geometry, so they inherit every material and
+    // lighting response the near rows already have.
+    drawPalaceNave(stage, 3400, .22, false);
+    drawPalaceNave(stage, 2200, .34, false);
+  }
+
   // Shared helper: a scrolling row of silhouette shapes on the far plane.
   function farRow(stage, { y, speed, gap, alpha, color, draw }) {
     const off = ((elapsed * speed) % gap + gap) % gap;
@@ -4917,7 +5216,12 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // Backdrop quality tier driven by the fps EMA — the generalized form of
   // drawBokeh's fps<45 skip. 2=full, 1=no reflections/heat shimmer, 0=drop all
   // enrichment so the worst case never costs more than the pre-3D backdrop.
-  const bgQuality = () => fpsAvg >= 55 ? 2 : fpsAvg >= 45 ? 1 : 0;
+  // Scenic detail tier, adapted from the measured frame rate. The pin exists
+  // for the screenshot harness only (window.__bgq, localhost): headless software
+  // rasterisation reports FPS far below a real browser, so the tiers strip out
+  // exactly the layers an art check is trying to look at.
+  let bgQualityPin = null;
+  const bgQuality = () => bgQualityPin !== null ? bgQualityPin : fpsAvg >= 55 ? 2 : fpsAvg >= 45 ? 1 : 0;
 
   // Extruded box primitive used by the stage-volume pass. The back face shifts
   // toward the screen-centre vanishing point, so left and right objects expose
@@ -5253,9 +5557,121 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.restore();
   }
 
+  // --- Key light: shafts through the air ----------------------------------
+  // Every stage is lit by one dominant source. Two of them already throw
+  // shafts (the factory sun via drawSunGodRays, the palace rose window via
+  // drawGodRays); these are the other three, each anchored to the exact light
+  // the rest of the stage is lit from, so the rays can never contradict the
+  // scenery. Angles are radians with 0 = screen right, PI/2 = down.
+  const KEY_LIGHT = {
+    // The moon over the towers (drawNeonBackdrop draws it at 970,145): cold,
+    // thin shafts raking down-left across the skyline.
+    neon: { x: 970, y: 145, from: 1.98, to: 2.92, len: 780, rays: 5, wide: [30, 66], alpha: .5, warm: '255,238,180', cool: '255,180,120' },
+    // Moonlight on sea haze (its moon sits at 210,120): the widest, softest
+    // shafts in the game — humid air scatters the most.
+    aqua: { x: 210, y: 120, from: .24, to: 1.22, len: 920, rays: 5, wide: [42, 96], alpha: .62, warm: '198,246,255', cool: '110,214,255' },
+  };
+  function drawLightShafts(stage, d) {
+    if (d.q <= 0) return;
+    // The storm has no steady light: its shafts ARE the lightning, so they fire
+    // from wherever the bolt landed and die with it.
+    if (stage.theme === 'storm') {
+      const surge = Math.min(1, Math.max(0, lightning) * 2.6);
+      if (surge <= .02) return;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const rays = d.q === 2 ? 5 : 3;
+      for (let i = 0; i < rays; i++) {
+        const phi = Math.PI / 2 + (i - (rays - 1) / 2) * .27;
+        ctx.save();
+        ctx.translate(lightningX, -70); ctx.rotate(phi);
+        const g = cachedGrad('stormRay', () => {
+          const gr = ctx.createLinearGradient(0, 0, 900, 0);
+          gr.addColorStop(0, 'rgba(214,255,240,.30)'); gr.addColorStop(.45, 'rgba(120,255,190,.10)'); gr.addColorStop(1, 'rgba(90,255,170,0)');
+          return gr;
+        });
+        ctx.fillStyle = g; ctx.globalAlpha = surge * (.6 + (i % 2) * .4);
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(900, -70); ctx.lineTo(900, 70); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+      return;
+    }
+    const L = KEY_LIGHT[stage.theme];
+    if (!L) return;
+    const rays = d.q === 2 ? L.rays : Math.max(3, L.rays - 2);
+    // The whole fan rides the same .5 parallax layer the moon is drawn in
+    // (drawMoon sits inside bgLayer(.5) on both stages). Screen-fixed shafts
+    // detached from their moon by up to bgCam/2 whenever the player climbed
+    // or dived — light that slides off its source reads as a glitch.
+    bgLayer(.5, () => {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      const g = cachedGrad('shaft' + stage.theme, () => {
+        const gr = ctx.createLinearGradient(0, 0, L.len, 0);
+        gr.addColorStop(0, `rgba(${L.warm},.15)`); gr.addColorStop(.5, `rgba(${L.cool},.05)`); gr.addColorStop(1, `rgba(${L.cool},0)`);
+        return gr;
+      });
+      for (let i = 0; i < rays; i++) {
+        // Each shaft breathes on its own slow phase, so the fan never pulses as
+        // one block — that is the difference between "air" and "a decal".
+        const t = rays === 1 ? .5 : i / (rays - 1);
+        const phi = L.from + (L.to - L.from) * t + Math.sin(elapsed * .11 + i * 2.3) * .035;
+        const w = L.wide[0] + ((i * 37) % (L.wide[1] - L.wide[0]));
+        ctx.save();
+        ctx.translate(L.x, L.y); ctx.rotate(phi);
+        ctx.fillStyle = g;
+        ctx.globalAlpha = L.alpha * (.55 + Math.sin(elapsed * .6 + i * 1.9) * .28) * (d.boss ? 1.25 : 1);
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(L.len, -w / 2); ctx.lineTo(L.len, w / 2); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+    });
+  }
+
+  // --- Air: haze actually moving between camera and scenery ----------------
+  // Three soft bands drifting at three speeds. Static haze reads as a filter
+  // over the picture; haze that crawls at the far layer's speed and slides at
+  // the near layer's speed reads as depth you could walk into. Nothing else in
+  // the frame moves this slowly, so it never competes with gameplay.
+  const AIR_DRIFT = {
+    neon: { color: '#9d8bff', rows: [[298, .055], [432, .05], [566, .042]] },
+    aqua: { color: '#bdf3ff', rows: [[276, .075], [420, .062], [548, .05]] },
+    factory: { color: '#ffb27a', rows: [[300, .08], [442, .068], [568, .058]] },
+    storm: { color: '#8dffd2', rows: [[262, .062], [402, .055], [540, .046]] },
+    palace: { color: '#ffd9ef', rows: [[300, .062], [440, .052], [562, .044]] },
+  };
+  function drawAirDrift(stage, d) {
+    if (d.q <= 0) return;
+    const cfg = AIR_DRIFT[stage.theme];
+    if (!cfg) return;
+    const g = cachedGrad('airWisp' + stageIndex, () => {
+      // Unit-radius blob, stretched by the CTM — one gradient for all three rows.
+      const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+      gr.addColorStop(0, hexA(cfg.color, .9)); gr.addColorStop(.55, hexA(cfg.color, .35)); gr.addColorStop(1, hexA(cfg.color, 0));
+      return gr;
+    });
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g;
+    cfg.rows.forEach(([y, a], i) => {
+      const span = VW + 1100;
+      const x = ((elapsed * (7 + i * 11) + i * 610) % span) - 520;
+      const w = 560 + i * 230, h = 26 + i * 20;
+      ctx.save();
+      ctx.globalAlpha = a * (.7 + Math.sin(elapsed * .27 + i * 1.7) * .3) * (d.q >= 2 ? 1 : .65);
+      ctx.translate(x, y + Math.sin(elapsed * .19 + i * 2.1) * 11);
+      ctx.scale(w, h);
+      ctx.beginPath(); ctx.arc(0, 0, 1, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    });
+    ctx.restore();
+  }
+
   // Atmospheric perspective: distant layers fade into a haze the colour of the sky,
   // and a warm glow leaks up from the neon ground for depth.
   function drawAtmosphere(stage) {
+    const dir = backgroundDirector();
+    // Light and air go on top of the scenery but under gameplay: a shaft that
+    // stops at the building it passes is a decal, not a shaft.
+    drawLightShafts(stage, dir);
+    drawAirDrift(stage, dir);
     ctx.save();
     // Aerial perspective is densest along the horizon and thins BOTH ways — up
     // into clear sky and down into the near ground. A ramp that just gets
@@ -5392,6 +5808,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawStars(90, '#ffe15a', '#8defff');
       for (const c of clouds) drawCloud(c, '#d7ddff', .11);
     });
+    drawColossus(stage);
     bgLayer(.34, () => {
       for (const p of bgProps) if (p.kind === 'searchlight') drawSearchlight(p, stage);
       // Ultra-far third skyline: three city depths with haze between them.
@@ -6224,6 +6641,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawStars(50, '#eafcff', '#8defff');
       for (const c of clouds) drawCloud(c, '#eaf6ff', .16);
     });
+    drawColossus(stage);
     bgLayer(.32, () => {
       drawAquaCoastline(stage);
       // Second, dimmer island row drifting far behind the main pair.
@@ -6766,6 +7184,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       for (const c of clouds) drawCloud(c, '#ffd9a0', .13);
       drawFactoryFlares(stage);
     });
+    drawColossus(stage);
     drawCoolingTowers(stage);
     // Far duplicate tank row sunk into the haze behind the main refinery.
     bgLayer(.32, () => drawRefineryTanks(stage, .55, .38, -150));
@@ -7161,6 +7580,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawWireRings(stage, surge);
       drawDataRoutes(stage, surge);
     });
+    drawColossus(stage);
     bgLayer(.32, () => {
       drawStormCloudRank(1);
       // Ultra-far third spire ridge behind the existing two.
@@ -7434,6 +7854,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // The cathedral proper interleaves in depth — windows behind rays behind
     // the far colonnade, chandeliers hanging between the column rows — so the
     // palace is the one stage that uses the painter's queue.
+    // Deepest entry in the palace's painter's queue, so the towers, the glass
+    // wall and both nave rows all pass in front of the cathedral behind them.
+    volPush(COLOSSUS_Z, () => drawColossus(stage));
     volPush(1600, () => bgLayer(.32, () => drawPalaceTowers(stage)));
     volPush(1300, () => bgLayer(.28, () => drawStainedGlassWall(stage)));
     volPush(1280, () => drawPalaceNave(stage, 1280, .5, false));
@@ -11535,6 +11958,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     });
     window.__grantAmmoPack = () => { ammoPackStock = Math.min(AMMO_PACK_MAX, ammoPackStock + 1); };
     window.__bgLayers = on => { sceneLayersOn = !!on; };
+    // Pin the scenic tier (0..2) so a harness sees the same background a real
+    // browser draws; null hands it back to the FPS-adaptive default.
+    window.__bgq = n => { bgQualityPin = n === null || n === undefined ? null : clamp(n | 0, 0, 2); };
+    // Smoothed frame rate, so a harness can measure the cost of a scenic change
+    // instead of guessing. Absolute numbers are meaningless under software
+    // rasterisation; the before/after delta at a pinned tier is not.
+    window.__fps = () => Math.round(fpsAvg * 10) / 10;
     window.__bgDir = () => backgroundDirector();
     window.__bossMaxHp = () => { const b = enemies.find(en => en.type === 'boss' || en.type === 'midboss'); return b ? b.maxHp : null; };
     window.__setSpecial = n => { special = clamp(n, 0, 100); updateSpecialButton(); };
