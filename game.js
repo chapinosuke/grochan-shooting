@@ -81,7 +81,15 @@
     gameOver: new Audio('assets/bgm/Game Over, Again.mp3'),
     ending: new Audio('assets/bgm/静かに睨め.mp3')
   };
-  const bgmVolumes = { title: .3, opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32, gameOver: .28, ending: .3 };
+  // Per-track gains, not one master: the tracks are mastered at different
+  // levels, so a shared number makes some of them sound small. `静かに睨め`
+  // (ending) is the quietest master in the set — mean -18.5dBFS against the
+  // -14.5..-16.5 of everything else, and it peaks at only -4.8dBFS — so at the
+  // old .3 it landed at an effective -29dB, 4dB below the final-boss theme it
+  // takes over from. .45 puts it at -25.4dB, just under that theme, which is
+  // where the finale belongs. Its low peak means there is still ~12dB of
+  // headroom, so nothing clips.
+  const bgmVolumes = { title: .3, opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32, gameOver: .28, ending: .45 };
   // The ending theme plays through once and stops (the staff roll holds on
   // FIN afterward instead of looping the credits), unlike every other track.
   Object.entries(bgmTracks).forEach(([key, track]) => { track.loop = key !== 'ending'; track.preload = 'auto'; track.volume = bgmVolumes[key]; });
