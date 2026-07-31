@@ -288,6 +288,7 @@
   let shoppers = [];     // pedestrians walking the shopping street (neon stage)
   let formationTimer = 3;
   let blockWallTimer = 0;  // personal cooldown for destructible wall spawns
+  let stageHazardTimer = 0; // cooldown for each stage's signature environmental hazard
   let fpsShow = false;   // F1 toggles a verification-only FPS readout
   let fpsAvg = 60;       // EMA of 1/rawDt
   const padInput = { x: 0, y: 0, fire: false, special: false, bomb: false };
@@ -1096,6 +1097,9 @@
   function setupStage() {
     stageKills = 0; stageStart = elapsed; stageDamaged = false;
     formationTimer = 2.5 + Math.random() * 2;
+    // First signature hazard fires a little into 'buildup', never in the
+    // opening trickle — the player meets the enemies before the scenery bites.
+    stageHazardTimer = 14 + Math.random() * 4;
     ambient = []; bgProps = []; lightning = 0; shoppers = [];
     const theme = stages[stageIndex].theme;
     if (theme === 'neon') {
@@ -1653,6 +1657,81 @@
       for (let i = 0; i < n; i++) {
         spawnEnemy(airType, { y: 90 + i * 46, xOffset: i * 85, shape: 'column', slot: i });
         spawnEnemy(airType, { y: 530 - i * 46, xOffset: i * 85, shape: 'column', slot: i });
+      }
+    }
+  }
+
+  // Each stage's signature environmental hazard — the "名物" that makes the
+  // route itself feel like a different place, not just a different enemy skin.
+  // Every event is loosely aimed at where the player is NOW; the telegraph
+  // budget (telFor) is sized so the escape is always honest. All of them ride
+  // the shared hazard clock: [0,warn) telegraph, [warn,warn+live) lethal.
+  function runStageHazard() {
+    const theme = stages[stageIndex].theme;
+    const px = player.x + 56, py = player.y + 55;
+    if (theme === 'neon') {
+      // 終電特急: a neon liner storms down one horizontal lane, right to left.
+      // Vertical escape, so the telegraph budgets lane height + hitbox + margin.
+      const h = 104, len = 980, speed = 1680;
+      hazards.push({
+        kind: 'train', x: VW + 80, y: clamp(py, 150, 600), w: len, h, speed,
+        warn: telFor(h / 2 + 130), live: (VW + 180 + len) / speed, fade: .5,
+        lock: 0, t: 0, damage: 30, color: '#31e8ff', seed: Math.random() * 1000
+      });
+    } else if (theme === 'aqua') {
+      // 水柱: 2-3 spouts burst up out of the sea. The last one reads the
+      // player's column; the stagger (+.4s each) makes them a left-to-right
+      // drum roll rather than one wall.
+      const n = Math.random() < .5 ? 3 : 2;
+      const base = telFor(48 + 90);
+      for (let i = 0; i < n; i++) {
+        const x = clamp(i === n - 1 ? px : 180 + Math.random() * (VW - 420), 140, VW - 110);
+        hazards.push({
+          kind: 'spout', x, y: 688, w: 96, top: 150 + Math.random() * 70,
+          warn: base + i * .4, live: .8, fade: .55, lock: 0, t: 0, damage: 22,
+          color: '#65fff2', seed: Math.random() * 1000
+        });
+      }
+    } else if (theme === 'factory') {
+      // 溶鉄ポア: an overhead ladle slides in, tips, and dumps a column of
+      // liquid steel down the player's file. Sometimes a second pour lands
+      // offset so hovering in place is never the answer.
+      const n = Math.random() < .35 ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        // Left clamp 340: the ladle telegraph lives at the top of the screen,
+        // and anything further left hides behind the MONEY readout.
+        const x = clamp(px + (i === 0 ? 0 : (Math.random() < .5 ? -1 : 1) * (280 + Math.random() * 140)), 340, VW - 130);
+        hazards.push({
+          kind: 'pour', x, y: 0, w: 74, floor: 658,
+          warn: telFor(37 + 90) + i * .35, live: 1.0, fade: .45, lock: 0, t: 0,
+          damage: 30, color: '#ff9f43', seed: Math.random() * 1000
+        });
+      }
+    } else if (theme === 'storm') {
+      // マーチング落雷: three strikes walk in from the right and land on the
+      // player's column — standing still eats the third one.
+      const base = telFor(35 + 90);
+      for (let i = 0; i < 3; i++) {
+        hazards.push({
+          kind: 'bolt', x: clamp(px + (2 - i) * 190, 120, VW - 90), y: 0, w: 70,
+          warn: base + i * .34, live: .16, fade: .38, lock: 0, t: 0, damage: 32,
+          color: '#72ff68', seed: Math.random() * 1000
+        });
+      }
+    } else {
+      // シャンデリア落下: the palace's own lighting swings loose, drops, and
+      // shatters into a fan of crystal shards on the marble.
+      const n = Math.random() < .3 ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        // Left clamp 340: the swinging fixture is the telegraph, and anything
+        // further left hangs behind the MONEY readout. The far-left corner
+        // becomes a safe pocket, which cupid fire covers anyway.
+        const x = clamp(i === 0 ? px : px + (Math.random() < .5 ? -1 : 1) * (300 + Math.random() * 160), 380, VW - 170);
+        hazards.push({
+          kind: 'chand', x, y: -30, w: 150, h: 120, floor: 648,
+          warn: telFor(75 + 90) + i * .45, live: .62, fade: .8, lock: 0, t: 0,
+          damage: 26, color: '#ffe15a', seed: Math.random() * 1000
+        });
       }
     }
   }
@@ -3158,6 +3237,16 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       runSetpiece(setpieceStep);
       setpieceStep++;
     }
+    // Stage-signature environmental hazards run on their own cooldown so they
+    // land between waves rather than on top of a fresh one. Hot phases only —
+    // the breathers stay breathers, and stage 1 keeps them rarer while the
+    // player is still learning the lane.
+    stageHazardTimer -= dt;
+    if (bossState === 'waiting' && stageBanner <= 1.2 && stageHazardTimer <= 0
+      && ['assault', 'formation', 'setpiece'].includes(activePhase.mode)) {
+      runStageHazard();
+      stageHazardTimer = (isStage1() ? 16 : 11) - (activePhase.intensity ?? .5) * 3 + Math.random() * 4;
+    }
     pickupTimer -= dt;
     if (pickupTimer <= 0 && (bossState === 'waiting' || bossState === 'active' || bossState === 'midboss-active')) {
       // Ammo carves a need-weighted slice off the front of the pool — a dry
@@ -3329,6 +3418,42 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         while (d > Math.PI) d -= Math.PI * 2;
         while (d < -Math.PI) d += Math.PI * 2;
         hz.ang += clamp(d, -2.4 * dt, 2.4 * dt);
+      }
+      // Stage-signature hazards stage their one-shot cues here so the draw
+      // pass stays pure. Each flag fires exactly once per hazard.
+      if (hz.kind === 'train') {
+        if (!hz.horn && hz.t >= hz.warn - .9) { hz.horn = true; sfx('missile'); }
+        if (hz.t >= hz.warn && hz.t < hz.warn + hz.live) shake = Math.max(shake, 4);
+      } else if (hz.kind === 'spout' && !hz.erupted && hz.t >= hz.warn) {
+        hz.erupted = true; sfx('bubble'); shake = Math.max(shake, 6);
+        burst(hz.x, 668, '#c9f6ff', 14, 280);
+      } else if (hz.kind === 'pour') {
+        if (!hz.pourSfx && hz.t >= hz.warn) { hz.pourSfx = true; sfx('fireball'); shake = Math.max(shake, 5); }
+        const pel = hz.t - hz.warn;
+        // Impact embers spray off the floor for as long as the stream runs.
+        if (pel >= .14 && pel < hz.live && Math.random() < .5) particles.push({
+          x: hz.x + (Math.random() - .5) * 64, y: hz.floor, vx: (Math.random() - .5) * 300,
+          vy: -(120 + Math.random() * 280), life: .5 + Math.random() * .4, max: .9,
+          size: 3 + Math.random() * 3, color: Math.random() < .5 ? '#ffe15a' : '#ff8a35', gravity: 540
+        });
+      } else if (hz.kind === 'bolt' && !hz.struck && hz.t >= hz.warn) {
+        // The strike IS the stage's lightning: reuse the backdrop flash so the
+        // sky, the light shafts and the hazard all agree on the source.
+        hz.struck = true; lightning = .42; lightningX = hz.x;
+        shake = Math.max(shake, 13); flash = Math.max(flash, .22); sfx('thunder');
+      } else if (hz.kind === 'chand' && !hz.landed && hz.t >= hz.warn + hz.live) {
+        hz.landed = true; shake = Math.max(shake, 12); sfx('boom'); sfx('shield');
+        burstDebris(hz.x, hz.floor, ['#ffe15a', '#fff6d8', '#ff9ccf'], 22, 330);
+        shockwaves.push({ x: hz.x, y: hz.floor, r: 12, speed: 480, life: .5, max: .5, color: '#ffe15a' });
+        // Crystal shards fan up and out, then rain back down under gravity.
+        // A bombed (dead) chandelier still crashes, but crashes harmless.
+        if (!hz.dead) for (let i = 0; i < 5; i++) {
+          const a = Math.PI + (i + .5) / 5 * Math.PI;
+          enemyBullets.push({
+            x: hz.x, y: hz.floor - 34, vx: Math.cos(a) * 175, vy: Math.sin(a) * 175 - 55,
+            gravity: 310, r: 7, life: 1.6, damage: 12, heart: true, grazeMul: .5
+          });
+        }
       }
     }
     hazards = hazards.filter(hz => hz.t < hz.warn + hz.live + hz.fade);
@@ -8648,6 +8773,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const hz of hazards) {
       if (hz.t >= hz.warn) continue;
       const k = clamp(hz.t / Math.max(.01, hz.warn), 0, 1);
+      if (hz.kind === 'train') { drawTrainWarn(hz, k); continue; }
+      if (hz.kind === 'spout') { drawSpoutWarn(hz, k); continue; }
+      if (hz.kind === 'pour') { drawPourWarn(hz, k); continue; }
+      if (hz.kind === 'bolt') { drawBoltWarn(hz, k); continue; }
+      if (hz.kind === 'chand') { drawChandWarn(hz, k); continue; }
       const locked = hz.t > hz.warn - hz.lock;
       ctx.save(); ctx.translate(hz.x, hz.y); if (hz.ang) ctx.rotate(hz.ang);
       ctx.globalAlpha = (locked ? .34 : .16) + Math.abs(Math.sin(elapsed * (locked ? 30 : 14))) * .14;
@@ -8665,6 +8795,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       if (el < 0) continue;
       const a = el < hz.live ? 1 : Math.max(0, 1 - (el - hz.live) / hz.fade);
       if (a <= 0) continue;
+      if (hz.kind === 'train') { drawTrain(hz, el, a); continue; }
+      if (hz.kind === 'spout') { drawSpout(hz, el, a); continue; }
+      if (hz.kind === 'pour') { drawPour(hz, el, a); continue; }
+      if (hz.kind === 'bolt') { drawBolt(hz, el, a); continue; }
+      if (hz.kind === 'chand') { drawChandFall(hz, el, a); continue; }
       ctx.save(); ctx.translate(hz.x, hz.y); if (hz.ang) ctx.rotate(hz.ang);
       ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a;
       const bg = ctx.createLinearGradient(0, -hz.h * 1.2, 0, hz.h * 1.2);
@@ -8687,6 +8822,375 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.restore();
     }
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+
+  // ---- Stage-signature hazards: per-kind telegraphs and bodies -------------
+  // All of these follow the house style: layered gradients instead of
+  // shadowBlur, light from the top-left, additive only for actual light.
+
+  // Stage 1 — 終電特急. Telegraph: the lane band swells between dashed rails,
+  // a level-crossing lamp pair blinks at the right edge, and the headlight
+  // bloom pushes in from beyond the screen as departure nears.
+  function drawTrainWarn(hz, k) {
+    const y = hz.y, hh = hz.h / 2;
+    ctx.save();
+    const g = ctx.createLinearGradient(0, y - hh, 0, y + hh);
+    g.addColorStop(0, hexA(hz.color, 0)); g.addColorStop(.5, hexA(hz.color, .5)); g.addColorStop(1, hexA(hz.color, 0));
+    ctx.globalAlpha = .10 + k * .14 + Math.abs(Math.sin(elapsed * 14)) * .07;
+    ctx.fillStyle = g; ctx.fillRect(0, y - hh * k, VW, hh * 2 * k);
+    ctx.globalAlpha = .30 + k * .35; ctx.strokeStyle = hz.color; ctx.lineWidth = 2;
+    ctx.setLineDash([26, 18]); ctx.lineDashOffset = elapsed * 320;
+    ctx.beginPath(); ctx.moveTo(0, y - hh); ctx.lineTo(VW, y - hh);
+    ctx.moveTo(0, y + hh); ctx.lineTo(VW, y + hh); ctx.stroke();
+    ctx.setLineDash([]);
+    const sx = VW - 52;
+    const blink = Math.sin(elapsed * 15) > 0;
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#1c163e';
+    ctx.beginPath(); ctx.roundRect(sx - 30, y - 16, 60, 32, 8); ctx.fill();
+    ctx.strokeStyle = '#3a2f6e'; ctx.lineWidth = 2; ctx.stroke();
+    for (const [dx, on] of [[-14, blink], [14, !blink]]) {
+      ctx.fillStyle = on ? '#ff3e9d' : '#472a56';
+      ctx.beginPath(); ctx.arc(sx + dx, y, 7, 0, Math.PI * 2); ctx.fill();
+      if (on) {
+        const lg = ctx.createRadialGradient(sx + dx, y, 1, sx + dx, y, 26);
+        lg.addColorStop(0, 'rgba(255,62,157,.7)'); lg.addColorStop(1, 'rgba(255,62,157,0)');
+        ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(sx + dx, y, 26, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    const hg = ctx.createRadialGradient(VW + 26, y, 4, VW + 26, y, 70 + k * 190);
+    hg.addColorStop(0, `rgba(255,255,255,${.25 + k * .5})`); hg.addColorStop(1, 'rgba(140,240,255,0)');
+    ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(VW + 26, y, 70 + k * 190, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // The liner itself: three lit cars behind a wedge nose, neon skirt trim,
+  // headlight cone punching down the lane, underglow kissing the street.
+  function drawTrain(hz, el, a) {
+    const head = hz.x - hz.speed * el;
+    const y = hz.y, hh = hz.h / 2;
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = hexA(hz.color, .30); ctx.lineWidth = 2;
+    for (let i = 0; i < 6; i++) {
+      const sy = y - hh + 8 + i * (hz.h - 16) / 5;
+      const wob = (hz.seed * 37 + i * 61) % 90;
+      ctx.beginPath(); ctx.moveTo(head + hz.w + wob, sy); ctx.lineTo(head + hz.w + wob + 120, sy); ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    const carW = (hz.w - 58) / 3;
+    for (let c = 0; c < 3; c++) {
+      const cx0 = head + 34 + c * (carW + 12);
+      const bg = ctx.createLinearGradient(0, y - hh, 0, y + hh);
+      bg.addColorStop(0, '#453a86'); bg.addColorStop(.42, '#241c55'); bg.addColorStop(1, '#120d30');
+      ctx.fillStyle = bg;
+      ctx.beginPath(); ctx.roundRect(cx0, y - hh + 4, carW, hz.h - 12, 10); ctx.fill();
+      ctx.fillStyle = hexA('#8f7bff', .55); ctx.fillRect(cx0 + 6, y - hh + 4, carW - 12, 3);
+      ctx.fillStyle = hz.color; ctx.fillRect(cx0 + 4, y + hh - 14, carW - 8, 3);
+      ctx.fillStyle = '#ff3e9d'; ctx.fillRect(cx0 + 4, y + hh - 9, carW - 8, 2);
+      const wy = y - hh + 22, wh = Math.min(30, hz.h * .3);
+      const nWin = Math.floor((carW - 22) / 44);
+      for (let i = 0; i < nWin; i++) {
+        const wx = cx0 + 14 + i * 44;
+        ctx.fillStyle = '#ffd98f';
+        ctx.beginPath(); ctx.roundRect(wx, wy, 34, wh, 5); ctx.fill();
+        // A few passengers ride home — heads keyed per window, not per frame.
+        if ((c * 7 + i + Math.floor(hz.seed)) % 3 === 0) {
+          ctx.fillStyle = '#3a2c20';
+          ctx.beginPath(); ctx.arc(wx + 17, wy + wh - 6, 7, Math.PI, 0); ctx.fill();
+        }
+      }
+    }
+    ctx.fillStyle = '#241c55';
+    ctx.beginPath();
+    ctx.moveTo(head + 36, y - hh + 4); ctx.lineTo(head + 2, y - 8); ctx.lineTo(head + 2, y + 14);
+    ctx.lineTo(head + 36, y + hh - 8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = hz.color; ctx.fillRect(head + 2, y + 8, 34, 3);
+    ctx.globalCompositeOperation = 'lighter';
+    const lg = ctx.createRadialGradient(head + 6, y + 2, 2, head + 6, y + 2, 34);
+    lg.addColorStop(0, 'rgba(255,255,255,.95)'); lg.addColorStop(1, 'rgba(140,240,255,0)');
+    ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(head + 6, y + 2, 34, 0, Math.PI * 2); ctx.fill();
+    const cone = ctx.createLinearGradient(head, 0, head - 250, 0);
+    cone.addColorStop(0, 'rgba(190,250,255,.4)'); cone.addColorStop(1, 'rgba(190,250,255,0)');
+    ctx.fillStyle = cone;
+    ctx.beginPath(); ctx.moveTo(head + 4, y - 6); ctx.lineTo(head - 250, y - 34);
+    ctx.lineTo(head - 250, y + 38); ctx.lineTo(head + 4, y + 16); ctx.closePath(); ctx.fill();
+    const ug = ctx.createLinearGradient(0, y + hh - 12, 0, y + hh + 26);
+    ug.addColorStop(0, hexA(hz.color, .5)); ug.addColorStop(1, hexA(hz.color, 0));
+    ctx.fillStyle = ug; ctx.fillRect(head + 6, y + hh - 12, hz.w - 12, 38);
+    ctx.restore();
+  }
+
+  // Stage 2 — 水柱. Telegraph: a churning foam patch on the waterline with
+  // escaping bubbles; the patch widens as the eruption nears.
+  function drawSpoutWarn(hz, k) {
+    ctx.save();
+    const w = hz.w * (.6 + k * .6);
+    ctx.globalAlpha = .35 + k * .4;
+    ctx.fillStyle = '#eafcff';
+    ctx.beginPath(); ctx.ellipse(hz.x, 686, w * .62, 10 + k * 6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = hz.color; ctx.lineWidth = 3;
+    for (let i = 0; i < 3; i++) {
+      const ph = (elapsed * 1.6 + i / 3) % 1;
+      ctx.globalAlpha = (1 - ph) * (.3 + k * .3);
+      ctx.beginPath(); ctx.ellipse(hz.x, 686, w * .35 + ph * w * .55, 6 + ph * 8, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.fillStyle = hexA('#c9f6ff', .8);
+    const nB = 2 + Math.round(k * 5);
+    for (let i = 0; i < nB; i++) {
+      const ph = (elapsed * (1.4 + (i % 3) * .5) + i * .37 + hz.seed) % 1;
+      const bx = hz.x + Math.sin(i * 2.4 + hz.seed) * w * .3;
+      ctx.globalAlpha = (1 - ph) * .8;
+      ctx.beginPath(); ctx.arc(bx, 682 - ph * (30 + k * 70), 2.5 + (i % 3), 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // The column: sliced horizontally so both edges undulate, a white core in a
+  // cyan sheath, ripple rings racing up it, and a mushrooming crest plume.
+  function drawSpout(hz, el, a) {
+    const rise = clamp(el / .16, 0, 1);
+    const top = 688 - (688 - hz.top) * rise;
+    const settle = el > hz.live ? clamp((el - hz.live) / hz.fade, 0, 1) : 0;
+    const w = hz.w * (1 - settle * .55);
+    ctx.save();
+    for (let y = top; y < 700; y += 24) {
+      const kk = (y - top) / Math.max(1, 700 - top);
+      const wob = Math.sin(elapsed * 18 + y * .045 + hz.seed) * 7 * (1 - kk * .4);
+      const half = (w * (.34 + kk * .26)) / 2 + wob;
+      // Deep-blue rind outside the cyan sheath keeps it reading as seawater
+      // rather than a light beam.
+      const g = ctx.createLinearGradient(hz.x - half, 0, hz.x + half, 0);
+      g.addColorStop(0, hexA('#2f8cff', 0)); g.addColorStop(.14, hexA('#2f8cff', .6 * a));
+      g.addColorStop(.32, hexA(hz.color, .8 * a)); g.addColorStop(.5, `rgba(255,255,255,${.9 * a})`);
+      g.addColorStop(.68, hexA(hz.color, .8 * a)); g.addColorStop(.86, hexA('#2f8cff', .6 * a)); g.addColorStop(1, hexA('#2f8cff', 0));
+      ctx.fillStyle = g; ctx.fillRect(hz.x - half, y, half * 2, 26);
+    }
+    ctx.globalAlpha = a * .5; ctx.fillStyle = '#fff';
+    for (let i = 0; i < 5; i++) {
+      const ph = (elapsed * 2.6 + i / 5 + hz.seed) % 1;
+      ctx.beginPath(); ctx.ellipse(hz.x, 690 - ph * (690 - top), w * .3, 5, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    const pg = ctx.createRadialGradient(hz.x, top + 6, 3, hz.x, top + 6, w * .75);
+    pg.addColorStop(0, `rgba(255,255,255,${.95 * a})`); pg.addColorStop(.5, hexA(hz.color, .55 * a)); pg.addColorStop(1, hexA(hz.color, 0));
+    ctx.fillStyle = pg; ctx.beginPath(); ctx.ellipse(hz.x, top + 6, w * .75, w * .42, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(234,252,255,${.75 * a})`;
+    ctx.beginPath(); ctx.ellipse(hz.x, 686, w * .8, 12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Stage 3 — 溶鉄ポア. The overhead casting ladle, shared by telegraph
+  // (sliding in, then tipping) and pour (held fully tipped).
+  function drawLadle(x, slide, tilt) {
+    const lx = x - 20 + (1 - slide) * 280, ly = 46;
+    ctx.save();
+    // The rail reads against the sunset: dark girder with a lit top edge, so
+    // the bucket hangs from something instead of floating like a hat.
+    ctx.strokeStyle = '#2b1a2c'; ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.moveTo(x - 220, 12); ctx.lineTo(x + 330, 12); ctx.stroke();
+    ctx.strokeStyle = '#8a4f63'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x - 220, 8); ctx.lineTo(x + 330, 8); ctx.stroke();
+    ctx.fillStyle = '#2b1a2c'; ctx.fillRect(lx - 20, 6, 40, 14);
+    ctx.strokeStyle = '#4a2f45'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(lx, 20); ctx.lineTo(lx, ly - 2); ctx.stroke();
+    ctx.translate(lx, ly); ctx.rotate(tilt);
+    const bg = ctx.createLinearGradient(-38, 0, 38, 0);
+    bg.addColorStop(0, '#5b3a4d'); bg.addColorStop(.5, '#38222f'); bg.addColorStop(1, '#241521');
+    ctx.fillStyle = bg;
+    ctx.beginPath(); ctx.moveTo(-38, 0); ctx.lineTo(38, 0); ctx.lineTo(26, 42); ctx.lineTo(-26, 42); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#6d4a5e'; ctx.lineWidth = 2; ctx.stroke();
+    const mg = ctx.createLinearGradient(-30, -4, 30, 6);
+    mg.addColorStop(0, '#fff3c2'); mg.addColorStop(1, '#ff8a35');
+    ctx.fillStyle = mg;
+    ctx.beginPath(); ctx.ellipse(0, 2, 33, 8 + tilt * 10, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawPourWarn(hz, k) {
+    drawLadle(hz.x, clamp(k * 1.8, 0, 1), clamp((k - .55) / .45, 0, 1) * .6);
+    ctx.save();
+    // Aim line + warning drips down the fall line, and the target puddle
+    // warming up on the floor plate.
+    ctx.globalAlpha = .55 + Math.abs(Math.sin(elapsed * 16)) * .3;
+    ctx.strokeStyle = hexA('#ffe15a', .9); ctx.lineWidth = 3;
+    ctx.setLineDash([10, 14]); ctx.lineDashOffset = -elapsed * 160;
+    ctx.beginPath(); ctx.moveTo(hz.x, 60); ctx.lineTo(hz.x, hz.floor); ctx.stroke();
+    ctx.setLineDash([]);
+    for (let i = 0; i < 3; i++) {
+      const ph = (elapsed * 1.9 + i / 3 + hz.seed) % 1;
+      if (ph < k) {
+        ctx.globalAlpha = (1 - ph) * .9;
+        ctx.fillStyle = i % 2 ? '#ffe15a' : '#ff8a35';
+        ctx.beginPath(); ctx.arc(hz.x + Math.sin(i * 5 + hz.seed) * 8, 66 + ph * 220, 3, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = k * .5;
+    const fg = ctx.createRadialGradient(hz.x, hz.floor, 2, hz.x, hz.floor, 60);
+    fg.addColorStop(0, 'rgba(255,225,90,.9)'); fg.addColorStop(1, 'rgba(255,90,54,0)');
+    ctx.fillStyle = fg; ctx.beginPath(); ctx.ellipse(hz.x, hz.floor, 60, 16, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // The stream: white-hot core in an orange sheath, pinching as it falls,
+  // with a boiling impact pool while it lands.
+  function drawPour(hz, el, a) {
+    drawLadle(hz.x, 1, .6);
+    const bot = hz.floor * clamp(el / .13, 0, 1);
+    ctx.save();
+    const g = ctx.createLinearGradient(hz.x - hz.w / 2, 0, hz.x + hz.w / 2, 0);
+    g.addColorStop(0, hexA('#ff5a36', 0)); g.addColorStop(.3, hexA('#ff8a35', .8 * a));
+    g.addColorStop(.5, `rgba(255,243,194,${.95 * a})`); g.addColorStop(.7, hexA('#ff8a35', .8 * a)); g.addColorStop(1, hexA('#ff5a36', 0));
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(hz.x - hz.w * .34, 40);
+    ctx.quadraticCurveTo(hz.x - hz.w * .2, bot * .5, hz.x - hz.w * .26, bot);
+    ctx.lineTo(hz.x + hz.w * .26, bot);
+    ctx.quadraticCurveTo(hz.x + hz.w * .2, bot * .5, hz.x + hz.w * .34, 40);
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = a * (.75 + Math.sin(elapsed * 30) * .2);
+    ctx.fillStyle = '#fff6d8';
+    ctx.fillRect(hz.x - hz.w * .1, 44, hz.w * .2, Math.max(0, bot - 44));
+    if (bot >= hz.floor - 1) {
+      ctx.globalCompositeOperation = 'lighter';
+      const ig = ctx.createRadialGradient(hz.x, hz.floor, 3, hz.x, hz.floor, 90);
+      ig.addColorStop(0, `rgba(255,246,216,${.9 * a})`); ig.addColorStop(.5, `rgba(255,138,53,${.5 * a})`); ig.addColorStop(1, 'rgba(255,90,54,0)');
+      ctx.fillStyle = ig; ctx.beginPath(); ctx.ellipse(hz.x, hz.floor, 90, 26, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = a; ctx.fillStyle = '#ffb457';
+      ctx.beginPath(); ctx.ellipse(hz.x, hz.floor + 4, 46 + Math.sin(elapsed * 22) * 5, 9, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Stage 4 — マーチング落雷. Telegraph: an ionised guide line jittering in
+  // place under a charged cloud bulge; both snap bright as the strike locks.
+  function drawBoltWarn(hz, k) {
+    ctx.save();
+    const jag = 4 + k * 3;
+    ctx.globalAlpha = .25 + k * .55;
+    ctx.strokeStyle = k > .8 ? '#eaffe8' : hz.color; ctx.lineWidth = k > .8 ? 3 : 2;
+    ctx.beginPath();
+    for (let y = 0; y <= 680; y += 68) {
+      const r = Math.sin(hz.seed + y * 12.9898 + Math.floor(elapsed * 24) * 78.233) * 43758.5453;
+      const off = ((r - Math.floor(r)) - .5) * 2 * jag;
+      y === 0 ? ctx.moveTo(hz.x + off, y) : ctx.lineTo(hz.x + off, y);
+    }
+    ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter';
+    const cg = ctx.createRadialGradient(hz.x, 12, 3, hz.x, 12, 60 + k * 60);
+    cg.addColorStop(0, `rgba(234,255,232,${.35 + k * .45})`); cg.addColorStop(1, 'rgba(114,255,104,0)');
+    ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(hz.x, 12, 60 + k * 60, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = .3 + k * .4;
+    const gg = ctx.createRadialGradient(hz.x, 660, 2, hz.x, 660, 46);
+    gg.addColorStop(0, hexA(hz.color, .8)); gg.addColorStop(1, hexA(hz.color, 0));
+    ctx.fillStyle = gg; ctx.beginPath(); ctx.ellipse(hz.x, 660, 46, 12, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // The strike: a jagged trunk re-rolled a few times a second so it crackles,
+  // three glow passes wide-to-white, one fork, and a bloom at the strike point.
+  function drawBolt(hz, el, a) {
+    const frame = Math.floor(elapsed * 42);
+    const pts = [];
+    for (let y = 0, i = 0; y <= 660; y += 60, i++) {
+      const r = Math.sin(hz.seed * 3.7 + i * 12.9898 + frame * 78.233) * 43758.5453;
+      pts.push([hz.x + ((r - Math.floor(r)) - .5) * 44, y]);
+    }
+    pts.push([hz.x + Math.sin(hz.seed) * 6, 668]);
+    ctx.save(); ctx.globalCompositeOperation = 'lighter';
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    for (const [wdt, col, al] of [[16, hz.color, .3 * a], [7, hz.color, .5 * a], [3, '#ffffff', .95 * a]]) {
+      ctx.globalAlpha = al; ctx.strokeStyle = col; ctx.lineWidth = wdt;
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+      ctx.stroke();
+    }
+    const [bx, by] = pts[Math.max(1, Math.floor(pts.length / 2))];
+    ctx.globalAlpha = .6 * a; ctx.lineWidth = 2.5; ctx.strokeStyle = '#eaffe8';
+    ctx.beginPath(); ctx.moveTo(bx, by);
+    ctx.lineTo(bx + 46, by + 52); ctx.lineTo(bx + 64, by + 110); ctx.stroke();
+    ctx.globalAlpha = 1;
+    const sg = ctx.createRadialGradient(hz.x, 660, 4, hz.x, 660, 120);
+    sg.addColorStop(0, `rgba(255,255,255,${.9 * a})`); sg.addColorStop(.4, hexA(hz.color, .55 * a)); sg.addColorStop(1, hexA(hz.color, 0));
+    ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(hz.x, 660, 120, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Stage 5 — シャンデリア. The fixture itself: chain, gold stem, two crystal
+  // tiers with candle flames. Hangs for the telegraph, falls for the hit.
+  function drawChandelier(x, anchorY, chainLen, sway, a) {
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.translate(x, anchorY); ctx.rotate(sway);
+    ctx.strokeStyle = '#b98f3e'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, chainLen); ctx.stroke();
+    ctx.translate(0, chainLen);
+    const sg = ctx.createLinearGradient(-4, 0, 4, 0);
+    sg.addColorStop(0, '#ffe9ad'); sg.addColorStop(.5, '#d8a63f'); sg.addColorStop(1, '#8a6420');
+    ctx.fillStyle = sg; ctx.fillRect(-4, 0, 8, 78);
+    for (const [ty, r] of [[26, 34], [64, 58]]) {
+      const dg = ctx.createLinearGradient(-r, ty, r, ty);
+      dg.addColorStop(0, '#ffe9ad'); dg.addColorStop(.45, '#d8a63f'); dg.addColorStop(1, '#7c5a1d');
+      ctx.fillStyle = dg;
+      ctx.beginPath(); ctx.ellipse(0, ty, r, r * .3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(60,40,8,.55)';
+      ctx.beginPath(); ctx.ellipse(0, ty + 3, r * .9, r * .22, 0, 0, Math.PI); ctx.fill();
+      ctx.fillStyle = 'rgba(255,246,216,.9)';
+      for (let i = -2; i <= 2; i++) {
+        const cxx = i * r * .42;
+        ctx.beginPath(); ctx.moveTo(cxx - 3, ty + 4); ctx.lineTo(cxx + 3, ty + 4); ctx.lineTo(cxx, ty + 16); ctx.closePath(); ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = -1; i <= 1; i++) {
+        const fx = i * r * .62, fy = ty - r * .3 - 6;
+        const fg = ctx.createRadialGradient(fx, fy, 1, fx, fy, 13);
+        fg.addColorStop(0, 'rgba(255,240,190,.95)'); fg.addColorStop(1, 'rgba(255,158,64,0)');
+        ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(fx, fy, 13, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.restore();
+  }
+
+  function drawChandWarn(hz, k) {
+    // Swing amplitude grows as the anchor works loose; the landing shadow
+    // pools on the marble and the anchor ring sparks near the end.
+    drawChandelier(hz.x, -34, 44, Math.sin(elapsed * 4.6 + hz.seed) * .34 * k, 1);
+    ctx.save();
+    ctx.globalAlpha = .2 + k * .35;
+    ctx.fillStyle = '#180512';
+    ctx.beginPath(); ctx.ellipse(hz.x, hz.floor + 6, 30 + k * 60, 9 + k * 8, 0, 0, Math.PI * 2); ctx.fill();
+    if (k > .5) {
+      ctx.globalAlpha = (k - .5) * 1.6 * Math.abs(Math.sin(elapsed * 14));
+      ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(hz.x, -30, 10, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawChandFall(hz, el, a) {
+    if (el <= hz.live) {
+      const p = clamp(el / hz.live, 0, 1);
+      const yTop = -30 + (hz.floor - hz.h + 30) * p * p;
+      drawChandelier(hz.x, yTop - 10, 12, Math.sin(hz.seed) * .12 + p * .18, 1);
+      ctx.save(); ctx.globalAlpha = .35 * p; ctx.strokeStyle = '#ffe9ad'; ctx.lineWidth = 2;
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath(); ctx.moveTo(hz.x + i * 34, yTop - 30); ctx.lineTo(hz.x + i * 34, yTop + 8); ctx.stroke();
+      }
+      ctx.restore();
+    } else {
+      // The wreck glows on the marble while the crystal shards fly.
+      ctx.save(); ctx.globalAlpha = a;
+      ctx.fillStyle = '#8a6420';
+      ctx.beginPath(); ctx.ellipse(hz.x, hz.floor + 2, 52, 12, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#d8a63f';
+      ctx.beginPath(); ctx.ellipse(hz.x - 12, hz.floor - 2, 26, 8, .3, 0, Math.PI * 2); ctx.fill();
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(hz.x, hz.floor, 3, hz.x, hz.floor, 70);
+      g.addColorStop(0, `rgba(255,233,173,${.6 * a})`); g.addColorStop(1, 'rgba(255,158,64,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hz.x, hz.floor, 70, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
   }
 
   // The queen's skirt hanging over the field while she is aloft. Drawn under
@@ -11780,10 +12284,38 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
   function rects(ax, ay, aw, ah, bx, by, bw, bh) { return ax < bx+bw && ax+aw > bx && ay < by+bh && ay+ah > by; }
   function circleRect(cx, cy, r, x, y, w, h) { const nx = clamp(cx, x, x+w); const ny = clamp(cy, y, y+h); return (cx-nx)**2 + (cy-ny)**2 < r*r; }
+  // The stage-signature hazards are axis-aligned solids, animated on the shared
+  // hazard clock. Returns the CURRENT lethal box, or null for the beam kinds.
+  function hazardBoxNow(hz) {
+    const el = hz.t - hz.warn;
+    if (hz.kind === 'train') {
+      // Nose leads from the right edge; the body trails hz.w behind it.
+      return [hz.x - hz.speed * el, hz.y - hz.h / 2, hz.w, hz.h];
+    }
+    if (hz.kind === 'spout') {
+      // The column rises to its apex in the first .16s, then holds.
+      const top = 688 - (688 - hz.top) * clamp(el / .16, 0, 1);
+      return [hz.x - hz.w / 2, top, hz.w, 720 - top];
+    }
+    if (hz.kind === 'pour') {
+      // The stream head falls floorward in the first .13s, then the column stands.
+      const bot = hz.floor * clamp(el / .13, 0, 1);
+      return [hz.x - hz.w / 2, -20, hz.w, bot + 20];
+    }
+    if (hz.kind === 'bolt') return [hz.x - hz.w / 2, 0, hz.w, VH];
+    if (hz.kind === 'chand') {
+      // Accelerating fall from the hanging point to the marble.
+      const yTop = -30 + (hz.floor - hz.h + 30) * Math.pow(clamp(el / hz.live, 0, 1), 2);
+      return [hz.x - hz.w / 2, yTop, hz.w, hz.h];
+    }
+    return null;
+  }
   // Beam vs box: inflate the box by the beam's half-thickness, then clip the
   // beam's centre line against it (Liang-Barsky). Corners read as rounded on a
   // rotated beam, which is the forgiving direction.
   function hazardHitsBox(hz, bx, by, bw, bh) {
+    const solid = hazardBoxNow(hz);
+    if (solid) return rects(bx, by, bw, bh, solid[0], solid[1], solid[2], solid[3]);
     const pad = hz.h / 2;
     const x0 = bx - pad, y0 = by - pad, x1 = bx + bw + pad, y1 = by + bh + pad;
     const dx = Math.cos(hz.ang || 0) * hz.w, dy = Math.sin(hz.ang || 0) * hz.w;
@@ -11936,6 +12468,16 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   const LOCAL_DEV = ['localhost', '127.0.0.1', '::1', ''].includes(location.hostname);
   if (LOCAL_DEV) {
     window.__hz = () => hazards.length;
+    // Fire the current stage's signature environmental hazard on demand, so a
+    // harness can shoot each one without waiting out the route cooldown.
+    // `over` merges into every spawned hazard — e.g. {live: 2} freezes the
+    // 0.16s lightning strike long enough for a screenshot.
+    window.__hazard = (over = null) => {
+      const before = hazards.length;
+      runStageHazard();
+      if (over) for (let i = before; i < hazards.length; i++) Object.assign(hazards[i], over);
+      return hazards.map(h => h.kind);
+    };
     window.__fwCount = () => ambient.filter(a => a.kind === 'fwspark').length;
     window.__bgm = () => ({ key: currentBgmKey, paused: currentBgmKey ? bgmTracks[currentBgmKey].paused : null, t: currentBgmKey ? bgmTracks[currentBgmKey].currentTime : 0, reactive: musicReactive, wired: bgmSources.size });
     window.__grant = n => { score += n; };

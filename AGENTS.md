@@ -56,6 +56,8 @@ python3 -m http.server 8123      # プロジェクト直下で起動
   シートごとに元の絵の縮尺が違うので、**新しいセルを足すときは必ずここで頭のサイズを揃える**。
   変えたら `MUZZLE_BASE` / `shootMissile` のオフセットもセル内相対位置から引き直すこと。
 - タイムライン: `PHASE_TEMPLATE` / `currentPhase(stageTime)`（ステートレス導出）
+- ステージ名物ハザード: `runStageHazard`（列車/水柱/溶鉄/落雷/シャンデリア）。`hazards` の kind 分岐で
+  更新（update内ワンショット演出）/ 判定（`hazardBoxNow`）/ 描画（`drawTrainWarn` 等）。localhost では `__hazard(over)` で強制発火。
 - 音声: `sampledSfx`+`sfx()` / `bgmTracks`+`playBgm()` / `voice()`（Gro-chan）/ `bossVoice(stageIdx,event)`（ボス）/ WebAudio合成は `sfx()` 末尾
 - ボス: `spawnBoss`/`updateBoss`/`executeBossSpecial`/`drawBoss`。中ボス: `spawnMidBoss`/`updateMidBoss`/`drawMidBoss`
 - ポーズ制御: `loadSet`/`bossSets`/`midSets`/`pickPoseFrame`/`stepPoseTimers`
