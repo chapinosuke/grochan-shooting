@@ -278,7 +278,17 @@
   const BIKINI_HP_PER_SEC = 0.9, BIKINI_AMMO_PER_SEC = 2.2;
   // ~half a SPEED chip (chip is ~28–32%/lv). "A bit quicker", not a full upgrade.
   const BIKINI_SPEED_MUL = 1.14;
-  const bikiniOn = () => bikiniOwned && stageIndex >= 1;
+  // Armor costume: same shop slot family as the bikini — a one-off purchase
+  // that dresses Gro-chan from the next stage on. Tank tradeoff: incoming hits
+  // land at a third of their damage, but she moves noticeably heavier.
+  // Only one costume is worn at a time; buying one equips it, and an owned
+  // costume can be re-equipped in the shop for free (see the shop items).
+  let armorOwned = false;
+  let costume = 'none';                          // 'none' | 'bikini' | 'armor'
+  const ARMOR_DAMAGE_MUL = 1 / 3;
+  const ARMOR_SPEED_MUL = 0.86;                  // mirror of the bikini's +14%
+  const bikiniOn = () => costume === 'bikini' && stageIndex >= 1;
+  const armorOn = () => costume === 'armor' && stageIndex >= 1;
   let ammoPackStock = AMMO_PACK_START;  // stocked full-reload packs, auto-used when the mag hits empty
   let reloadFlash = 0;    // "スペアマガジン!" rising tag timer, armed when a spare auto-fires
   let bossCrit = 0;      // 0..1 fade of the palace's blood-red sky in the queen's last act
@@ -893,6 +903,72 @@
   bikiniHurtSheet.onload = buildBikiniHurt; bikiniHurtSheet.src = 'assets/images/player-bikini-hurt.webp?v=1';
   if (bikiniHurtSheet.complete) buildBikiniHurt();
 
+  // --- Armor costume (shop unlock) ---------------------------------------
+  // One 1672x941 sheet, 4x2 cells: top row idle + walk×3 (gun level, forward),
+  // bottom row dash / aim / fire / hurt. Boxes are measured alpha bounds (the
+  // aim and fire cells go unused: the fire cell's muzzle streak is welded to
+  // the barrel, and the game draws its own flash).
+  // The top-row cells share one y/h so the walk keeps its baseline; only three
+  // walk poses exist, so the walk cycle ping-pongs them into 4 frames.
+  // The dash cell (lean forward, gun at hip, legs trailing) is the jump pose.
+  const ARMOR_SHEET_BOXES = {
+    idle: { x: 131, y: 63, w: 304, h: 373 },
+    walk: [{ x: 507, y: 63, w: 296, h: 373 }, { x: 854, y: 63, w: 303, h: 373 }, { x: 1233, y: 63, w: 291, h: 373 }],
+    dash: { x: 105, y: 488, w: 324, h: 345 },
+    hurt: { x: 1234, y: 493, w: 306, h: 351 }
+  };
+  // Flight comes from a dedicated user sheet (player-armor-fly.webp: the
+  // bottom row of the third armor sheet, cropped): three flash-free flying
+  // poses that cycle legs/hair, plus a fire cell with a baked muzzle flash.
+  // The fire cell's flash makes it wider than the bodies, so every frame is
+  // built into a wider-than-fly cell at ONE shared scale with a shared left
+  // anchor — bodies stay put across the cycle and the flash spills into the
+  // spare width instead of being clipped or shrinking the body. drawPlayer
+  // draws armor flight with the matching PLAYER_DRAW.flyArmor rect, and mixes
+  // the fire frames in only while the trigger is actually held.
+  // All boxes share y/h (union bounds of the row) so the cycle keeps its
+  // baseline; x/w are each cell's measured alpha bounds.
+  const ARMOR_FLY_BOXES = {
+    fly: [{ x: 0, y: 0, w: 278, h: 375 }, { x: 304, y: 0, w: 286, h: 375 }, { x: 616, y: 0, w: 291, h: 375 }],
+    fire: { x: 945, y: 0, w: 345, h: 375 }
+  };
+  const ARMOR_FLY_ASPECT = 346 / 359;   // keeps outW just wide enough for the flash
+  let armorFly = [], armorFlyFire = [], armorGround = [], armorHurt = [];
+  let armorJump = null;
+  const armorSheet = new Image(), armorFlySheet = new Image();
+  function buildArmorSheet() {
+    if (!armorSheet.naturalWidth) return;
+    const wb = ARMOR_SHEET_BOXES.walk;
+    armorGround = [ARMOR_SHEET_BOXES.idle, wb[0], wb[1], wb[2], wb[1]]
+      .map(bx => refitBox(armorSheet, bx, 298 / 308));
+    armorJump = refitBox(armorSheet, ARMOR_SHEET_BOXES.dash, 250 / 325);
+    // drawPlayer's hurt index clamps, so a single-cell "hurt" array is enough.
+    armorHurt = [refitBox(armorSheet, ARMOR_SHEET_BOXES.hurt, 298 / 308)];
+  }
+  function buildArmorFly() {
+    if (!armorFlySheet.naturalWidth) return;
+    const outH = 320, outW = Math.round(outH * ARMOR_FLY_ASPECT);
+    const f = ARMOR_FLY_BOXES.fire;
+    const s = outH / f.h;                           // every box shares this height
+    const bake = box => {
+      const c = document.createElement('canvas');
+      c.width = outW; c.height = outH;
+      c.getContext('2d').drawImage(armorFlySheet, box.x, box.y, box.w, box.h,
+        0, outH - box.h * s, box.w * s, box.h * s);
+      return c;
+    };
+    const fly = ARMOR_FLY_BOXES.fly.map(bake);
+    const fire = bake(f);
+    // Three drawn poses ping-pong into the 4-frame cycle; while firing, the
+    // flash frame alternates in so the legs keep cycling under the shots.
+    armorFly = [fly[0], fly[1], fly[2], fly[1]];
+    armorFlyFire = [fly[0], fire, fly[2], fire];
+  }
+  armorSheet.onload = buildArmorSheet; armorSheet.src = 'assets/images/player-armor-sheet.webp?v=1';
+  if (armorSheet.complete) buildArmorSheet();
+  armorFlySheet.onload = buildArmorFly; armorFlySheet.src = 'assets/images/player-armor-fly.webp?v=2';
+  if (armorFlySheet.complete) buildArmorFly();
+
   function resetGame() {
     clearTimeout(openingTimeout); openingTimeout = 0;
     clearTimeout(resultTimeout); resultTimeout = 0;
@@ -913,7 +989,7 @@
     // so the run begins stocked. Continues deliberately do NOT top this up —
     // it is an opening cushion, not a permanent safety net.
     ammoPackStock = AMMO_PACK_START; reloadFlash = 0;
-    bikiniOwned = false; bikiniRegenHp = 0; bikiniRegenAmmo = 0;
+    bikiniOwned = false; armorOwned = false; costume = 'none'; bikiniRegenHp = 0; bikiniRegenAmmo = 0;
     bullets = []; clearEnemyFire(); enemies = []; particles = []; pickups = []; shockwaves = [];
     setupStage();
     player.x = 160; player.y = VH / 2; player.vx = 0; player.vy = 0;
@@ -1290,10 +1366,47 @@
   // further forward and 1px lower once the flight cell is drawn at 150×185.
   const MUZZLE_BASE = { fly: { x: 127, y: 72 }, ground: { x: 119, y: 64 } };
   const MUZZLE_FIX = { fly: { x: -2, y: -7 }, ground: { x: 3, y: -8 } };
+  // The armor's offsets are measured, not hand-tuned: its frames are built at
+  // runtime from ARMOR_SHEET_BOXES, so the barrel tip is found by scanning the
+  // built frame for its rightmost opaque pixel and mapping that through
+  // drawPlayer's rect — the same derivation the hand-measured numbers above
+  // came from, done lazily once both the frames and PLAYER_DRAW exist.
+  let armorMuzzleCache = null;
+  function armorMuzzleFix(g) {
+    if (!armorMuzzleCache && armorGround.length && armorFly.length) {
+      const tip = c => {
+        const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+        for (let x = c.width - 1; x >= 0; x--) {
+          let ys = 0, n = 0;
+          for (let y = 0; y < c.height; y++) if (d[(y * c.width + x) * 4 + 3] > 16) { ys += y; n++; }
+          if (n) return { x, y: ys / n };
+        }
+        return { x: 0, y: 0 };
+      };
+      const fit = (c, d, base) => {
+        const t = tip(c);
+        return {
+          x: d.ox + t.x * d.w / c.width - base.x,
+          y: d.oy + t.y * d.h / c.height - base.y
+        };
+      };
+      armorMuzzleCache = {
+        ground: fit(armorGround[1], PLAYER_DRAW.ground, MUZZLE_BASE.ground),
+        // Measured off the flash-free aim cell; the fire cell shares its body.
+        fly: fit(armorFly[0], PLAYER_DRAW.flyArmor, MUZZLE_BASE.fly)
+      };
+    }
+    return armorMuzzleCache ? (g ? armorMuzzleCache.ground : armorMuzzleCache.fly) : { x: 0, y: 0 };
+  }
+  function costumeMuzzleFix(g) {
+    return bikiniOn() ? (g ? MUZZLE_FIX.ground : MUZZLE_FIX.fly)
+      : armorOn() ? armorMuzzleFix(g)
+      : { x: 0, y: 0 };
+  }
   function muzzle() {
     const g = player.grounded;
     const base = g ? MUZZLE_BASE.ground : MUZZLE_BASE.fly;
-    const o = bikiniOn() ? (g ? MUZZLE_FIX.ground : MUZZLE_FIX.fly) : { x: 0, y: 0 };
+    const o = costumeMuzzleFix(g);
     return {
       x: player.x + base.x + o.x,
       y: player.y + base.y + o.y + (g ? 0 : Math.sin(player.frame * .65) * 3)
@@ -1330,7 +1443,7 @@
   }
 
   function shootMissile() {
-    const fix = bikiniOn() ? (player.grounded ? MUZZLE_FIX.ground : MUZZLE_FIX.fly) : { x: 0, y: 0 };
+    const fix = costumeMuzzleFix(player.grounded);
     const x = player.x + (player.grounded ? 100 : 93) + fix.x;
     const y = player.y + (player.grounded ? 78 : 78) + fix.y;
     for (const side of [-1, 1]) bullets.push({ x, y: y + side * 17, vx: 390, vy: side * 115 - (player.grounded ? 20 : 0), life: 3.2, r: 9, damage: 1.4 + player.power * .65, missile: true, turn: 4.2 });
@@ -3075,8 +3188,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         if (motionBuf.length > 12) motionBuf.shift();
       }
     }
-    const bikiniSpeed = bikiniOn() ? BIKINI_SPEED_MUL : 1;
-    const speedBoost = (1 + (player.speed - 1) * .32) * bikiniSpeed;
+    const costumeSpeed = bikiniOn() ? BIKINI_SPEED_MUL : armorOn() ? ARMOR_SPEED_MUL : 1;
+    const speedBoost = (1 + (player.speed - 1) * .32) * costumeSpeed;
     player.takeoff = Math.max(0, player.takeoff - dt);
     // Clear vertical intent (ignore tiny stick noise so walking is not cancelled).
     const upHeld = keys.has('ArrowUp') || keys.has('KeyW') || padInput.y < -.45;
@@ -3086,7 +3199,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const wantTakeoff = upHeld || (pointer.active && pointer.y < 120);
       if (wantTakeoff) {
         player.grounded = false;
-        player.vy = -340 * bikiniSpeed;
+        player.vy = -340 * costumeSpeed;
         player.takeoff = .28;
         burst(player.x + 55, GROUND_Y + 130, '#31e8ff', 12, 140);
       } else {
@@ -3101,8 +3214,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       if (pointer.active) {
         const targetX = Math.min(pointer.x - player.w * .45, VW * .58);
         const targetY = pointer.y - player.h * .5;
-        player.vx += (targetX - player.x) * dt * 18 * bikiniSpeed;
-        player.vy += (targetY - player.y) * dt * 18 * bikiniSpeed;
+        player.vx += (targetX - player.x) * dt * 18 * costumeSpeed;
+        player.vy += (targetY - player.y) * dt * 18 * costumeSpeed;
       } else {
         player.vx += ax * 1250 * speedBoost * dt;
         player.vy += ay * 1250 * speedBoost * dt;
@@ -3111,7 +3224,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const drag = Math.pow(.0009, dt);
     player.vx *= drag; player.vy *= drag;
     const speed = Math.hypot(player.vx, player.vy);
-    const maxMoveSpeed = (player.grounded ? 380 : 420) * (1 + (player.speed - 1) * .28) * bikiniSpeed;
+    const maxMoveSpeed = (player.grounded ? 380 : 420) * (1 + (player.speed - 1) * .28) * costumeSpeed;
     if (speed > maxMoveSpeed) { player.vx *= maxMoveSpeed / speed; player.vy *= maxMoveSpeed / speed; }
     // Face the direction of travel: flip to look back while retreating (moving left).
     // Hysteresis on vx so a near-still drift doesn't cause the sprite to jitter.
@@ -3662,6 +3775,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       player.inv = 0;
       return;
     }
+    // The armor soaks the hit down to a third before difficulty scaling; the
+    // knockback/power-down side of getting hit is deliberately NOT reduced.
+    if (armorOn()) damage *= ARMOR_DAMAGE_MUL;
     health = Math.max(0, health - damage * difficulties[difficultyKey].damage); player.inv = 1.4; player.hit = .45; combo = 0; shake = 18; flash = .7; hitStop = Math.max(hitStop, .07);
     stageDamaged = true;
     // Getting hit knocks the shot power down one level (Gradius-style risk/reward),
@@ -3719,7 +3835,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // Stocked emergency full reloads (up to 5): auto-fire the instant the mag
     // hits empty, refilling to max before the pea-shot fallback ever shows —
     // same "buy a stock, it saves you automatically" shape as the charm.
-    { id: 'buyBikini', price: () => 3200, keepStatus: true, can: () => !bikiniOwned, apply: () => { bikiniOwned = true; }, status: () => !bikiniOwned ? 'みしゅとく' : bikiniOn() ? 'そうびちゅう' : 'つぎのステージから' },
+    // Costumes are a wardrobe, not a stack: buying one equips it, and once
+    // owned the other can always be re-equipped for free (price drops to 0,
+    // updateShop renders that as きがえる). Only the worn one's effect applies.
+    { id: 'buyBikini', price: () => bikiniOwned ? 0 : 3200, keepStatus: true, can: () => !bikiniOwned || costume !== 'bikini', apply: () => { bikiniOwned = true; costume = 'bikini'; }, status: () => !bikiniOwned ? 'みしゅとく' : costume !== 'bikini' ? 'もっている' : bikiniOn() ? 'そうびちゅう' : 'つぎのステージから' },
+    { id: 'buyArmor', price: () => armorOwned ? 0 : 3200, keepStatus: true, can: () => !armorOwned || costume !== 'armor', apply: () => { armorOwned = true; costume = 'armor'; }, status: () => !armorOwned ? 'みしゅとく' : costume !== 'armor' ? 'もっている' : armorOn() ? 'そうびちゅう' : 'つぎのステージから' },
     { id: 'buyAmmoPack', price: () => 1200, can: () => ammoPackStock < AMMO_PACK_MAX, apply: () => ammoPackStock++, status: () => `もちもの ${ammoPackStock}/${AMMO_PACK_MAX}` },
     // Consumed automatically in hurt() to cancel one power-down — cheap
     // insurance against the Gradius-style demotion on getting hit.
@@ -3755,7 +3875,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       item.btn.querySelector('.shop-status').textContent = maxed && !item.keepStatus ? 'MAX' : item.status();
       // Priced from the table rather than the markup, so the vitamin's rising
       // cost shows up on the button.
-      item.btn.querySelector('.shop-price').textContent = maxed ? '—' : yen(cost);
+      item.btn.querySelector('.shop-price').textContent = maxed ? '—' : cost === 0 ? 'きがえる' : yen(cost);
     }
   }
 
@@ -9263,6 +9383,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   const PLAYER_DRAW = {
     ground: { ox: -30, oy: -24, w: 177, h: 183 },   // 298×308 cell, the reference
     fly: { ox: -22, oy: -31, w: 150, h: 185 },      // 248×305 cell (was 132×167)
+    // Armor flight cell is wider (346/359) so the fire frame's baked muzzle
+    // flash fits without shrinking the body; same height ⇒ same body scale.
+    flyArmor: { ox: -22, oy: -31, w: 178, h: 185 },
     jump: { ox: -19, oy: -33, w: 145, h: 189 },     // 250×325 cell (was 128×175)
     hurtGround: { ox: -30, oy: -24, w: 177, h: 183 },
     hurtAir: { ox: -35, oy: -30, w: 177, h: 183 },  // was 147×152 — the big offender
@@ -9297,19 +9420,19 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // uniform and ground-aligned, so drawn size is constant in BOTH states now; only the
       // anchor moves — feet on the floor when grounded, tucked up a touch while airborne.
       const HURT_DUR = .45;
-      const hf = bikiniOn() && bikiniHurt.length ? bikiniHurt : hurtFrames;
+      const hf = bikiniOn() && bikiniHurt.length ? bikiniHurt : armorOn() && armorHurt.length ? armorHurt : hurtFrames;
       const idx = Math.max(0, Math.min(hf.length - 1,
         Math.floor((1 - player.hit / HURT_DUR) * hf.length)));
       const d = player.grounded ? PLAYER_DRAW.hurtGround : PLAYER_DRAW.hurtAir;
       ctx.drawImage(hf[idx], player.x + d.ox, player.y + d.oy + (player.grounded ? 0 : bob), d.w, d.h);
-    } else if (player.takeoff > 0 && (bikiniOn() && bikiniJump ? bikiniJump : jumpFrame)) {
+    } else if (player.takeoff > 0 && (bikiniOn() && bikiniJump ? bikiniJump : armorOn() && armorJump ? armorJump : jumpFrame)) {
       // Jump / takeoff cell from the sheet.
       const d = PLAYER_DRAW.jump;
-      ctx.drawImage(bikiniOn() && bikiniJump ? bikiniJump : jumpFrame, player.x + d.ox, player.y + d.oy + bob, d.w, d.h);
-    } else if (player.grounded && (bikiniOn() && bikiniGround.length ? bikiniGround : groundFrames).length) {
+      ctx.drawImage(bikiniOn() && bikiniJump ? bikiniJump : armorOn() && armorJump ? armorJump : jumpFrame, player.x + d.ox, player.y + d.oy + bob, d.w, d.h);
+    } else if (player.grounded && (bikiniOn() && bikiniGround.length ? bikiniGround : armorOn() && armorGround.length ? armorGround : groundFrames).length) {
       // Ground: distance-synchronised frames plus a small body lift make each
       // planted step read clearly. Shooting alone does not fake a walk cycle.
-      const gf = bikiniOn() && bikiniGround.length ? bikiniGround : groundFrames;
+      const gf = bikiniOn() && bikiniGround.length ? bikiniGround : armorOn() && armorGround.length ? armorGround : groundFrames;
       const walking = Math.abs(player.vx) > 24;
       const walkLift = walking ? Math.abs(Math.sin(player.walkPhase * Math.PI / 2)) * 3 : 0;
       const frame = walking
@@ -9328,10 +9451,16 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }
       const dg = PLAYER_DRAW.ground;
       ctx.drawImage(frame, player.x + dg.ox, player.y + dg.oy - walkLift, dg.w, dg.h);
-    } else if ((bikiniOn() && bikiniFly.length ? bikiniFly : spriteFrames).length) {
-      const ff = bikiniOn() && bikiniFly.length ? bikiniFly : spriteFrames;
+    } else if ((bikiniOn() && bikiniFly.length ? bikiniFly : armorOn() && armorFly.length ? armorFly : spriteFrames).length) {
+      // Armor flight: the aim pose, swapped for the aim/fire pair (the fire
+      // cell's baked muzzle flash) only while the trigger is actually held —
+      // so the flash animates when shooting and never flickers at rest.
+      const firing = keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire;
+      const ff = bikiniOn() && bikiniFly.length ? bikiniFly
+        : armorOn() && armorFly.length ? (firing && armorFlyFire.length ? armorFlyFire : armorFly)
+        : spriteFrames;
       const frame = ff[Math.floor(player.frame) % ff.length];
-      const d = PLAYER_DRAW.fly;
+      const d = armorOn() && armorFly.length ? PLAYER_DRAW.flyArmor : PLAYER_DRAW.fly;
       ctx.drawImage(frame, player.x + d.ox, player.y + d.oy + bob, d.w, d.h);
     } else {
       ctx.fillStyle = '#ff3e9d'; ctx.fillRect(player.x + 20, player.y + 20, 70, 65);
@@ -12460,7 +12589,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') setPaused(true); });
 
   // Read-only state snapshot for automated testing (see also Shift+N / Shift+B).
-  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, bombStock, charmStock, ammo, ammoMax, ammoPackStock, bikiniOwned, bikiniOn: bikiniOn(), musicReactive, hardClear: !!localStorage.getItem('grochan-hard-clear'), stageTime, phaseId: activePhase.id, enemies: enemies.length, blocks: enemies.filter(en => en.type === 'block').length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
+  Object.defineProperty(window, 'GRO_DEBUG', { get: () => ({ state, bossState, stageIndex, health, special, score, totalKills, continuesLeft, bombStock, charmStock, ammo, ammoMax, ammoPackStock, bikiniOwned, bikiniOn: bikiniOn(), armorOwned, armorOn: armorOn(), costume, musicReactive, hardClear: !!localStorage.getItem('grochan-hard-clear'), stageTime, phaseId: activePhase.id, enemies: enemies.length, blocks: enemies.filter(en => en.type === 'block').length, flankers: enemies.filter(en => en.flank).length, playerBullets: bullets.length, enemyBullets: enemyBullets.length, hazards: hazards.length, grounded: player.grounded, playerY: player.y, power: player.power, firing: keys.has('Space') || keys.has('KeyZ') || pointer.active || padInput.fire, walkFrames: walkFrames.length }) });
   // Boss-fight test hooks, alongside the Shift+N/M/B keys and ?boss=N above:
   // they let a headless run drive a boss to any state without playing the fight.
   // Local only — these can set a boss's HP directly, which has no place on the
@@ -12497,10 +12626,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     };
     window.__drop = (type, kind = null) => { pickups.push({ type, kind, x: player.x + 260, y: player.y + 40, r: 19, t: 0 }); };
     window.__setAmmo = n => { ammo = clamp(n, 0, ammoMax); };
-    window.__grantBikini = (on = true) => { bikiniOwned = !!on; };
+    window.__grantBikini = (on = true) => { bikiniOwned = !!on; if (on) costume = 'bikini'; else if (costume === 'bikini') costume = 'none'; };
+    window.__grantArmor = (on = true) => { armorOwned = !!on; if (on) costume = 'armor'; else if (costume === 'armor') costume = 'none'; };
     window.__bikiniDump = () => ({ idle: bikiniIdle, jump: bikiniJump, fly: bikiniFly, ground: bikiniGround, hurt: bikiniHurt });
+    window.__armorDump = () => ({ jump: armorJump, fly: armorFly, flyFire: armorFlyFire, ground: armorGround, hurt: armorHurt, muzzle: armorMuzzleCache });
     window.__frameDump = () => ({
       bikini: { fly: bikiniFly, ground: bikiniGround },
+      armor: { fly: armorFly, ground: armorGround },
       normal: { fly: spriteFrames, ground: groundFrames }
     });
     window.__grantAmmoPack = () => { ammoPackStock = Math.min(AMMO_PACK_MAX, ammoPackStock + 1); };
@@ -12587,9 +12719,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // ?shop=N drops straight into the rest stop that follows stage N, with a
     // test float so every item is actually buyable. N must be < the last stage
     // (there is no shop after the final one).
-    // ?bikini=1 hands over the costume so it can be inspected without playing
-    // to the shop first. Applied after resetGame(), which clears it.
+    // ?bikini=1 / ?armor=1 hand over a costume so it can be inspected without
+    // playing to the shop first. Applied after resetGame(), which clears them.
     const wantBikini = q.get('bikini') === '1';
+    const wantArmor = q.get('armor') === '1';
+    const grantCostume = () => {
+      if (wantBikini) { bikiniOwned = true; costume = 'bikini'; }
+      if (wantArmor) { armorOwned = true; costume = 'armor'; }
+    };
     const shopN = parseInt(q.get('shop'), 10);
     const shopJump = shopN >= 1 && shopN < stages.length;
     if (shopJump) {
@@ -12598,7 +12735,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         player.power = directPower;
         player.spread = directWide;
         if (testMaxLoadout) applyTestMaxLoadout();
-        if (wantBikini) bikiniOwned = true;
+        grantCostume();
         stageIndex = shopN - 1;
         stageResult = { kills: 0, time: 0, noDamageBonus: 0, timeBonus: 0 };
         score += 30000;
@@ -12617,7 +12754,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         player.power = directPower;
         player.spread = directWide;
         if (testMaxLoadout) applyTestMaxLoadout();
-        if (wantBikini) bikiniOwned = true;
+        grantCostume();
         stageIndex = n - 1; stageBanner = mode === 'stage' ? 3 : 0; bossState = 'waiting';
         midBossDone = mode === 'boss';
         spawnTimer = mode === 'stage' ? .7 : 999;

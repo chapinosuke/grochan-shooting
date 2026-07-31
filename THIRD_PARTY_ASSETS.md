@@ -48,6 +48,15 @@
 | `assets/images/player-bikini-ground.webp` | ユーザー提供（2170x725 / 待機+歩行x4） | 同上 |
 | `assets/images/player-bikini-hurt.webp` | ユーザー提供（2508x627 / 被弾x4） | 同上 |
 
+## プレイヤー衣装（サムライアーマー）
+
+2026-08-01 にユーザーから提供。元PNGを `cwebp -near_lossless 40 -m 6 -alpha_q 100` でwebp化したもの。
+
+| ゲーム内ファイル | 出典 | ライセンス・利用許諾 |
+| --- | --- | --- |
+| `assets/images/player-armor-sheet.webp` | ユーザー提供（1672x941 / 待機+歩行x3・ダッシュ・構え・射撃・被弾の4x2） | 本プロジェクト内で使用する素材としてユーザーから提供 |
+| `assets/images/player-armor-fly.webp` | ユーザー提供の飛行専用シート（02_47_57）下段から飛行x3+発射x1を切り出し（1291x375） | 同上 |
+
 ## エンディングBGM
 
 | ゲーム内ファイル | 出典 | ライセンス・利用許諾 |
