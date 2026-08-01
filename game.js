@@ -171,7 +171,7 @@
     { char: 'thief-boy', rate: 1.05 },            // st1 MASQUERADE 仮面の道化
     { char: 'witch', rate: 0.82 },                // st2 ABYSS SIREN 深海の人魚
     { char: 'swordman', rate: 0.86 },             // st3 FLAME OYABUN 炎上親分
-    { char: 'wizard', rate: 0.85 },               // st4 BOT GENERAL ロボ将軍
+    { char: 'wizard', rate: 0.72 },               // st4 SERVER GOLEM 鋼鉄巨人
     { char: 'witch', rate: 1.0 }                  // st5 QUEEN 女王
   ];
   // event -> candidate line files. Only files every character actually has are
@@ -360,7 +360,7 @@
       bass: [82.41, 82.41, 82.41, 82.41, 77.78, 77.78, 98, 98]
     },
     {
-      name: 'CYBER STORM', boss: 'BOT GENERAL', midBoss: 'VOLT PHANTOM', theme: 'storm', subtitle: '雷鳴とどろく電脳空域',
+      name: 'CYBER STORM', boss: 'SERVER GOLEM', midBoss: 'VOLT PHANTOM', theme: 'storm', subtitle: '雷鳴とどろく電脳空域',
       sky: ['#071d24', '#13554b', '#48b849'], far: '#164636', city: '#071f25', accent: '#72ff68', accent2: '#31e8ff',
       spawnTable: [['cloudray', 5], ['voltbug', 4], ['packetwyrm', 3], ['glitch', 3], ['seeker', 2]],
       melody: [293.66, 349.23, 440, 349.23, 293.66, 369.99, 440, 587.33, 293.66, 349.23, 466.16, 440, 349.23, 293.66, 246.94, 293.66],
@@ -390,7 +390,7 @@
       [{ img: 'assets/images/story/int1_shard1.webp', text: 'MASQUERADEを撃破！仮面の道化は、みんなのハートを「いいね」に変えて集めていた。残る反応は海の方へ！' }],
       [{ img: 'assets/images/story/int2_transmission.webp', text: 'ABYSS SIRENを退けると、深海に閉じこめられていたハートがいっせいに浮かび上がった。「……次は灼熱地帯。気をつけて……」くろ子の通信だ！' }],
       [{ img: 'assets/images/story/int3_resolve.webp', text: 'FLAME OYABUNをKO！気に入らない投稿を見つけては人を集めて燃やす——炎上親分の力は、みんなの怒りそのものだった。「もう、だれの心も燃やさせない！」' }],
-      [{ img: 'assets/images/story/int4_palace_reveal.webp', text: 'BOT GENERALの自動投稿軍団が停止。命令の発信元は、嵐の雲の上——ハートの宮殿。黒幕の女王が待っている！' }],
+      [{ img: 'assets/images/story/int4_palace_reveal.webp', text: 'SERVER GOLEMが停止し、ためこまれていたハートのデータがいっせいに解放された。転送先は、嵐の雲の上——ハートの宮殿。黒幕の女王が待っている！' }],
     ],
     ending: [
       { img: 'assets/images/story/ed1_queen_tears.webp', text: '仮面の下にいたのは、ひとりぼっちの小さなAIの子だった。ぐろちゃんは、自分のハートの光をそっと分けてあげた。' },
@@ -434,13 +434,13 @@
   // a flex used as the act-two taunt, and two fall cells that continue out of
   // hurt2 into the authored defeat run.
   const OYABUN_COUNTS = { idle: 2, attack: 4, hurt: 2, taunt: 1, fall: 2, walk: 2, guard: 2 };
-  // Stage bosses. SERVER GOLEM and the former stage5 set remain in assets as
+  // Stage bosses. BOT GENERAL and the former stage5 set remain in assets as
   // held designs; replacing an active slot never deletes its source material.
   const bossSets = [
     loadSet('masquerade', SHEET_COUNTS),
     loadSet('abyss-siren', SHEET_COUNTS),
     loadSet('flame-oyabun', OYABUN_COUNTS),
-    loadSet('bot-general', SHEET_COUNTS),
+    loadSet('server-golem', SHEET_COUNTS),
     loadSet('heartbreak-queen', FINAL_QUEEN_COUNTS),
   ];
   // Mid-bosses: the former stage bosses demoted, plus LORD CENSOR guarding the palace.
@@ -467,7 +467,7 @@
     { hit: '#9ff4ff', crit: '#ff3e9d' },  // MASQUERADE   pale scan -> magenta cracks
     { hit: '#f3d5ff', crit: '#b832ff' },  // ABYSS SIREN pearl flash -> abyss violet
     { hit: '#7ad7ff', crit: '#fff3bd' },  // FLAME OYABUN  doused blue -> white heat
-    { hit: '#ff4d4d', crit: '#72ff68' },  // BOT GENERAL   error red -> glitch green
+    { hit: '#ffffff', crit: '#ff8a35' },  // SERVER GOLEM  white flash -> warning amber
     { hit: '#fff1a8', crit: '#8f35d9' },  // QUEEN         royal gold -> abyss violet
   ];
   // Sprites are re-drawn through their own alpha into an offscreen canvas, so a
@@ -1867,14 +1867,18 @@
       // 680 is the tallest FLAME OYABUN can be and still keep his soles on
       // screen: his y clamp bottoms out at 40 (VH-h-24 goes negative past 656),
       // and his feet sit at 97.4% of the frame, so 40 + .974*680 = 702 < 720.
-      h = stageIndex === 4 ? 980 : stageIndex === 2 ? 680 : stageIndex === 1 ? 640 : 560;
+      // SERVER GOLEM shares that 680: a colossus, and its idle cell is nearly
+      // square, so the same height makes it by far the widest boss in the game.
+      h = stageIndex === 4 ? 980 : stageIndex === 2 || stageIndex === 3 ? 680 : stageIndex === 1 ? 640 : 560;
       w = Math.round(h * sprite.naturalWidth / sprite.naturalHeight);
     }
     // The contact box is pulled inside the artwork: several sprites are wide
     // enough to overlap the player's own movement limit, which turned simply
     // standing at the right edge into passive contact damage.
     // Everyone else hovers. He stands: y=18 lands his soles on the factory floor.
-    const bossY = stageIndex === 4 ? 0 : stageIndex === 2 ? 18 : stageIndex === 1 ? 30 : 90;
+    // The golem also stands — its dust-wreathed base sits on the stage floor
+    // (650, where the player lands), which puts its head 30px above the top edge.
+    const bossY = stageIndex === 4 ? 0 : stageIndex === 3 ? 650 - h : stageIndex === 2 ? 18 : stageIndex === 1 ? 30 : 90;
     // FLAME OYABUN's cells share one canvas sized by his low sweep, which leaves
     // ~29% of the idle cell empty on the left. A 16% inset would put the contact
     // box 78px into that empty air — inside the player's reach (VW*.62 + sprite),
@@ -2478,14 +2482,22 @@
         e.tpT = e.phase2 ? 1.7 : 2.4; e.blink = .3;
         burst(e.x + e.w / 2, e.y + e.h / 2, '#72ff68', 16, 260);
         e.x = clamp(VW - e.w - 80 - Math.random() * 200, 200, parkX);
-        e.y = clamp(40 + Math.random() * (yMax - 40), yMin, yMax);
+        // A floor-to-past-the-top colossus: it blinks sideways only. Hopping a
+        // 680px monolith up and down would read as weightless, and its base
+        // art is ground contact — dust and rubble — that must stay on the floor.
+        e.y = e.baseY;
         burst(e.x + e.w / 2, e.y + e.h / 2, '#72ff68', 16, 260); sfx('teleport');
         if (e.phase2) bossVoltRing(e);
       }
       if (engaged && e.fire <= 0) { bossVoltShot(e); e.fire = e.phase2 ? .55 : .75; }
       if (engaged && e.sp <= 0 && !(e.tel > 0)) {
-        const pick = e.tier >= 1 && Math.random() < .5 ? 'railgun' : 'strike';
-        bossTelegraph(e, pick, pick === 'railgun' ? telFor(40) : telFor(60), { x: clamp(player.x + 56, 60, VW - 100) });
+        // From act two the golem opens its racks: the data flood it shipped
+        // with as a stage boss rejoins the deck alongside the storm kit.
+        const roll = Math.random();
+        const pick = e.tier >= 1
+          ? (roll < .38 ? 'railgun' : roll < .66 ? 'flood' : 'strike')
+          : 'strike';
+        bossTelegraph(e, pick, pick === 'strike' ? telFor(60) : telFor(40), { x: clamp(player.x + 56, 60, VW - 100) });
         e.sp = [3.8, 2.5, 2.0][e.tier || 0];
       }
     } else {
@@ -11583,7 +11595,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       const dw = sprite.naturalWidth * px / kx, dh = sprite.naturalHeight * px / ky;
       // Anchored by the frame's right edge, not its centre. Every boss faces
       // left, and the sets whose cells were cropped tight (masquerade,
-      // bot-general, lord-censor) are far wider in the attack cells because the
+      // server-golem, lord-censor) are far wider in the attack cells because the
       // strike reaches out toward the player. Centring those spent that extra
       // width on BOTH sides, which shoved the body several hundred pixels right
       // — off the screen edge — and snapped it back when the pose ended. The

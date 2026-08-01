@@ -121,11 +121,12 @@
 | MASQUERADE（仮面の道化） | 盗賊の少年（thief-boy） | 1.05 |
 | ABYSS SIREN（深海の人魚） | 高飛車な魔女（witch） | 0.82 |
 | FLAME OYABUN（炎上親分） | 剣士（swordman） | 0.86 |
-| BOT GENERAL（ロボ将軍） | 冷静な魔術師（wizard） | 0.85 |
+| SERVER GOLEM（鋼鉄巨人） | 冷静な魔術師（wizard） | 0.72 |
 | QUEEN OF HEARTBREAK（女王） | 高飛車な魔女（witch） | 1.0 |
 
 各キャラの greeting/start/attack/damage/special/death/lose/win 系を取得（登場/フェーズ2/攻撃/被弾/撃破で使用）。
-旧ステージ2ボス SERVER GOLEM の画像・音声素材は削除せず、再利用候補として保留中。
+SERVER GOLEM は2026-08-01にステージ4ボスとして復帰。旧ステージ4ボス BOT GENERAL の
+画像素材（`bot-general_*`）は削除せず、再利用候補として保留中。
 `swordman` は2026-07-19に一括取得したが未使用のまま置かれていたもので、配布ページ上の
 正式なキャラクター名は未確認（ファイル名のみ判明）。スタッフロールでは「剣士」と表記している。
 `necromancer-oldwoman` は旧 INFERNO DJINN 用。現在未使用だが素材は保留。
