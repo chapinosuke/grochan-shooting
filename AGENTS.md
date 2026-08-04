@@ -13,7 +13,10 @@
 - リポジトリ: https://github.com/chapinosuke/grochan-shooting
 
 ## 2. 絶対的な制約（破らない）
-- **新規ライブラリ・npm依存を追加しない。** 描画は全て手続き的（canvas 2D）。
+- **新規ライブラリ・npm依存を追加しない。** 描画は手続き的（canvas 2D）が基本。
+  - **唯一の例外（2026-08-04 ユーザー指示）**: 背景の3D化のため **Three.js を
+    `assets/lib/three.module.min.js`（+`three.core.min.js`）として同梱**し、`bg3d.js` が使用する。
+    これ以外のライブラリ追加は引き続き禁止。
 - **外部CDN・実行時ネットワーク依存を持ち込まない。** アセットはリポジトリ内に同梱する。
 - 音・画像アセットを追加したら **必ず [THIRD_PARTY_ASSETS.md](THIRD_PARTY_ASSETS.md) に出典・ライセンスを追記**する。
 - 描画は**ワールド座標 VW=1280 × VH=720**。`draw()` でビュー変換を1回だけ適用。
@@ -43,10 +46,21 @@ python3 -m http.server 8123      # プロジェクト直下で起動
 - `node .devtools/shot.js <play|boss|mid|shop> <stageSkips>` → `.devtools/shot-<mode>-s<skips>.png`
   - stageSkips: 0=SHIBUYA 1=AQUA 2=FACTORY 3=STORM 4=PALACE
 - `node .devtools/crop.js <png> <cx> <cy> <cw> <ch>` → 3倍ズーム
+- `node .devtools/shot-bg3d.js <stage 1..5> [waitSec] [ffCount]` → `?stage=N` 直接開始で背景検証
+  （ffCount は Shift+T 早送り回数。headless はゲームが実時間の数分の一でしか進まないので、
+  道中の絵が欲しいときは `45 2` のように長め+早送りで撮る）
 - **注意**: headless はページ非表示扱いで自動ポーズするため `document.hidden` をspoof済み。**headless(swiftshader)のFPSは当てにならない** → ≥58fps判定は実機ブラウザ+F1でユーザーが確認する。
+- **注意**: WebGL は `--use-angle=swiftshader`（旧 `--use-gl=swiftshader` は現行Chromeで廃止 →
+  コンテキスト生成に失敗し bg3d が2Dフォールバックした状態で撮れてしまう）。
+  タイトル撮影含め、ハーネスは **http://127.0.0.1:8123 経由**で開くこと（file:// では ESモジュールの bg3d.js が読めない）。
 
 ## 4. コード地図（game.js）
 - ステージ定義配列 `stages`（~180行）: name/boss/midBoss/theme/sky/accent/spawnTable 等
+- **3D背景レイヤー**: `bg3d.js`（ESモジュール、Three.js製・全5ステージのシーンを遅延構築）。
+  `drawBackdrop()` が `window.GRO_BG3D.render()` を呼んで合成し、空〜中景の2D描画
+  （テーマ背景/far landmarks/volumeパス）をスキップ。街路レベルの名物2Dは
+  `drawNearScenery3D()` が3Dの上に重ねる。WebGL不可・モジュール未読込（file://等）は
+  従来の2Dフルパスに自動フォールバック。
 - 雑魚: `spawnEnemy`（ステータス）/ `enemyShoot`（弾）/ `drawEnemy`（描画）の3か所に1タイプずつ足す。
   タイプ分類は `GROUND_TYPES` / `ORGANIC_TYPES` / `SOLO_TYPES`（編隊に並べない大型）に集約済み。
   `ORGANIC_TYPES` の生物はリベット・王冠・部隊章・装甲のひび割れを描かず、生物向けの装飾に差し替わる。

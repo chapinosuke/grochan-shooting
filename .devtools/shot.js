@@ -22,7 +22,7 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 (async () => {
   const browser = await puppeteer.launch({
     executablePath: CHROME, headless: 'new',
-    args: ['--use-gl=swiftshader', '--enable-webgl', '--no-sandbox', '--window-size=1280,720'],
+    args: ['--use-angle=swiftshader', '--enable-webgl', '--no-sandbox', '--window-size=1280,720'],
   });
   const page = await browser.newPage();
   // The game auto-pauses when the page is hidden; headless pages are hidden, so spoof visibility.

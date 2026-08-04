@@ -4,13 +4,13 @@
 const puppeteer = require('puppeteer-core');
 const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
-const GAME = 'file://' + path.join(ROOT, 'index.html');
+const GAME = 'http://127.0.0.1:8123/';   // bg3d.js(ESモジュール)は file:// では読めない
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 (async () => {
   const browser = await puppeteer.launch({
     executablePath: CHROME, headless: 'new',
-    args: ['--use-gl=swiftshader', '--enable-webgl', '--no-sandbox', '--window-size=1280,720'],
+    args: ['--use-angle=swiftshader', '--enable-webgl', '--no-sandbox', '--window-size=1280,720'],
   });
   const page = await browser.newPage();
   await page.evaluateOnNewDocument(() => {
