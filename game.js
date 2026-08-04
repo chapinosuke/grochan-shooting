@@ -294,6 +294,7 @@
   let bossCrit = 0;      // 0..1 fade of the palace's blood-red sky in the queen's last act
   let bgCam = 0;
   let bgCamX = 0;        // horizontal camera yaw, eased from player.x (parallax)
+  let bg3dActive = false; // true while the Three.js backdrop rendered this frame (set in drawBackdrop)
   let bokeh = [];        // front-of-camera defocused light orbs
   let shoppers = [];     // pedestrians walking the shopping street (neon stage)
   let formationTimer = 3;
@@ -4186,6 +4187,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       energy: dir.energy, boss: dir.boss, warning: dir.warning,
       chapter: dir.chapter, chapterT: dir.chapterT, quality: dir.q
     }));
+    bg3dActive = use3d;
     if (use3d) ctx.drawImage(bg3d.canvas, -30, -30, VW + 60, VH + 60);
     // Chapter tint goes under the scenery — it should read as the light in the
     // air, not as a filter over the buildings.
@@ -5835,7 +5837,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }
     }
     ctx.restore();
-    drawStageForegroundFrame(stage);
+    // The edge-framing pillars are a 2D-era device ("super-near buildings by
+    // the lens"). Over the real 3D backdrop they read as floating black slabs
+    // with no depth context, so they only draw on the 2D fallback path.
+    if (!bg3dActive) drawStageForegroundFrame(stage);
     drawBokeh(stage);
   }
 

@@ -1399,3 +1399,9 @@ palace だけは画家キューに `volPush(COLOSSUS_Z, …)` で最奥として
   S5 HEART PALACE に移設**。生成(initSceneLayers の theme 分岐)と描画
   (3Dモード drawNearScenery3D / 2Dフォールバック drawNeonBackdrop→drawPalaceBackdrop)
   の両方を移動。音反応(musicLevel コーン膨張・ビートリング)は無変更。
+
+### 追記: 前景フレーム(画面端の柱)を3Dモードで非表示(2026-08-05、ユーザー指示「不要」)
+- drawStageForegroundFrame(全テーマの画面端フレーミング柱)は2D時代の「レンズ横の
+  超至近前景」演出。3D背景の上では文脈のない黒い板に見えるため、新設フラグ
+  `bg3dActive`(drawBackdrop が毎フレーム設定)で **3Dモード時はスキップ**。
+  2Dフォールバック時は従来どおり描画される。
