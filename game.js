@@ -9443,6 +9443,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const b of bullets) drawPlayerBullet(b);
     ctx.globalCompositeOperation = 'source-over';
     for (const b of enemyBullets) drawEnemyBullet(b);
+    // Three.js actor overlay (bg3d.js): bullet trails/halos, enemy-bullet
+    // shards and per-enemy mech dressing (under-glow, thruster, rotor, ring).
+    // Composited before the enemy sprites so glows sit under the kawaii art
+    // and trails are occluded by bodies; the crisp 2D bullet cores above stay
+    // untouched for danmaku readability.
+    if (bg3dActive && window.GRO_BG3D.renderActors &&
+      window.GRO_BG3D.renderActors({ stage: stageIndex, bullets, enemyBullets, enemies })) {
+      ctx.drawImage(window.GRO_BG3D.actorCanvas, 0, 0, VW, VH);
+    }
     drawHazards();
     for (const r of shockwaves) {
       ctx.save(); ctx.globalAlpha = Math.max(0, r.life / r.max); ctx.strokeStyle = r.color; ctx.lineWidth = 5 + r.life * 8; ctx.shadowColor = r.color; ctx.shadowBlur = 18;

@@ -98,19 +98,24 @@ import * as THREE from './assets/lib/three.module.min.js';
     });
   }
 
-  // 無限スクロール帯: 同じレイアウトを2枚並べ、親を span でラップする
+  // 無限スクロール帯: 同じレイアウトを2枚並べ、親を span でラップする。
+  // 親を -span から始めることで初期カバレッジが [-span, +span] になり、
+  // ステージ開始時から画面全体に街が敷き詰められている(0 始まりだと左半分が
+  // 空で「街に入っていく」ように見えてしまう)。ラップ域 (-1.5span, -0.5span]
+  // でも両側が埋まるよう、各帯の span は可視幅の2倍以上にしてある。
   function makeScroller(buildFn, span, k = 1) {
     const parent = new THREE.Group();
     const a = buildFn();
     const b = a.clone();
     b.position.x = span;
     parent.add(a, b);
+    parent.position.x = -span;
     return {
       group: parent,
       k, span,
       update(dx) {
         parent.position.x -= dx * this.k;
-        if (parent.position.x <= -span) parent.position.x += span;
+        if (parent.position.x <= -span * 1.5) parent.position.x += span;
       }
     };
   }
@@ -149,6 +154,180 @@ import * as THREE from './assets/lib/three.module.min.js';
 
   const lambert = o => new THREE.MeshLambertMaterial(o);
   const basic = o => new THREE.MeshBasicMaterial(o);
+
+  // ------------------------------------------------------------ actor overlay
+  // 弾・敵エフェクト用の第2レイヤー。直交カメラでゲームのワールド座標
+  // (1280x720、y下向き)にピクセル一致させ、透過キャンバスに毎フレーム描画。
+  // game.js の drawGame() が敵スプライトの直前に drawImage で合成する
+  // (アンダーグローは敵の下に、弾トレイルは敵に隠される正しい前後関係になる)。
+  // 全てイミディエイトモードの InstancedMesh: 毎フレーム配列を舐めて行列を
+  // 書き直すだけなので、弾や敵のライフサイクル管理を一切持たない。
+  let actor = null;
+  function initActors() {
+    const renderer2 = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' });
+    renderer2.setClearColor(0x000000, 0);
+    renderer2.setSize(VW, VH, false);
+    const scene = new THREE.Scene();
+    const cam = new THREE.OrthographicCamera(0, VW, 0, VH, -500, 500);
+
+    // テクスチャ: トレイル(尾へ減衰する光条)/ ハロー / ローター / 炎
+    const streakTex = makeTex(128, 32, (g, w, h) => {
+      const gr = g.createLinearGradient(0, 0, w, 0);
+      gr.addColorStop(0, 'rgba(255,255,255,0)');
+      gr.addColorStop(.72, 'rgba(255,255,255,.55)');
+      gr.addColorStop(1, 'rgba(255,255,255,.95)');
+      g.fillStyle = gr;
+      g.beginPath(); g.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, 6.3); g.fill();
+    });
+    const haloTex = softTex('#ffffff');
+    const rotorTex = makeTex(64, 64, g => {
+      g.translate(32, 32);
+      g.strokeStyle = 'rgba(180,200,230,.28)'; g.lineWidth = 3;
+      g.beginPath(); g.arc(0, 0, 28, 0, 6.3); g.stroke();      // ブレの円
+      g.fillStyle = 'rgba(30,26,60,.9)';
+      for (let b = 0; b < 3; b++) {
+        g.rotate(Math.PI * 2 / 3);
+        g.beginPath(); g.ellipse(15, 0, 14, 3.6, 0, 0, 6.3); g.fill();
+      }
+      g.fillStyle = '#cfd8ff'; g.beginPath(); g.arc(0, 0, 3.4, 0, 6.3); g.fill();
+    });
+    const flameTex = makeTex(64, 32, (g, w, h) => {
+      const gr = g.createLinearGradient(0, 0, w, 0);
+      gr.addColorStop(0, 'rgba(255,255,255,.95)');
+      gr.addColorStop(.35, 'rgba(255,255,255,.6)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr;
+      g.beginPath(); g.ellipse(w * .3, h / 2, w * .3, h * .34, 0, 0, 6.3); g.fill();
+      g.beginPath(); g.ellipse(w * .55, h / 2, w * .42, h * .2, 0, 0, 6.3); g.fill();
+    });
+
+    function inst(geo, matOpts, max, order) {
+      const m = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({
+        transparent: true, depthWrite: false, depthTest: false, fog: false, ...matOpts
+      }), max);
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      m.count = 0;
+      m.frustumCulled = false;
+      m.renderOrder = order;
+      scene.add(m);
+      return m;
+    }
+    const plane = new THREE.PlaneGeometry(1, 1);
+    const pools = {
+      glow: inst(plane, { map: haloTex, blending: THREE.AdditiveBlending }, 80, 1),      // 敵アンダーグロー
+      ring: inst(new THREE.TorusGeometry(1, .07, 6, 26), { blending: THREE.AdditiveBlending, opacity: .8 }, 60, 2),
+      flame: inst(plane, { map: flameTex, blending: THREE.AdditiveBlending }, 80, 3),    // スラスター
+      rotor: inst(plane, { map: rotorTex }, 60, 4),
+      trail: inst(plane, { map: streakTex, blending: THREE.AdditiveBlending }, 240, 5),  // 自機弾トレイル
+      halo: inst(plane, { map: haloTex, blending: THREE.AdditiveBlending, opacity: .8 }, 240, 6),
+      ebShard: inst(new THREE.OctahedronGeometry(1, 0), { blending: THREE.AdditiveBlending, opacity: .55 }, 420, 7),
+      ebHalo: inst(plane, { map: haloTex, blending: THREE.AdditiveBlending, opacity: .7 }, 420, 8)
+    };
+    const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(),
+      _s = new THREE.Vector3(), _e = new THREE.Euler(), _c = new THREE.Color();
+    function put(pool, i, x, y, sx, sy, sz, rx, ry, rz, color) {
+      _p.set(x, y, 0);
+      _e.set(rx, ry, rz);
+      _q.setFromEuler(_e);
+      _s.set(sx, sy, sz);
+      _m.compose(_p, _q, _s);
+      pool.setMatrixAt(i, _m);
+      if (color !== undefined) pool.setColorAt(i, _c.set(color));
+    }
+    function flush(pool, n) {
+      pool.count = Math.min(n, pool.instanceMatrix.count);
+      pool.instanceMatrix.needsUpdate = true;
+      if (pool.instanceColor) pool.instanceColor.needsUpdate = true;
+    }
+
+    // 敵タイプ → 3D装飾の割り当て(カワイイ2Dスプライトはそのまま、下に実3Dの
+    // メカ部品と光を足す)。ここに無いタイプはアンダーグローのみ。
+    const ROTOR = new Set(['drone', 'seeker', 'spinner']);
+    const THRUST = new Set(['racer', 'drone', 'seeker', 'walker', 'rivetbeetle', 'turret', 'bat']);
+    const RING = new Set(['glitch', 'voltbug', 'packetwyrm']);
+    const GLOW_COL = [0xff3e9d, 0x2f8cff, 0xff5a36, 0x31e8ff, 0xff3e9d]; // ステージ別
+    const FLAME_COL = [0x31e8ff, 0x65fff2, 0xffe15a, 0x72ff68, 0xffd06a];
+
+    return { renderer2, scene, cam, pools, put, flush, ROTOR, THRUST, RING, GLOW_COL, FLAME_COL, t: 0 };
+  }
+
+  api.renderActors = function (s) {
+    if (!api.ready) return false;
+    try {
+      if (!actor) {
+        actor = initActors();
+        api.actorCanvas = actor.renderer2.domElement;
+      }
+      const A = actor;
+      A.t += Math.min(.1, s.dt || .016);
+      const t = A.t;
+      const st = Math.max(0, Math.min(4, s.stage | 0));
+      let nGlow = 0, nRing = 0, nFlame = 0, nRotor = 0, nTrail = 0, nHalo = 0, nShard = 0;
+
+      // --- 敵の3D装飾 --------------------------------------------------
+      // 敵は左上アンカー(当たり判定が e.x..e.x+w)なので中心を計算して使う。
+      for (const e of (s.enemies || [])) {
+        if (e.x < -160 || e.x > VW + 160 || e.ghost) continue;
+        const w = e.w || 60, h = e.h || 60;
+        const cx = e.x + w / 2, cy = e.y + h / 2;
+        const dir = e.flank ? -1 : 1;            // フランカーは右向きに飛ぶ
+        // 全員: 足元のアンダーグロー(スプライトの下に light pool)
+        A.put(A.pools.glow, nGlow++, cx, cy + h * .38, w * 1.6, h * .7, 1, 0, 0, 0, A.GLOW_COL[st]);
+        if (A.THRUST.has(e.type)) {
+          const fl = .8 + .35 * Math.sin(t * 21 + e.x * .13);
+          A.put(A.pools.flame, nFlame++, cx + dir * w * .62, cy, w * .9 * fl, w * .3, 1, 0, 0, dir < 0 ? Math.PI : 0, A.FLAME_COL[st]);
+        }
+        if (A.ROTOR.has(e.type)) {
+          A.put(A.pools.rotor, nRotor++, cx, cy - h * .62, w * .85, w * .85, 1, 0, 0, t * 21 + e.x, 0xffffff);
+        }
+        if (A.RING.has(e.type)) {
+          const r = Math.max(w, h) * .72;
+          A.put(A.pools.ring, nRing++, cx, cy, r, r, r, 1.25, 0, t * 1.7 + e.x * .01, 0x31e8ff);
+        }
+      }
+
+      // --- 自機弾: 速度方向に伸びる光のトレイル + ハロー -----------------
+      for (const b of (s.bullets || [])) {
+        if (nTrail >= 240) break;
+        const sp = Math.hypot(b.vx, b.vy) || 1;
+        const ang = Math.atan2(b.vy, b.vx);
+        const len = Math.max(26, Math.min(120, sp * .09)) + b.r * 2;
+        const wid = b.missile ? 15 : Math.max(8, b.r * 2.2);
+        const col = b.pierce ? 0x9ffff6 : b.missile ? 0xffab5a : b.spark ? 0xffe15a
+          : b.pea ? 0xd8ffd4 : _hue(b.hue);
+        A.put(A.pools.trail, nTrail++, b.x - Math.cos(ang) * len * .42, b.y - Math.sin(ang) * len * .42,
+          len, wid, 1, 0, 0, ang, col);
+        A.put(A.pools.halo, nHalo++, b.x, b.y, b.r * 4.4, b.r * 4.4, 1, 0, 0, 0, col);
+      }
+
+      // --- 敵弾: 属性色ハロー + 回転する結晶シャード ---------------------
+      let i = 0;
+      for (const b of (s.enemyBullets || [])) {
+        if (nShard >= 420) break;
+        const col = b.volt ? 0x8dff7a : b.fire ? 0xffab5a : b.heart ? 0xff9ecf
+          : b.bubble ? 0x7ae8ff : b.boss ? 0xff5aa8 : 0xff4a92;
+        A.put(A.pools.ebHalo, nShard, b.x, b.y, b.r * 4.6, b.r * 4.6, 1, 0, 0, 0, col);
+        A.put(A.pools.ebShard, nShard++, b.x, b.y, b.r * .95, b.r * .95, b.r * .95,
+          t * 2.3 + i * .7, t * 3.1 + i * 1.3, 0, col);
+        i++;
+      }
+
+      A.flush(A.pools.glow, nGlow); A.flush(A.pools.ring, nRing);
+      A.flush(A.pools.flame, nFlame); A.flush(A.pools.rotor, nRotor);
+      A.flush(A.pools.trail, nTrail); A.flush(A.pools.halo, nHalo);
+      A.flush(A.pools.ebShard, nShard); A.flush(A.pools.ebHalo, nShard);
+      A.renderer2.render(A.scene, A.cam);
+      return true;
+    } catch (e) {
+      console.warn('bg3d actor render failed', e);
+      api.renderActors = () => false;
+      return false;
+    }
+  };
+  const _hueColor = new THREE.Color();
+  function _hue(hue) {
+    return _hueColor.setHSL(((hue || 0) % 360) / 360, .95, .72).getHex();
+  }
 
   // ---------------------------------------------------------------- scenes
   // 各ビルダーは { scene, update(dt, state) } を返す。state は game.js から:
