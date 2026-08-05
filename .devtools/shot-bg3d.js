@@ -18,7 +18,8 @@ const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
   await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 });
   page.on('pageerror', e => console.log('PAGEERROR:', e.message));
   page.on('console', m => { if (m.type() === 'error' && !m.text().includes('favicon')) console.log('PAGE-ERR:', m.text().slice(0, 200)); });
-  await page.goto(`http://127.0.0.1:8123/?stage=${stage}`, { waitUntil: 'load' });
+  page.setDefaultNavigationTimeout(90000);
+  await page.goto(`http://127.0.0.1:8123/?stage=${stage}`, { waitUntil: 'domcontentloaded' });
   const press = (code, shift = false) => page.evaluate(({ code, shift }) => {
     window.dispatchEvent(new KeyboardEvent('keydown', { code, shiftKey: shift, bubbles: true }));
     window.dispatchEvent(new KeyboardEvent('keyup', { code, shiftKey: shift, bubbles: true }));

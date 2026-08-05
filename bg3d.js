@@ -552,10 +552,20 @@ import * as THREE from './assets/lib/three.module.min.js';
   }
   // デバッグ用: 各インスタンスプールの生存数と発火中のエフェクト数。
   // 描画が出ないときに「積んでいないのか / 描けていないのか」を切り分ける。
-  api.stats = function () {
-    if (!actor) return null;
-    const out = { fx: actor.fx.length };
-    for (const k in actor.pools) out[k] = actor.pools[k].count;
+  // 検証用: ステージ2のクジラを今すぐ跳ねさせる(待ち時間を飛ばす)
+  api.breach = function () {
+    const e = entries[1];
+    if (e && e.breach) e.breach();
+  };
+
+  api.stats = function (stage) {
+    const out = {};
+    if (actor) {
+      out.fx = actor.fx.length;
+      for (const k in actor.pools) out[k] = actor.pools[k].count;
+    }
+    const e = entries[stage === undefined ? -1 : stage];
+    if (e && e.debug) Object.assign(out, e.debug());
     return out;
   };
 
@@ -1424,6 +1434,141 @@ import * as THREE from './assets/lib/three.module.min.js';
       scene.add(bo); boats.push(bo);
     }
 
+    // --- ザトウクジラ: 実3Dのブリーチング -----------------------------
+    // 旧2Dの巨大魚(平面のカートゥーン)の置き換え。旋盤形状の流線型ボディに
+    // 尾びれ・胸びれ・背びれ・喉の畝を付け、海中→跳躍→着水を繰り返す。
+    // 着水と離水では水しぶきを出すので、海面との関係がはっきり読める。
+    function buildWhale() {
+      const g = new THREE.Group();
+      // 夜の逆光でも塊が読めるよう、emissive で最低限の明度を持たせる
+      const skin = lambert({ color: 0x3a6285, emissive: 0x0e2236, emissiveIntensity: .8 });
+      const belly = lambert({ color: 0xbcdcec, emissive: 0x24404e, emissiveIntensity: .6 });
+      const dark = lambert({ color: 0x101f30 });
+      const L = 26;                              // 半長(全長52ユニット)
+      const prof = [];
+      for (let i = 0; i <= 16; i++) {
+        const u = i / 16;                        // 0=尾 1=鼻先
+        // 尾で細く、胴の前寄りで最大、鼻先で丸く落とす実際のシルエット
+        const r = .45 + 4.9 * Math.sin(Math.pow(u, .72) * Math.PI * .94);
+        prof.push(new THREE.Vector2(Math.max(.4, r), -L + 2 * L * u));
+      }
+      const body = new THREE.Mesh(new THREE.LatheGeometry(prof, 16), skin);
+      body.rotation.z = -Math.PI / 2;            // 旋盤のY軸を機首方向(+X)へ倒す
+      g.add(body);
+      // 白い腹側: 同じ形をひと回り小さくして下へずらす
+      const under = new THREE.Mesh(new THREE.LatheGeometry(prof, 16), belly);
+      under.rotation.z = -Math.PI / 2;
+      under.scale.set(.97, .62, .93);
+      under.position.y = -1.9;
+      g.add(under);
+      // 喉の畝(ザトウクジラの特徴)
+      for (let i = 0; i < 7; i++) {
+        const pleat = new THREE.Mesh(new THREE.BoxGeometry(20, .12, .5), dark);
+        pleat.position.set(9, -3.1, -2.4 + i * .8);
+        g.add(pleat);
+      }
+      // 尾びれ: 2枚の平たい三角
+      for (const sgn of [-1, 1]) {
+        const fluke = new THREE.Mesh(new THREE.ConeGeometry(6.4, 11, 4), skin);
+        fluke.scale.set(1, 1, .18);
+        fluke.rotation.z = Math.PI / 2 + sgn * .34;
+        fluke.position.set(-L - 3.6, sgn * 1.2, 0);
+        g.add(fluke);
+      }
+      // 胸びれ: 長い(全長の1/3)のがザトウクジラ
+      for (const sgn of [-1, 1]) {
+        const pec = new THREE.Mesh(new THREE.BoxGeometry(15, .6, 2.6), belly);
+        pec.position.set(4, -2.2, sgn * 4.4);
+        pec.rotation.y = sgn * .5;
+        pec.rotation.z = -.28;
+        g.add(pec);
+      }
+      const dorsal = new THREE.Mesh(new THREE.ConeGeometry(1.9, 4.2, 4), skin);
+      dorsal.scale.set(1, 1, .3);
+      dorsal.position.set(-8, 4.4, 0);
+      dorsal.rotation.z = -.5;
+      g.add(dorsal);
+      // 口の線と目
+      const mouth = new THREE.Mesh(new THREE.BoxGeometry(17, .3, .3), dark);
+      mouth.position.set(13, -2.2, 0);
+      g.add(mouth);
+      for (const sgn of [-1, 1]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(.62, 6, 5), dark);
+        eye.position.set(11.5, -.6, sgn * 3.4);
+        g.add(eye);
+      }
+      // 潮吹き(噴気孔から立つ霧柱)。跳躍の頂点で一瞬だけ出す
+      const blow = sprite(softTex('#eaffff'), 0xeaffff, 12, 0);
+      blow.position.set(-2, 7, 0);
+      g.add(blow);
+      g.userData.blow = blow;
+      return g;
+    }
+    const whale = buildWhale();
+    whale.position.set(0, -40, -130);
+    whale.userData.wait = rand(3, 8);
+    whale.userData.p = -1;                       // -1 = 潜航中
+    scene.add(whale);
+
+    // 水しぶき: 離水・着水の瞬間に海面へ広がる泡のプール
+    const splashes = [];
+    for (let i = 0; i < 10; i++) {
+      const sp = sprite(softTex('#f0ffff'), 0xf0ffff, 10, 0, THREE.NormalBlending);
+      sp.visible = false;
+      scene.add(sp);
+      splashes.push(sp);
+    }
+    function splash(x, z, size) {
+      for (const sp of splashes) {
+        if (sp.visible) continue;
+        sp.visible = true;
+        sp.position.set(x + rand(-6, 6), -15.5, z);
+        sp.userData = { t: 0, life: .9 + Math.random() * .5, size: size * rand(.7, 1.3) };
+        return;
+      }
+    }
+
+    // 貨物船: 航海灯を灯した長い船体が水平線寄りをゆっくり横切る
+    const cargo = new THREE.Group();
+    const hullMat = lambert({ color: 0x16304a });
+    const cHull = new THREE.Mesh(new THREE.BoxGeometry(58, 6, 9), hullMat);
+    cHull.position.y = 1; cargo.add(cHull);
+    const cDeck = new THREE.Mesh(new THREE.BoxGeometry(50, 1.4, 8), lambert({ color: 0x24506e }));
+    cDeck.position.y = 4.4; cargo.add(cDeck);
+    for (let i = 0; i < 9; i++) {                // 甲板のコンテナ
+      const cc = new THREE.Mesh(new THREE.BoxGeometry(5, 3, 6.4),
+        lambert({ color: pick([0xe84a4a, 0x2f8cff, 0x31a86a, 0xffe15a]) }));
+      cc.position.set(-22 + i * 5.4, 6.6, 0);
+      cargo.add(cc);
+    }
+    const bridgeHouse = new THREE.Mesh(new THREE.BoxGeometry(8, 8, 8), lambert({ color: 0xdae8f0 }));
+    bridgeHouse.position.set(-24, 9, 0); cargo.add(bridgeHouse);
+    // 航海灯とブリッジの窓明かり。遠景はフォグで沈むので、灯りが無いと
+    // ただの板に見える(船だと分かるのは灯りのおかげ)。
+    for (const [lx, ly, lc, sz] of [[-24, 13, 0xfff2c0, 4.4], [29, 6, 0x7dff9a, 3.6],
+      [-31, 6, 0xff6a6a, 3.6], [-24, 9, 0xffe9b8, 5.4], [6, 9, 0xfff2c0, 3]]) {
+      const nav = sprite(softTex('#ffffff'), lc, sz, .95);
+      nav.position.set(lx, ly, 4); cargo.add(nav);
+    }
+    const wake = sprite(softTex('#dffffb'), 0xdffffb, 40, .35, THREE.NormalBlending);
+    wake.position.set(-40, -.4, 0);
+    wake.scale.set(46, 9, 1);
+    cargo.add(wake);
+    cargo.position.set(200, -17, -205);
+    cargo.userData = { min: -420, span: 900 };
+    scene.add(cargo);
+
+    // 跳ねる魚群: 小さな銀色の紡錘が水面を出入りする
+    const jumpers = [];
+    for (let i = 0; i < 12; i++) {
+      const f = new THREE.Mesh(new THREE.SphereGeometry(1, 6, 5), lambert({ color: 0xbfe4f5 }));
+      f.scale.set(2.6, .8, .5);
+      f.position.set(rand(-260, 260), -18, rand(-120, -55));
+      f.userData = { ph: rand(0, 6.28), sp: rand(.7, 1.4) };
+      scene.add(f);
+      jumpers.push(f);
+    }
+
     // 波しぶき/海鳥の羽ばたきに見える白い粒
     const N_SPRAY = 90;
     const sprayPos = new Float32Array(N_SPRAY * 3);
@@ -1443,6 +1588,12 @@ import * as THREE from './assets/lib/three.module.min.js';
     let t = 0;
     return {
       scene,
+      // 検証用: クジラの跳躍を即座に始めさせる(待ち時間が長く撮影しにくいため)
+      breach() { if (whale.userData.p < 0) whale.userData.wait = 0; },
+      debug: () => ({
+        whaleX: Math.round(whale.position.x), whaleY: Math.round(whale.position.y),
+        whaleZ: Math.round(whale.position.z), whaleP: +whale.userData.p.toFixed(2)
+      }),
       update(dt, s) {
         t += dt;
         const dx = SCROLL * (s.speed || 1) * dt;
@@ -1498,6 +1649,61 @@ import * as THREE from './assets/lib/three.module.min.js';
         }
         glitter.material.opacity = .42 + .12 * Math.sin(t * 1.9);
         glitterTex.offset.y -= dt * .12;          // きらめきが手前へ流れる
+
+        // --- クジラのブリーチング -------------------------------------
+        const W = whale.userData;
+        if (W.p < 0) {                            // 潜航中: 次の跳躍を待つ
+          W.wait -= dt;
+          whale.position.x -= dx * .8 + 6 * dt;
+          if (whale.position.x < -300) whale.position.x += 620;
+          if (W.wait <= 0) {
+            W.p = 0;
+            W.dur = 3.4 + Math.random() * 1.2;
+            // 跳躍高度: 海面(y=-17)を 30ユニット以上抜けないと体が出ない。
+            // 開始xは画面中央寄り(z=-130 での可視幅は概ね ±110ユニット)。
+            W.arc = 54 + Math.random() * 12;
+            whale.position.set(rand(-55, 55), -42, -130 + rand(-25, 25));
+            whale.rotation.y = Math.random() < .5 ? 0 : Math.PI;   // 向きも振る
+          }
+        } else {
+          const prevY = whale.position.y;
+          W.p += dt / W.dur;
+          if (W.p >= 1) {                         // 着水しきったら潜航へ
+            W.p = -1; W.wait = 5 + Math.random() * 8;
+            whale.position.y = -42;
+          } else {
+            const s = Math.sin(W.p * Math.PI);     // 0→1→0 の放物線
+            whale.position.y = -42 + W.arc * s;
+            whale.position.x += (whale.rotation.y ? -1 : 1) * 11 * dt - dx * .8;
+            // 上昇中は機首上げ、下降中は機首下げ(実際の跳躍の姿勢)
+            whale.rotation.z = Math.cos(W.p * Math.PI) * .85;
+            whale.userData.blow.material.opacity =
+              W.p > .42 && W.p < .6 ? .8 * Math.sin((W.p - .42) / .18 * Math.PI) : 0;
+            // 海面(y=-17)を横切った瞬間に水しぶき
+            if (prevY < -17 && whale.position.y >= -17) splash(whale.position.x, whale.position.z, 34);
+            if (prevY > -17 && whale.position.y <= -17) splash(whale.position.x, whale.position.z, 48);
+          }
+        }
+        for (const sp of splashes) {
+          if (!sp.visible) continue;
+          const u = sp.userData;
+          u.t += dt;
+          const q = u.t / u.life;
+          if (q >= 1) { sp.visible = false; continue; }
+          const sc = u.size * (.4 + q * 1.3);
+          sp.scale.set(sc, sc * .5, 1);
+          sp.material.opacity = .75 * (1 - q) * (q < .12 ? q / .12 : 1);
+        }
+
+        cargo.position.x -= dx * .55 + 3.5 * dt;
+        if (cargo.position.x < cargo.userData.min) cargo.position.x += cargo.userData.span;
+        for (const f of jumpers) {                // 水面を出入りする魚群
+          f.position.x -= dx * .9;
+          if (f.position.x < -280) f.position.x += 560;
+          const a = Math.sin(t * f.userData.sp + f.userData.ph);
+          f.position.y = -18 + Math.max(0, a) * 5.5;
+          f.rotation.z = Math.cos(t * f.userData.sp + f.userData.ph) * .7;
+        }
         for (const b of blinkers) b.material.opacity = .3 + .7 * Math.max(0, Math.sin(t * 2.2 + b.userData.blink));
         const p = sprayGeo.attributes.position.array;
         for (let i = 0; i < N_SPRAY; i++) {
@@ -1519,7 +1725,7 @@ import * as THREE from './assets/lib/three.module.min.js';
   // SUNSET FACTORY — 夕焼けの製鉄所。煙突、タンク、パイプ、炉の火明かり。
   function buildFactory() {
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x8a2a44, 35, 390);
+    scene.fog = new THREE.Fog(0x5e1c30, 30, 330);   // 浅いピンクだと全体が同じ明度に潰れる
     scene.add(new THREE.HemisphereLight(0xff9f6a, 0x38101e, 1.05));
     const sunLight = new THREE.DirectionalLight(0xffb066, 1.3);
     sunLight.position.set(-140, 60, -220);
@@ -1663,6 +1869,124 @@ import * as THREE from './assets/lib/three.module.min.js';
     }, 480);
     scene.add(pylonBelt.group);
 
+    // --- 製鉄所の「稼働している」要素 ---------------------------------
+    // 溶鋼の川: 発光する帯が地表を流れる。emissiveMap でスクロールさせるので
+    // ジオメトリは1枚で済む。工場が「動いている」ことを示す一番大きな光源。
+    const moltenTex = makeTex(256, 32, (g, w, h) => {
+      g.fillStyle = '#7a1a06'; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 60; i++) {
+        g.fillStyle = pick(['#ffd27a', '#ff8a2a', '#ffee9a', '#ff5a18']);
+        g.globalAlpha = rand(.35, 1);
+        g.fillRect(rand(0, w), rand(2, h - 6), rand(8, 40), rand(3, 9));
+      }
+      g.globalAlpha = 1;
+      g.fillStyle = '#2a0a08'; g.fillRect(0, 0, w, 3); g.fillRect(0, h - 3, w, 3);
+    }, { repX: 12, repY: 1 });
+    const molten = new THREE.Mesh(new THREE.PlaneGeometry(1500, 15),
+      lambert({ map: moltenTex, color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1, emissiveMap: moltenTex }));
+    molten.rotation.x = -Math.PI / 2;
+    molten.position.set(0, -16.4, -150);
+    scene.add(molten);
+    const moltenGlow = [];
+    for (let i = 0; i < 7; i++) {
+      const gl = sprite(softTex('#ff9a3a'), 0xff8a30, 78, .45);
+      gl.position.set(-220 + i * 78, -11, -148);
+      scene.add(gl); moltenGlow.push(gl);
+    }
+
+    // 取鍋(とりべ)クレーン: 発光する取鍋を吊った天井クレーンが往復し、
+    // ときどき鋳型へ湯を注ぐ。注ぐ瞬間は火花が跳ね、周囲が明るくなる。
+    const ladleRig = new THREE.Group();
+    const rigMat = lambert({ color: 0x5a2038 });
+    const rigBeam = new THREE.Mesh(new THREE.BoxGeometry(150, 3, 4), rigMat);
+    rigBeam.position.y = 34; ladleRig.add(rigBeam);
+    for (const lx of [-72, 72]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(3.4, 51, 4), rigMat);
+      leg.position.set(lx, 8.5, 0); ladleRig.add(leg);
+    }
+    const trolley = new THREE.Group();
+    const tBody = new THREE.Mesh(new THREE.BoxGeometry(9, 4, 6), rigMat);
+    tBody.position.y = 30; trolley.add(tBody);
+    const cable = new THREE.Mesh(new THREE.CylinderGeometry(.22, .22, 18, 4), rigMat);
+    cable.position.y = 19; trolley.add(cable);
+    const ladle = new THREE.Mesh(new THREE.CylinderGeometry(5, 3.6, 8, 10), lambert({ color: 0x7a3040 }));
+    ladle.position.y = 6; trolley.add(ladle);
+    const ladleHeat = sprite(softTex('#ffb04a'), 0xff9a2a, 20, .55);
+    ladleHeat.position.y = 10; trolley.add(ladleHeat);
+    // 注湯: 取鍋の口から下へ伸びる光の筋(注いでいる間だけ見える)
+    const pour = new THREE.Mesh(new THREE.CylinderGeometry(.9, 1.5, 20, 6),
+      basic({ color: 0xffd27a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+    pour.position.set(0, -6, 0);
+    trolley.add(pour);
+    const pourPool = sprite(softTex('#ffd27a'), 0xffb04a, 34, 0);
+    pourPool.position.set(0, -15.5, 0);
+    trolley.add(pourPool);
+    ladleRig.add(trolley);
+    ladleRig.position.set(30, -17, -128);
+    scene.add(ladleRig);
+    let pourT = rand(2, 6), pouring = 0;
+
+    // 鉱石列車: 発光する鉱石を積んだ貨車が軌道を走り抜ける
+    const oreTrain = new THREE.Group();
+    const carMat = lambert({ color: 0x4a1c2a });
+    for (let i = 0; i < 9; i++) {
+      const car = new THREE.Mesh(new THREE.BoxGeometry(11, 4.4, 5), carMat);
+      car.position.set(i * 12.5, 0, 0); oreTrain.add(car);
+      const ore = new THREE.Mesh(new THREE.BoxGeometry(9, 1.6, 4),
+        lambert({ color: 0xff7a2a, emissive: 0xff5a10, emissiveIntensity: .8 }));
+      ore.position.set(i * 12.5, 2.6, 0); oreTrain.add(ore);
+      const oreGlow = sprite(softTex('#ff9a3a'), 0xff8a2a, 13, .4);
+      oreGlow.position.set(i * 12.5, 4, 1.6); oreTrain.add(oreGlow);
+    }
+    const loco = new THREE.Mesh(new THREE.BoxGeometry(13, 7, 5.4), lambert({ color: 0x2e1220 }));
+    loco.position.set(-14, 1.4, 0); oreTrain.add(loco);
+    const locoLamp = sprite(softTex('#fff2c0'), 0xfff2c0, 7, .95);
+    locoLamp.position.set(-21, 1.6, 0); oreTrain.add(locoLamp);
+    oreTrain.position.set(260, -14.6, -88);
+    scene.add(oreTrain);
+
+    // 地表の蒸気噴出: 一定間隔で白い柱が上がる
+    const vents = [];
+    for (let i = 0; i < 5; i++) {
+      const v = sprite(softTex('#e8d0d8', 128, .12), 0xe8d0d8, 14, 0, THREE.NormalBlending);
+      v.position.set(-200 + i * 105, -14, rand(-96, -70));
+      v.userData = { t: rand(0, 4), period: 3.4 + Math.random() * 3, min: -260, span: 520 };
+      scene.add(v); vents.push(v);
+    }
+
+    // 火の粉柱: 炉列の真上に立ち上る熱気の柱(粒は既存の sparks が担当)
+    const emberCols = [];
+    for (let i = 0; i < 4; i++) {
+      const col = new THREE.Mesh(new THREE.PlaneGeometry(16, 60),
+        new THREE.MeshBasicMaterial({
+          map: softTex('#ff9a3a'), transparent: true, opacity: .14, depthWrite: false,
+          blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false
+        }));
+      col.position.set(-160 + i * 118, 8, -62);
+      col.userData.ph = rand(0, 6.28);
+      scene.add(col); emberCols.push(col);
+    }
+
+    // 巨大歯車: 中景で噛み合って回る(工場の心臓部)
+    const gears = [];
+    for (const [gx, gy, gz, r, sp] of [[-120, 4, -118, 15, .35], [-96, 12, -118, 9, -.58], [150, 2, -132, 19, -.26]]) {
+      const gear = new THREE.Group();
+      const gm = lambert({ color: 0x6a2438 });
+      gear.add(new THREE.Mesh(new THREE.CylinderGeometry(r, r, 3, 22), gm));
+      for (let k = 0; k < 14; k++) {
+        const tooth = new THREE.Mesh(new THREE.BoxGeometry(r * .3, 3.4, r * .22), gm);
+        const a = (k / 14) * Math.PI * 2;
+        tooth.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+        tooth.rotation.y = -a;
+        gear.add(tooth);
+      }
+      gear.add(new THREE.Mesh(new THREE.CylinderGeometry(r * .22, r * .22, 4, 10), lambert({ color: 0x8a3a4a })));
+      gear.rotation.x = Math.PI / 2;             // 歯車の面をカメラへ向ける
+      gear.position.set(gx, gy, gz);
+      gear.userData.sp = sp;
+      scene.add(gear); gears.push(gear);
+    }
+
     // 中景: 煙突(煙つき)とガントリークレーン
     const smokes = [];
     const smokeTex = softTex('#d9a8b8', 128, .1);
@@ -1779,6 +2103,51 @@ import * as THREE from './assets/lib/three.module.min.js';
         farBelt.update(dx * .85); midBelt.update(dx); nearBelt.update(dx);
         coolBelt.update(dx * .8); flareBelt.update(dx * .92); pylonBelt.update(dx * .88);
         floorTex.offset.x += dx * (26 / 1500);    // 煙突・タンクと同じ世界速度
+        moltenTex.offset.x += dt * .09 + dx * (12 / 1500);   // 湯は自分でも流れる
+        for (const gl of moltenGlow) {
+          gl.position.x -= dx;
+          if (gl.position.x < -300) gl.position.x += 620;
+          gl.material.opacity = .38 + .16 * Math.sin(t * 3.1 + gl.position.x * .05);
+        }
+        for (const g2 of gears) g2.rotation.y += g2.userData.sp * dt;
+        // 取鍋クレーン: 桁の上を往復し、周期的に湯を注ぐ
+        trolley.position.x = Math.sin(t * .22) * 62;
+        ladleRig.position.x -= dx * .9;
+        if (ladleRig.position.x < -320) ladleRig.position.x += 700;
+        pourT -= dt;
+        if (pourT <= 0) { pouring = 1.6; pourT = 6 + Math.random() * 6; }
+        if (pouring > 0) {
+          pouring -= dt;
+          const k = Math.min(1, pouring / 1.6);
+          pour.material.opacity = .75 * k;
+          pourPool.material.opacity = .6 * k;
+          const ps = 30 + 12 * Math.sin(t * 14);
+          pourPool.scale.set(ps, ps, 1);
+          ladleHeat.material.opacity = .55 + .3 * k;
+        } else {
+          pour.material.opacity = 0; pourPool.material.opacity = 0;
+          ladleHeat.material.opacity = .45 + .12 * Math.sin(t * 2.6);
+        }
+        // 鉱石列車: 自走+スクロールで右から左へ駆け抜け、たまに戻ってくる
+        oreTrain.position.x -= dx + 46 * dt;
+        if (oreTrain.position.x < -420) oreTrain.position.x = 320 + rand(80, 700);
+        // 蒸気噴出: 立ち上って薄れるループ
+        for (const v of vents) {
+          v.position.x -= dx;
+          if (v.position.x < v.userData.min) v.position.x += v.userData.span;
+          v.userData.t += dt;
+          const q = (v.userData.t % v.userData.period) / v.userData.period;
+          const sc = 10 + q * 34;
+          v.scale.set(sc, sc * 1.25, 1);
+          v.position.y = -15 + q * 22;
+          v.material.opacity = .42 * (1 - q) * (q < .1 ? q / .1 : 1);
+        }
+        for (const col of emberCols) {
+          col.position.x -= dx;
+          if (col.position.x < -260) col.position.x += 520;
+          col.material.opacity = .1 + .07 * Math.sin(t * 1.7 + col.userData.ph);
+          col.scale.set(1 + .12 * Math.sin(t * 2.3 + col.userData.ph), 1, 1);
+        }
         for (const b of blinkers) b.material.opacity = .3 + .6 * Math.max(0, Math.sin(t * 2 + b.userData.blink));
         const flick = .85 + .3 * Math.sin(t * 9.2) * Math.sin(t * 5.1) + (s.energy || 0) * .2;
         for (const m of glowMats) m.color.setHSL(.07, 1, .45 + .12 * flick);

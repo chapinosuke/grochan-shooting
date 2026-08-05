@@ -4304,10 +4304,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // pinned to this same ground line, piers plunging into the swell) is the
       // highway. Only the inhabitants stay 2D.
       drawAquaTanker(stage);
-      for (const p of bgProps) {
-        if (p.kind === 'fish') drawFish(p, stage);
-        else if (p.kind === 'bigFish') { drawBigFishShadow(p, stage); drawBigFish(p, stage); }
-      }
+      // bigFish is a flat cartoon that fills half the screen; the 3D humpback
+      // (bg3d aqua scene) breaches with real splashes instead. Small fish stay.
+      for (const p of bgProps) if (p.kind === 'fish') drawFish(p, stage);
     } else if (theme === 'factory') {
       for (const p of bgProps) if (p.kind === 'gear') drawGear(p, stage);
       drawFurnaceRow(stage);

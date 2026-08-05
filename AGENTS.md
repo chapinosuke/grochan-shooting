@@ -37,6 +37,10 @@ python3 -m http.server 8123      # プロジェクト直下で起動
 ### デバッグキー / API
 - **F1**=FPS表示 / **Shift+N**=ステージスキップ / **Shift+M**=中ボス召喚 / **Shift+B**=ボス召喚 / **Shift+T**=タイムライン+30秒早送り
 - `window.GRO_DEBUG` で状態取得（`phaseId`/`stageTime`/`continuesLeft`/`power` 等）
+- **3D背景/エフェクトの検証**: `GRO_BG3D.stats(stageIdx)` で各インスタンスプールの生存数
+  ＋そのステージの内部状態（S2はクジラの座標/跳躍進行）を取得。`GRO_BG3D.breach()` で
+  S2のクジラを即座に跳ねさせる（待ち時間が長く撮影しづらいため）。
+  `GRO_BG3D.fx(kind,x,y,{color,size,dir})` で戦闘エフェクトを任意に発火できる。
 - **雑魚の絵柄検証**（localhost のときだけ生える。`file://` では存在しない）:
   `__spawn(type, x, y, hold=true, over)` で任意タイプを固定位置に静止召喚（`over` で `variant`/`hp`/`jaw` 等を上書き）、
   `__clearEnemies()` で雑魚一掃、`__enemies()` で敵の軽量スナップショット（挙動プローブ用）。
