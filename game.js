@@ -241,7 +241,9 @@
   let difficultyKey = 'normal';
   let musicClock = 0;
   let musicStep = 0;
-  let soundOn = false;
+  // Sound starts ON; browsers still gate real playback until the first user
+  // gesture, which the title screen's click always provides (startMenuBgm).
+  let soundOn = true;
   let currentBgmKey = null;
   let bgmFadeToken = 0;
   let openingTimeout = 0;
@@ -4295,13 +4297,17 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawTokyoRoadLights(stage);
       drawShoppers();
     } else if (theme === 'aqua') {
-      drawOcean(stage);
+      // drawOcean paints an opaque sea from y556 down, which would bury the 3D
+      // bridge and the water it stands in — the 3D sea plane is the water now.
+      // drawHighway is likewise gone: a flat 2D road strip over real water
+      // reads as tarmac floating on the sea. The 3D suspension bridge (deck
+      // pinned to this same ground line, piers plunging into the swell) is the
+      // highway. Only the inhabitants stay 2D.
       drawAquaTanker(stage);
       for (const p of bgProps) {
         if (p.kind === 'fish') drawFish(p, stage);
         else if (p.kind === 'bigFish') { drawBigFishShadow(p, stage); drawBigFish(p, stage); }
       }
-      drawHighway(stage);
     } else if (theme === 'factory') {
       for (const p of bgProps) if (p.kind === 'gear') drawGear(p, stage);
       drawFurnaceRow(stage);

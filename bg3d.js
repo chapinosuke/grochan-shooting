@@ -1040,14 +1040,56 @@ import * as THREE from './assets/lib/three.module.min.js';
     coastGlow.position.set(0, -14, -320);
     scene.add(coastGlow);
 
-    // 吊り橋(中景の第二スパン): 主塔 + メインケーブル + ハンガー + 桁
+    // うねり: 海面に寝かせた光の帯がカメラへ向かって流れる。旧2Dの遠近波
+    // (drawOcean)を3Dで置き換えるもので、橋脚との前後関係も正しく出る。
+    const crestTex = makeTex(128, 32, (g, w, h) => {
+      const gr = g.createLinearGradient(0, 0, 0, h);
+      gr.addColorStop(0, 'rgba(255,255,255,0)');
+      gr.addColorStop(.5, 'rgba(255,255,255,.9)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr;
+      for (let i = 0; i < 9; i++) {              // 途切れた波頭にして直線に見せない
+        const x = i * 15 + rand(-3, 3);
+        g.fillRect(x, 0, rand(6, 12), h);
+      }
+    }, { repX: 7, repY: 1 });
+    const swell = [];
+    const SWELL_NEAR = -34, SWELL_FAR = -300;
+    for (let i = 0; i < 16; i++) {
+      const crest = new THREE.Mesh(new THREE.PlaneGeometry(1500, 5),
+        new THREE.MeshBasicMaterial({
+          map: crestTex, transparent: true, opacity: .3, depthWrite: false,
+          blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false
+        }));
+      crest.rotation.x = -Math.PI / 2;
+      crest.position.set(0, -16.9, SWELL_FAR + (SWELL_NEAR - SWELL_FAR) * (i / 16));
+      crest.userData.ph = rand(0, 6.28);
+      scene.add(crest);
+      swell.push(crest);
+    }
+
+    // 吊り橋(AQUA HIGHWAY 本体): 主塔 + メインケーブル + ハンガー + 桁。
+    // **桁の高さはゲームの接地ライン(画面y=650)に合わせてある**。
+    // z=-70 で画面y=650 になる世界y は約 -8.0(カメラ pitch 0.283 / fov55 から逆算)。
+    // これを外すと「海に浮いた平らな道」に見えるので、動かすときは必ず再計算すること。
+    const DECK_Y = -8.0;
     const hwBelt = makeScroller(() => {
       const grp = new THREE.Group();
       const conc = lambert({ color: 0x2a6a8e });
       const cableMat = basic({ color: 0x65fff2, transparent: true, opacity: .55 });
       const SPAN = 210;                          // 主塔間隔
-      const deck = new THREE.Mesh(new THREE.BoxGeometry(420, 1.6, 9), conc);
-      deck.position.set(210, -4, -70); grp.add(deck);
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(420, 2.2, 11), conc);
+      deck.position.set(210, DECK_Y - 1.1, -70); grp.add(deck);
+      // 桁側面の帯と、路側の防護柵(海上の高架だと一目で分かる要素)
+      const edge = new THREE.Mesh(new THREE.BoxGeometry(420, .5, .4),
+        basic({ color: 0x65fff2, transparent: true, opacity: .5 }));
+      edge.position.set(210, DECK_Y - .2, -64.4); grp.add(edge);
+      for (let i = 0; i < 60; i++) {             // 防護柵の支柱
+        const post = new THREE.Mesh(new THREE.BoxGeometry(.35, 1.9, .35), conc);
+        post.position.set(i * 7, DECK_Y + .9, -64.4); grp.add(post);
+      }
+      const rail2 = new THREE.Mesh(new THREE.BoxGeometry(420, .35, .3), conc);
+      rail2.position.set(210, DECK_Y + 1.8, -64.4); grp.add(rail2);
       for (let i = 0; i < 3; i++) {              // 主塔(H型)
         const px = i * SPAN;
         for (const dz of [-4, 4]) {
@@ -1079,17 +1121,28 @@ import * as THREE from './assets/lib/three.module.min.js';
           c.position.set((xa + xb) / 2, (ya + yb) / 2, -70);
           c.rotation.z = Math.atan2(yb - ya, xb - xa) - Math.PI / 2;
           grp.add(c);
-          if (j % 2 === 0) {                     // ハンガーロープ
-            const hgr = new THREE.Mesh(new THREE.CylinderGeometry(.12, .12, ya + 3.4, 3), cableMat);
-            hgr.position.set(xa, (ya - 3.4) / 2, -70);
+          if (j % 2 === 0) {                     // ハンガーロープ(桁まで垂らす)
+            const hgr = new THREE.Mesh(new THREE.CylinderGeometry(.12, .12, ya - DECK_Y, 3), cableMat);
+            hgr.position.set(xa, (ya + DECK_Y) / 2, -70);
             grp.add(hgr);
           }
         }
       }
       for (let i = 0; i < 11; i++) {             // 橋上灯
         const lamp = sprite(softTex('#9ffff4'), 0x9ffff4, 3, .85);
-        lamp.position.set(i * 42, -1.4, -70);
+        lamp.position.set(i * 42, DECK_Y + 3.4, -70);
         grp.add(lamp);
+      }
+      // 中間橋脚: 桁から海面(y=-17)へ落ちる支柱と、水際の白い泡。
+      // 「海に浮いた道」ではなく「海上の高架」に見せる決め手。
+      for (let i = 0; i < 8; i++) {
+        const px = i * 52 + 26;
+        const pier = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 2, 11, 8), conc);
+        pier.position.set(px, DECK_Y - 6.5, -70);
+        grp.add(pier);
+        const foam = sprite(softTex('#dffffb'), 0xdffffb, 9, .5);
+        foam.position.set(px, -16.6, -69);
+        grp.add(foam);
       }
       return grp;
     }, 420);
@@ -1342,6 +1395,15 @@ import * as THREE from './assets/lib/three.module.min.js';
         }
         seaTex.offset.x += dx * (24 / 1500);      // 橋・島と同じ世界速度
         seaTex.offset.y = Math.sin(t * .4) * .012; // うねり
+        // 波頭はカメラへ迫るほど速く・明るくなる(遠近の手掛かり)
+        for (const c of swell) {
+          const span = SWELL_NEAR - SWELL_FAR;
+          const near = (c.position.z - SWELL_FAR) / span;   // 0=遠 1=近
+          c.position.z += (3 + near * 22) * dt;
+          if (c.position.z > SWELL_NEAR) c.position.z = SWELL_FAR;
+          c.position.x = Math.sin(t * .5 + c.userData.ph) * 26 - dx * 0;
+          c.material.opacity = (.06 + near * .3) * (.8 + .2 * Math.sin(t * 1.4 + c.userData.ph));
+        }
         for (const b of blinkers) b.material.opacity = .3 + .7 * Math.max(0, Math.sin(t * 2.2 + b.userData.blink));
         const p = sprayGeo.attributes.position.array;
         for (let i = 0; i < N_SPRAY; i++) {
