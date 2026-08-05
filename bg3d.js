@@ -180,16 +180,29 @@ import * as THREE from './assets/lib/three.module.min.js';
       g.beginPath(); g.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, 6.3); g.fill();
     });
     const haloTex = softTex('#ffffff');
+    // オーバーレイは純粋な加算光レイヤーなので、テクスチャは全て
+    // 「透明地に明るい形」で描く(暗い色は 'lighter' 合成では消えるだけ)。
     const rotorTex = makeTex(64, 64, g => {
       g.translate(32, 32);
-      g.strokeStyle = 'rgba(180,200,230,.28)'; g.lineWidth = 3;
+      g.strokeStyle = 'rgba(150,180,230,.45)'; g.lineWidth = 3;
       g.beginPath(); g.arc(0, 0, 28, 0, 6.3); g.stroke();      // ブレの円
-      g.fillStyle = 'rgba(30,26,60,.9)';
+      g.fillStyle = 'rgba(190,210,255,.55)';
       for (let b = 0; b < 3; b++) {
         g.rotate(Math.PI * 2 / 3);
         g.beginPath(); g.ellipse(15, 0, 14, 3.6, 0, 0, 6.3); g.fill();
       }
-      g.fillStyle = '#cfd8ff'; g.beginPath(); g.arc(0, 0, 3.4, 0, 6.3); g.fill();
+      g.fillStyle = '#ffffff'; g.beginPath(); g.arc(0, 0, 3.4, 0, 6.3); g.fill();
+    });
+    // 衝撃波: 中心が空いた柔らかい光の輪。板をスケールするだけで爆風になる
+    // (トーラスだと太さまで比例して伸び、巨大な「フラフープ」に見えてしまう)
+    const shockTex = makeTex(128, 128, (g, w, h) => {
+      const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+      gr.addColorStop(0, 'rgba(255,255,255,0)');
+      gr.addColorStop(.62, 'rgba(255,255,255,0)');
+      gr.addColorStop(.82, 'rgba(255,255,255,.85)');
+      gr.addColorStop(.93, 'rgba(255,255,255,.35)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
     });
     const flameTex = makeTex(64, 32, (g, w, h) => {
       const gr = g.createLinearGradient(0, 0, w, 0);
@@ -201,38 +214,66 @@ import * as THREE from './assets/lib/three.module.min.js';
       g.beginPath(); g.ellipse(w * .55, h / 2, w * .42, h * .2, 0, 0, 6.3); g.fill();
     });
 
-    function inst(geo, matOpts, max, order) {
+    // layer: 'under' = 敵スプライトの下に合成 / 'over' = 自機の上に合成。
+    // 同じレンダラで2回描いて2回 drawImage する(合成順を art の前後関係に合わせる)。
+    // side: DoubleSide は必須。このカメラは top=0 / bottom=VH の上下反転
+    // 直交投影(画面座標にピクセル一致させるため)なので投影の行列式が負になり、
+    // 全ての面の巻き方向が裏返る。FrontSide のままだと板ポリゴンは
+    // 裏面カリングで丸ごと消え、閉じた立体だけが(内側の面で)生き残る。
+    function inst(geo, matOpts, max, order, layer) {
       const m = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({
-        transparent: true, depthWrite: false, depthTest: false, fog: false, ...matOpts
+        transparent: true, depthWrite: false, depthTest: false, fog: false,
+        side: THREE.DoubleSide, ...matOpts
       }), max);
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0;
       m.frustumCulled = false;
       m.renderOrder = order;
+      m.userData.layer = layer || 'under';
       scene.add(m);
       return m;
     }
+    // 全プールが AdditiveBlending。合成側も 'lighter' なので、この層は
+    // 「光を足すだけ」= 2Dアートを一切覆い隠さない、というのが設計上の契約。
+    const add = { blending: THREE.AdditiveBlending };
     const plane = new THREE.PlaneGeometry(1, 1);
     const pools = {
-      glow: inst(plane, { map: haloTex, blending: THREE.AdditiveBlending }, 80, 1),      // 敵アンダーグロー
-      ring: inst(new THREE.TorusGeometry(1, .07, 6, 26), { blending: THREE.AdditiveBlending, opacity: .8 }, 60, 2),
-      flame: inst(plane, { map: flameTex, blending: THREE.AdditiveBlending }, 80, 3),    // スラスター
-      rotor: inst(plane, { map: rotorTex }, 60, 4),
-      trail: inst(plane, { map: streakTex, blending: THREE.AdditiveBlending }, 240, 5),  // 自機弾トレイル
-      halo: inst(plane, { map: haloTex, blending: THREE.AdditiveBlending, opacity: .8 }, 240, 6),
-      ebShard: inst(new THREE.OctahedronGeometry(1, 0), { blending: THREE.AdditiveBlending, opacity: .55 }, 420, 7),
-      ebHalo: inst(plane, { map: haloTex, blending: THREE.AdditiveBlending, opacity: .7 }, 420, 8)
+      // --- under: 機体パーツと光(カワイイ2Dスプライトの下に潜り込む) ---
+      glow: inst(plane, { map: haloTex, ...add }, 80, 1),      // 敵アンダーグロー
+      aura: inst(plane, { map: shockTex, ...add }, 40, 1),     // ボスのエネルギー環
+      wing: inst(plane, { map: haloTex, ...add }, 120, 2),     // 主翼(発光パネルとして)
+      pod: inst(plane, { map: haloTex, ...add }, 120, 2),      // エンジンポッド
+      canopy: inst(plane, { map: haloTex, ...add }, 60, 3),    // キャノピーのハイライト
+      ring: inst(new THREE.TorusGeometry(1, .07, 6, 26), { ...add }, 60, 3),
+      flame: inst(plane, { map: flameTex, ...add }, 120, 4),   // スラスター
+      rotor: inst(plane, { map: rotorTex, ...add }, 60, 4),
+      trail: inst(plane, { map: streakTex, ...add }, 240, 5),  // 自機弾トレイル
+      halo: inst(plane, { map: haloTex, ...add }, 240, 6),
+      ebShard: inst(new THREE.OctahedronGeometry(1, 0), { ...add }, 420, 7),
+      ebHalo: inst(plane, { map: haloTex, ...add }, 420, 8),
+      // --- over: 戦闘エフェクト(敵・自機の手前で弾ける) ---
+      fxBall: inst(plane, { map: haloTex, ...add }, 140, 10, 'over'),
+      fxRing: inst(plane, { map: shockTex, ...add }, 90, 11, 'over'),
+      fxShard: inst(new THREE.TetrahedronGeometry(1, 0), { ...add }, 220, 12, 'over'),
+      fxSpark: inst(plane, { map: streakTex, ...add }, 320, 13, 'over')
     };
     const _m = new THREE.Matrix4(), _p = new THREE.Vector3(), _q = new THREE.Quaternion(),
       _s = new THREE.Vector3(), _e = new THREE.Euler(), _c = new THREE.Color();
-    function put(pool, i, x, y, sx, sy, sz, rx, ry, rz, color) {
+    // dim は 0..1 の減衰。加算合成のプールでは「色を黒へ寄せる = 消える」なので、
+    // マテリアル共有の InstancedMesh でも1インスタンスずつフェードできる
+    // (opacity はマテリアル単位なのでインスタンス別には効かない)。
+    function put(pool, i, x, y, sx, sy, sz, rx, ry, rz, color, dim) {
       _p.set(x, y, 0);
       _e.set(rx, ry, rz);
       _q.setFromEuler(_e);
       _s.set(sx, sy, sz);
       _m.compose(_p, _q, _s);
       pool.setMatrixAt(i, _m);
-      if (color !== undefined) pool.setColorAt(i, _c.set(color));
+      if (color !== undefined) {
+        _c.set(color);
+        if (dim !== undefined) _c.multiplyScalar(Math.max(0, Math.min(1, dim)));
+        pool.setColorAt(i, _c);
+      }
     }
     function flush(pool, n) {
       pool.count = Math.min(n, pool.instanceMatrix.count);
@@ -242,80 +283,87 @@ import * as THREE from './assets/lib/three.module.min.js';
 
     // 敵タイプ → 3D装飾の割り当て(カワイイ2Dスプライトはそのまま、下に実3Dの
     // メカ部品と光を足す)。ここに無いタイプはアンダーグローのみ。
-    const ROTOR = new Set(['drone', 'seeker', 'spinner']);
-    const THRUST = new Set(['racer', 'drone', 'seeker', 'walker', 'rivetbeetle', 'turret', 'bat']);
-    const RING = new Set(['glitch', 'voltbug', 'packetwyrm']);
+    const ROTOR = new Set(['drone', 'seeker', 'spinner', 'cloudray']);
+    const THRUST = new Set(['racer', 'drone', 'seeker', 'walker', 'rivetbeetle', 'turret', 'bat',
+      'tank', 'cupid', 'packetwyrm', 'pod', 'crow']);
+    const RING = new Set(['glitch', 'voltbug', 'packetwyrm', 'teacup', 'spinner']);
+    // 翼: 機体幅より外へ張り出すので、スプライトの外側だけが実3Dの板として見える
+    const WING = new Set(['racer', 'manta', 'crow', 'bat', 'cloudray', 'drone', 'cupid', 'seeker']);
+    // エンジンポッド/砲塔基部: 重量級の下面に円筒を回す
+    const POD = new Set(['tank', 'walker', 'turret', 'rivetbeetle', 'knight', 'cardguard', 'furnacehound']);
+    // ガラスキャノピー: additive の薄いドームでハイライトだけ乗せる
+    const CANOPY = new Set(['drone', 'tank', 'racer', 'walker', 'seeker', 'spinner']);
     const GLOW_COL = [0xff3e9d, 0x2f8cff, 0xff5a36, 0x31e8ff, 0xff3e9d]; // ステージ別
     const FLAME_COL = [0x31e8ff, 0x65fff2, 0xffe15a, 0x72ff68, 0xffd06a];
+    // 加算レイヤーなので機体パーツは「照らされたパネルの明るさ」を指定する
+    const HULL_COL = [0x6878c8, 0x4a86b8, 0xb06a58, 0x4a9a80, 0xb06890];
 
-    return { renderer2, scene, cam, pools, put, flush, ROTOR, THRUST, RING, GLOW_COL, FLAME_COL, t: 0 };
+    return {
+      renderer2, scene, cam, pools, put, flush,
+      ROTOR, THRUST, RING, WING, POD, CANOPY, GLOW_COL, FLAME_COL, HULL_COL,
+      fx: [], t: 0
+    };
   }
 
-  api.renderActors = function (s) {
+  // 戦闘エフェクトの発火口。game.js から発砲/着弾/撃破/ボム時に呼ぶ。
+  // 各エフェクトは自前の寿命と粒子配列を持ち、renderActors('under') で更新される。
+  api.fx = function (kind, x, y, opts) {
+    if (!actor || actor.fx.length >= 64) return;
+    const o = opts || {};
+    const col = o.color !== undefined ? o.color : 0xffe15a;
+    const size = o.size || 1;
+    const e = { kind, x, y, t: 0, color: col, size, dir: o.dir === undefined ? 0 : o.dir };
+    if (kind === 'muzzle') {
+      e.life = .1;
+      e.sparks = spawnBits(4, 260, 520, e.dir, .5);
+    } else if (kind === 'impact') {
+      e.life = .28;
+      e.sparks = spawnBits(7, 180, 460, e.dir + Math.PI, 1.5);
+    } else if (kind === 'explode') {
+      e.life = .62 + size * .1;
+      e.sparks = spawnBits(10, 220, 620, 0, 6.3);
+      e.shards = spawnBits(9, 160, 460, 0, 6.3);
+    } else if (kind === 'nova') {
+      e.life = .95;
+      e.sparks = spawnBits(16, 340, 900, 0, 6.3);
+    } else return;
+    actor.fx.push(e);
+  };
+  // 扇状に飛ぶ破片/火花の初速をまとめて作る(baseAng ± spread/2)
+  function spawnBits(n, vLo, vHi, baseAng, spread) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const a = baseAng + (Math.random() - .5) * spread;
+      const v = vLo + Math.random() * (vHi - vLo);
+      out.push({ vx: Math.cos(a) * v, vy: Math.sin(a) * v, r: Math.random() * 6.3, rv: (Math.random() - .5) * 16, s: .6 + Math.random() * .8 });
+    }
+    return out;
+  }
+
+  api.renderActors = function (s, layer) {
     if (!api.ready) return false;
     try {
       if (!actor) {
         actor = initActors();
         api.actorCanvas = actor.renderer2.domElement;
       }
-      const A = actor;
-      A.t += Math.min(.1, s.dt || .016);
-      const t = A.t;
-      const st = Math.max(0, Math.min(4, s.stage | 0));
-      let nGlow = 0, nRing = 0, nFlame = 0, nRotor = 0, nTrail = 0, nHalo = 0, nShard = 0;
-
-      // --- 敵の3D装飾 --------------------------------------------------
-      // 敵は左上アンカー(当たり判定が e.x..e.x+w)なので中心を計算して使う。
-      for (const e of (s.enemies || [])) {
-        if (e.x < -160 || e.x > VW + 160 || e.ghost) continue;
-        const w = e.w || 60, h = e.h || 60;
-        const cx = e.x + w / 2, cy = e.y + h / 2;
-        const dir = e.flank ? -1 : 1;            // フランカーは右向きに飛ぶ
-        // 全員: 足元のアンダーグロー(スプライトの下に light pool)
-        A.put(A.pools.glow, nGlow++, cx, cy + h * .38, w * 1.6, h * .7, 1, 0, 0, 0, A.GLOW_COL[st]);
-        if (A.THRUST.has(e.type)) {
-          const fl = .8 + .35 * Math.sin(t * 21 + e.x * .13);
-          A.put(A.pools.flame, nFlame++, cx + dir * w * .62, cy, w * .9 * fl, w * .3, 1, 0, 0, dir < 0 ? Math.PI : 0, A.FLAME_COL[st]);
+      const A = actor, P = A.pools;
+      // 'over' パスは 'under' で組んだインスタンスを可視レイヤだけ差し替えて
+      // もう一度描くだけ。ここで時間を進めると2倍速になるので進めない。
+      if (layer !== 'over') {
+        // ゲーム側の dt を使う(ヒットストップで凍り、スローで伸びる)。
+        // 無い場合だけ実時間にフォールバック。
+        let dt = s.dt;
+        if (dt === undefined) {
+          const now = performance.now() / 1000;
+          dt = now - lastActorT;
+          lastActorT = now;
         }
-        if (A.ROTOR.has(e.type)) {
-          A.put(A.pools.rotor, nRotor++, cx, cy - h * .62, w * .85, w * .85, 1, 0, 0, t * 21 + e.x, 0xffffff);
-        }
-        if (A.RING.has(e.type)) {
-          const r = Math.max(w, h) * .72;
-          A.put(A.pools.ring, nRing++, cx, cy, r, r, r, 1.25, 0, t * 1.7 + e.x * .01, 0x31e8ff);
-        }
+        dt = Math.min(.1, Math.max(0, dt));
+        A.t += dt;
+        buildActorFrame(A, s, dt);
       }
-
-      // --- 自機弾: 速度方向に伸びる光のトレイル + ハロー -----------------
-      for (const b of (s.bullets || [])) {
-        if (nTrail >= 240) break;
-        const sp = Math.hypot(b.vx, b.vy) || 1;
-        const ang = Math.atan2(b.vy, b.vx);
-        const len = Math.max(26, Math.min(120, sp * .09)) + b.r * 2;
-        const wid = b.missile ? 15 : Math.max(8, b.r * 2.2);
-        const col = b.pierce ? 0x9ffff6 : b.missile ? 0xffab5a : b.spark ? 0xffe15a
-          : b.pea ? 0xd8ffd4 : _hue(b.hue);
-        A.put(A.pools.trail, nTrail++, b.x - Math.cos(ang) * len * .42, b.y - Math.sin(ang) * len * .42,
-          len, wid, 1, 0, 0, ang, col);
-        A.put(A.pools.halo, nHalo++, b.x, b.y, b.r * 4.4, b.r * 4.4, 1, 0, 0, 0, col);
-      }
-
-      // --- 敵弾: 属性色ハロー + 回転する結晶シャード ---------------------
-      let i = 0;
-      for (const b of (s.enemyBullets || [])) {
-        if (nShard >= 420) break;
-        const col = b.volt ? 0x8dff7a : b.fire ? 0xffab5a : b.heart ? 0xff9ecf
-          : b.bubble ? 0x7ae8ff : b.boss ? 0xff5aa8 : 0xff4a92;
-        A.put(A.pools.ebHalo, nShard, b.x, b.y, b.r * 4.6, b.r * 4.6, 1, 0, 0, 0, col);
-        A.put(A.pools.ebShard, nShard++, b.x, b.y, b.r * .95, b.r * .95, b.r * .95,
-          t * 2.3 + i * .7, t * 3.1 + i * 1.3, 0, col);
-        i++;
-      }
-
-      A.flush(A.pools.glow, nGlow); A.flush(A.pools.ring, nRing);
-      A.flush(A.pools.flame, nFlame); A.flush(A.pools.rotor, nRotor);
-      A.flush(A.pools.trail, nTrail); A.flush(A.pools.halo, nHalo);
-      A.flush(A.pools.ebShard, nShard); A.flush(A.pools.ebHalo, nShard);
+      for (const k in P) P[k].visible = P[k].userData.layer === (layer === 'over' ? 'over' : 'under');
       A.renderer2.render(A.scene, A.cam);
       return true;
     } catch (e) {
@@ -324,6 +372,193 @@ import * as THREE from './assets/lib/three.module.min.js';
       return false;
     }
   };
+
+  let lastActorT = performance.now() / 1000;
+
+  function buildActorFrame(A, s, dt) {
+    const P = A.pools, t = A.t;
+    const st = Math.max(0, Math.min(4, s.stage | 0));
+    let nGlow = 0, nAura = 0, nWing = 0, nPod = 0, nCanopy = 0, nRing = 0,
+      nFlame = 0, nRotor = 0, nTrail = 0, nHalo = 0, nEB = 0,
+      nBall = 0, nFxRing = 0, nFxShard = 0, nSpark = 0;
+    const hull = A.HULL_COL[st];
+
+    // --- 敵の3D装飾 ----------------------------------------------------
+    // 敵は左上アンカー(当たり判定が e.x..e.x+w)なので中心を計算して使う。
+    for (const e of (s.enemies || [])) {
+      if (e.x < -200 || e.x > VW + 200 || e.ghost) continue;
+      const w = e.w || 60, h = e.h || 60;
+      const cx = e.x + w / 2, cy = e.y + h / 2;
+      const dir = e.flank ? -1 : 1;              // フランカーは右向きに飛ぶ
+      const boss = e.type === 'boss' || e.type === 'midboss';
+      const hit = e.hit > 0 ? 1 : 0;             // 被弾フレームは光を強める
+      // 全員: 機体下面のアンダーグロー(スプライトの下に light pool)
+      A.put(P.glow, nGlow++, cx, cy + h * .38, w * (1.6 + hit * .5), h * (.7 + hit * .3), 1,
+        0, 0, 0, hit ? 0xffffff : A.GLOW_COL[st]);
+      if (boss) {
+        // ボス: 巨体を包むエネルギーの二重環 + 軌道を回る光球
+        const R = Math.max(w, h) * 1.35;
+        A.put(P.aura, nAura++, cx, cy, R, R * .62, 1, 0, 0, t * .5, A.GLOW_COL[st], .75);
+        A.put(P.aura, nAura++, cx, cy, R * .74, R * .5, 1, 0, 0, -t * .7, 0xffffff, .5);
+        for (let o = 0; o < 5; o++) {
+          const a = t * 1.1 + o * 1.2566;
+          A.put(P.halo, nHalo++, cx + Math.cos(a) * R * .48, cy + Math.sin(a) * R * .22,
+            30, 30, 1, 0, 0, 0, A.GLOW_COL[st]);
+        }
+      } else {
+        if (A.WING.has(e.type)) {
+          // 上下2枚の発光パネル。上反角がゆっくり呼吸して板っぽさを消す
+          const dih = .16 + .1 * Math.sin(t * 2.4 + e.x * .05);
+          for (const sgn of [-1, 1]) {
+            A.put(P.wing, nWing++, cx - dir * w * .06, cy + sgn * h * .16,
+              w * 1.7, h * .34, 1, 0, 0, sgn * dih * dir, hull, .85);
+          }
+          // 翼端灯
+          A.put(P.halo, nHalo++, cx - dir * w * .82, cy, 18, 18, 1, 0, 0, 0, A.FLAME_COL[st]);
+        }
+        if (A.POD.has(e.type)) {
+          for (const sgn of [-1, 1]) {
+            A.put(P.pod, nPod++, cx - dir * w * .1, cy + sgn * h * .36,
+              w * 1.05, h * .3, 1, 0, 0, 0, hull, .8);
+          }
+        }
+        if (A.CANOPY.has(e.type)) {
+          A.put(P.canopy, nCanopy++, cx + dir * w * .16, cy - h * .16,
+            w * .62, h * .5, 1, 0, 0, 0, 0x9fd8ff, .5);
+        }
+        if (A.THRUST.has(e.type)) {
+          const fl = .8 + .35 * Math.sin(t * 21 + e.x * .13);
+          A.put(P.flame, nFlame++, cx + dir * w * .62, cy, w * .9 * fl, w * .3, 1,
+            0, 0, dir < 0 ? Math.PI : 0, A.FLAME_COL[st]);
+          A.put(P.halo, nHalo++, cx + dir * w * .5, cy, w * .5, w * .5, 1, 0, 0, 0, A.FLAME_COL[st]);
+        }
+        if (A.ROTOR.has(e.type)) {
+          A.put(P.rotor, nRotor++, cx, cy - h * .48, w * .58, w * .58, 1, 0, 0, t * 21 + e.x, 0xffffff, .8);
+        }
+        if (A.RING.has(e.type)) {
+          const r = Math.max(w, h) * .72;
+          A.put(P.ring, nRing++, cx, cy, r, r, r, 1.25, 0, t * 1.7 + e.x * .01, 0x31e8ff);
+        }
+      }
+    }
+
+    // --- 自機: スラスター炎とアンダーグロー(スプライトの下) --------------
+    const pl = s.player;
+    if (pl && !pl.grounded) {
+      const pcx = pl.x + pl.w / 2, pcy = pl.y + pl.h * .58;
+      const fl = .85 + .3 * Math.sin(t * 26);
+      A.put(P.flame, nFlame++, pcx - pl.w * .42, pcy, pl.w * .8 * fl, pl.h * .22, 1, 0, 0, Math.PI, 0x8defff);
+      A.put(P.halo, nHalo++, pcx - pl.w * .3, pcy, pl.w * .5, pl.w * .5, 1, 0, 0, 0, 0x31e8ff);
+      A.put(P.glow, nGlow++, pcx, pcy + pl.h * .22, pl.w * 1.5, pl.h * .5, 1, 0, 0, 0, 0xff9ecf);
+    }
+
+    // --- 自機弾: 速度方向に伸びる光のトレイル + ハロー -------------------
+    for (const b of (s.bullets || [])) {
+      if (nTrail >= 240) break;
+      const sp = Math.hypot(b.vx, b.vy) || 1;
+      const ang = Math.atan2(b.vy, b.vx);
+      const len = Math.max(26, Math.min(120, sp * .09)) + b.r * 2;
+      const wid = b.missile ? 13 : Math.max(6, b.r * 1.7);
+      const col = b.pierce ? 0x9ffff6 : b.missile ? 0xffab5a : b.spark ? 0xffe15a
+        : b.pea ? 0xd8ffd4 : _hue(b.hue);
+      A.put(P.trail, nTrail++, b.x - Math.cos(ang) * len * .42, b.y - Math.sin(ang) * len * .42,
+        len, wid, 1, 0, 0, ang, col, .85);
+      // ハローは弾芯(2D)を包む程度に留める — 大きすぎると弾幕が読めなくなる
+      A.put(P.halo, nHalo++, b.x, b.y, b.r * 3, b.r * 3, 1, 0, 0, 0, col, .8);
+      // ミサイルは煙の代わりに減衰する残光を後方へ置く
+      if (b.missile && nTrail < 238) {
+        A.put(P.trail, nTrail++, b.x - Math.cos(ang) * len, b.y - Math.sin(ang) * len,
+          len * .8, wid * .55, 1, 0, 0, ang, 0xff6a3a);
+      }
+    }
+
+    // --- 敵弾: 属性色ハロー + 回転する結晶シャード -----------------------
+    let i = 0;
+    for (const b of (s.enemyBullets || [])) {
+      if (nEB >= 420) break;
+      const col = b.volt ? 0x8dff7a : b.fire ? 0xffab5a : b.heart ? 0xff9ecf
+        : b.bubble ? 0x7ae8ff : b.boss ? 0xff5aa8 : 0xff4a92;
+      A.put(P.ebHalo, nEB, b.x, b.y, b.r * 4.6, b.r * 4.6, 1, 0, 0, 0, col);
+      A.put(P.ebShard, nEB++, b.x, b.y, b.r * .95, b.r * .95, b.r * .95,
+        t * 2.3 + i * .7, t * 3.1 + i * 1.3, 0, col);
+      i++;
+    }
+
+    // --- 戦闘エフェクト(over レイヤ) -----------------------------------
+    for (let f = A.fx.length - 1; f >= 0; f--) {
+      const e = A.fx[f];
+      e.t += dt;
+      const p = e.t / e.life;                    // 0..1 進行
+      if (p >= 1) { A.fx.splice(f, 1); continue; }
+      const fade = 1 - p;
+      const ease = fade * fade;                  // リング/火球はここで一気に消す
+      if (e.kind === 'muzzle') {
+        const g = 1 - p * p;
+        A.put(P.fxBall, nBall++, e.x, e.y, 92 * g, 62 * g, 1, 0, 0, e.dir, 0xffffff, ease);
+        A.put(P.fxBall, nBall++, e.x + Math.cos(e.dir) * 26, e.y + Math.sin(e.dir) * 26,
+          150 * g, 40 * g, 1, 0, 0, e.dir, e.color, ease);
+      } else if (e.kind === 'impact') {
+        // fxRing は shockTex を貼った板なので、スケール = 衝撃波の直径。
+        const d = 26 + p * 120;
+        A.put(P.fxRing, nFxRing++, e.x, e.y, d, d * .82, 1, 0, 0, e.t * 5, e.color, ease);
+        A.put(P.fxBall, nBall++, e.x, e.y, 74 * fade, 74 * fade, 1, 0, 0, 0, 0xffffff, ease);
+      } else if (e.kind === 'explode') {
+        const sz = e.size;
+        // 火球: 一気に膨らんでから萎む
+        const g = Math.sin(Math.min(1, p * 1.6) * Math.PI * .5);
+        const fb = 210 * sz * g * (1 - p * .35);
+        A.put(P.fxBall, nBall++, e.x, e.y, fb, fb, 1, 0, 0, e.t, p < .3 ? 0xffffff : e.color, ease);
+        // 二重の衝撃波(外に走る爆風と、内側で潰れる白いコア)
+        const d1 = 40 + p * 420 * sz, d2 = 24 + p * 260 * sz;
+        A.put(P.fxRing, nFxRing++, e.x, e.y, d1, d1 * .78, 1, 0, 0, e.t * 1.4, e.color, ease);
+        A.put(P.fxRing, nFxRing++, e.x, e.y, d2, d2 * .92, 1, 0, 0, -e.t * 2, 0xffffff, ease * ease);
+      } else if (e.kind === 'nova') {
+        for (let k = 0; k < 3; k++) {
+          const pp = Math.max(0, p - k * .12);
+          const d = 60 + pp * 1250 * e.size;
+          A.put(P.fxRing, nFxRing++, e.x, e.y, d, d * .8, 1, 0, 0, e.t * (.6 + k * .4),
+            k === 1 ? 0xffffff : e.color, ease * (1 - k * .25));
+        }
+        A.put(P.fxBall, nBall++, e.x, e.y, 420 * e.size * fade, 420 * e.size * fade, 1, 0, 0, 0, e.color, ease);
+      }
+      // 火花: 重力を受けて尾を引きながら飛ぶ
+      if (e.sparks) for (const sp of e.sparks) {
+        if (nSpark >= 320) break;
+        const px = e.x + sp.vx * e.t, py = e.y + sp.vy * e.t + 340 * e.t * e.t;
+        const vy = sp.vy + 680 * e.t;
+        const ang = Math.atan2(vy, sp.vx);
+        const len = (18 + Math.hypot(sp.vx, vy) * .045) * sp.s;
+        A.put(P.fxSpark, nSpark++, px, py, len, 5 * sp.s * fade, 1, 0, 0, ang,
+          p < .45 ? 0xffffff : e.color, ease);
+      }
+      // 破片: 灼熱の装甲片が回転しながら散り、飛びながら冷めていく
+      if (e.shards) for (const sh of e.shards) {
+        if (nFxShard >= 220) break;
+        const px = e.x + sh.vx * e.t, py = e.y + sh.vy * e.t + 420 * e.t * e.t;
+        const sc = 11 * sh.s * (1 - p * .5) * e.size;
+        A.put(P.fxShard, nFxShard++, px, py, sc, sc, sc,
+          sh.r + sh.rv * e.t, sh.r * 1.7 + sh.rv * e.t * .7, 0,
+          p < .3 ? 0xffffff : hull, ease);
+      }
+    }
+
+    A.flush(P.glow, nGlow); A.flush(P.aura, nAura); A.flush(P.wing, nWing);
+    A.flush(P.pod, nPod); A.flush(P.canopy, nCanopy); A.flush(P.ring, nRing);
+    A.flush(P.flame, nFlame); A.flush(P.rotor, nRotor);
+    A.flush(P.trail, nTrail); A.flush(P.halo, nHalo);
+    A.flush(P.ebShard, nEB); A.flush(P.ebHalo, nEB);
+    A.flush(P.fxBall, nBall); A.flush(P.fxRing, nFxRing);
+    A.flush(P.fxShard, nFxShard); A.flush(P.fxSpark, nSpark);
+  }
+  // デバッグ用: 各インスタンスプールの生存数と発火中のエフェクト数。
+  // 描画が出ないときに「積んでいないのか / 描けていないのか」を切り分ける。
+  api.stats = function () {
+    if (!actor) return null;
+    const out = { fx: actor.fx.length };
+    for (const k in actor.pools) out[k] = actor.pools[k].count;
+    return out;
+  };
+
   const _hueColor = new THREE.Color();
   function _hue(hue) {
     return _hueColor.setHSL(((hue || 0) % 360) / 360, .95, .72).getHex();

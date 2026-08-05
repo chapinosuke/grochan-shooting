@@ -295,6 +295,45 @@
   let bgCam = 0;
   let bgCamX = 0;        // horizontal camera yaw, eased from player.x (parallax)
   let bg3dActive = false; // true while the Three.js backdrop rendered this frame (set in drawBackdrop)
+  let actorOverlay = false; // true while the Three.js actor overlay rendered this frame
+  let frameDt = .016;    // last gameplay dt, fed to the 3D effect layer
+
+  // Composite a Three.js canvas, plus a cheap bloom: the same image redrawn
+  // blurred and additively. Bright pixels pile up into a glow while dark ones
+  // add nothing, so neon signs and bullet trails bleed light like real optics —
+  // no post-processing library, and alpha stays correct over the 2D art below.
+  // Costs one extra blurred blit, so it only runs at full background quality.
+  function blit3d(cv, dx, dy, dw, dh, glow, blur) {
+    ctx.drawImage(cv, dx, dy, dw, dh);
+    if (!glow || bgQuality() < 2) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = glow;
+    ctx.filter = `blur(${blur}px)`;
+    ctx.drawImage(cv, dx, dy, dw, dh);
+    ctx.restore();
+  }
+  // The actor overlay is a pure light layer: every pool in it is additively
+  // blended, so it must be ADDED to the frame, never drawn source-over. Drawn
+  // normally, a solid additive ring writes alpha 1 and replaces the city behind
+  // it with a flat opaque hoop — 'lighter' is what makes it read as light.
+  function blitOverlay() {
+    const cv = window.GRO_BG3D.actorCanvas;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(cv, 0, 0, VW, VH);
+    if (bgQuality() >= 2) {                 // bloom: the same light, spread wide
+      ctx.globalAlpha = .5;
+      ctx.filter = 'blur(9px)';
+      ctx.drawImage(cv, 0, 0, VW, VH);
+    }
+    ctx.restore();
+  }
+  // '#rrggbb' → 0xrrggbb for the Three.js layer, which takes numeric colours.
+  const hexNum = s => parseInt(String(s).replace('#', ''), 16) || 0xffffff;
+  // Fire a 3D combat effect. A no-op without the overlay, so every call site
+  // stays a plain one-liner next to its existing 2D burst.
+  const fx3d = (kind, x, y, opts) => { if (actorOverlay) window.GRO_BG3D.fx(kind, x, y, opts); };
   let bokeh = [];        // front-of-camera defocused light orbs
   let shoppers = [];     // pedestrians walking the shopping street (neon stage)
   let formationTimer = 3;
@@ -1434,6 +1473,7 @@
     }
     // Visible muzzle flash so walk-shoot reads clearly.
     burst(muzzleX, muzzleY, '#ffe15a', player.grounded ? 8 : 5, player.grounded ? 200 : 150);
+    fx3d('muzzle', muzzleX, muzzleY, { color: 0xffe15a, dir: 0 });
     if (player.grounded) {
       particles.push({ x: muzzleX + 6, y: muzzleY, vx: 220, vy: (Math.random() - .5) * 40, life: .12, max: .12, color: '#ff8a35', size: 6, gravity: 0 });
       particles.push({ x: muzzleX + 2, y: muzzleY, vx: 160, vy: (Math.random() - .5) * 30, life: .1, max: .1, color: '#fff', size: 4, gravity: 0 });
@@ -1502,6 +1542,7 @@
     hazards = hazards.filter(hz => hz.t >= hz.warn);
     for (const hz of hazards) hz.dead = true;
     burst(cx, cy, '#c9d6ec', 34, 420); sfx('shield'); updateBombButton();
+    fx3d('nova', cx, cy, { color: 0xc9d6ec, size: 1.15 });
   }
 
   function updateBombButton() {
@@ -2301,6 +2342,7 @@
     hitStop = Math.max(hitStop, .12 + e.tier * .03);
     shockwaves.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, r: 24, speed: 620, life: .85, max: .85, color: stages[idx].accent2 });
     shockwaves.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, r: 10, speed: 380, life: 1.1, max: 1.1, color: '#fff' });
+    fx3d('nova', e.x + e.w / 2, e.y + e.h / 2, { color: hexNum(stages[idx].accent2), size: .85 });
     burst(e.x + e.w / 2, e.y + e.h / 2, stages[idx].accent2, 40, 420);
     burstDebris(e.x + e.w / 2, e.y + e.h / 2, ['#fff', stages[idx].accent], 14, 300);
     e.tierBanner = 1.9;
@@ -3113,6 +3155,9 @@
   }
 
   function update(dt) {
+    // The 3D effect layer advances on gameplay time, not wall-clock, so
+    // explosions freeze with the hit-stop and stretch with slow-motion.
+    frameDt = dt;
     if (state === 'menu' && !paused) {
       // Attract mode for the title screen: keep the neon backdrop animating
       // (elapsed drives it and resetGame() zeroes it anyway) and fly Gro-chan
@@ -3633,6 +3678,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
             shockwaves.push({ x: b.x, y: b.y, r: 3, speed: 130, life: .24, max: .24, color: '#a8b7d6' }); sfx('shield');
           }
           e.hp -= damage; e.hit = .11; special = Math.min(100, special + .35 + (b.missile ? .5 : 0)); shake = 3; burst(b.x, b.y, '#31e8ff', 5, 150); burstDebris(b.x, b.y, ['#c9d6ec', '#8fa3c8'], 2, 140); sfx('hit');
+          fx3d('impact', b.x, b.y, { color: 0x9fe8ff, dir: Math.atan2(b.vy, b.vx) });
           // Bosses hit back harder in feel: a heavier kick and chips in their own colour.
           if (e.type === 'boss' || e.type === 'midboss') {
             shake = Math.max(shake, e.crit ? 5 : 4);
@@ -3732,6 +3778,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     burstDebris(ex, ey, organicKill ? ['#cfe6ff', '#7fb8c9', '#3a5f72'] : [stages[stageIndex].accent2, '#5a4058', '#2a1f2c'], isMajor ? (isBoss ? 26 : 18) : e.type === 'tank' ? 12 : 7, isMajor ? 420 : e.type === 'tank' ? 300 : 220);
     // A dumbo octopus inks the water as it dies — the real animal's last resort.
     if (e.type === 'dumbo') burst(ex, ey, '#5a1a72', 18, 170);
+    // 3D fireball + shockwave rings + tumbling debris on top of the 2D burst.
+    fx3d('explode', ex, ey, {
+      color: hexNum(organicKill ? '#8ffcff' : stages[stageIndex].accent2),
+      size: isBoss ? 2.6 : isMidBoss ? 1.9 : e.type === 'tank' ? 1.3 : 1
+    });
     shake = isMajor ? (isBoss ? 28 : 20) : e.type === 'tank' ? 12 : 6; flash = isMajor ? (isBoss ? 1 : .6) : e.type === 'tank' ? .35 : .12; sfx(isMajor ? 'bigBoom' : 'boom');
     hitStop = Math.max(hitStop, isMajor ? (isBoss ? .12 : .09) : e.type === 'tank' ? .05 : .03);
     if (isMajor) {
@@ -4188,7 +4239,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       chapter: dir.chapter, chapterT: dir.chapterT, quality: dir.q
     }));
     bg3dActive = use3d;
-    if (use3d) ctx.drawImage(bg3d.canvas, -30, -30, VW + 60, VH + 60);
+    if (use3d) blit3d(bg3d.canvas, -30, -30, VW + 60, VH + 60, .22, 6);
     // Chapter tint goes under the scenery — it should read as the light in the
     // air, not as a filter over the buildings.
     drawChapterWash(stage, dir);
@@ -9443,15 +9494,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const b of bullets) drawPlayerBullet(b);
     ctx.globalCompositeOperation = 'source-over';
     for (const b of enemyBullets) drawEnemyBullet(b);
-    // Three.js actor overlay (bg3d.js): bullet trails/halos, enemy-bullet
-    // shards and per-enemy mech dressing (under-glow, thruster, rotor, ring).
-    // Composited before the enemy sprites so glows sit under the kawaii art
-    // and trails are occluded by bodies; the crisp 2D bullet cores above stay
-    // untouched for danmaku readability.
-    if (bg3dActive && window.GRO_BG3D.renderActors &&
-      window.GRO_BG3D.renderActors({ stage: stageIndex, bullets, enemyBullets, enemies })) {
-      ctx.drawImage(window.GRO_BG3D.actorCanvas, 0, 0, VW, VH);
-    }
+    // Three.js actor overlay (bg3d.js), pass 1 of 2 — the "under" layer:
+    // hull parts (wings, engine pods, canopies), thrusters, rotors, boss auras
+    // and bullet trails. Composited before the enemy sprites so the 3D hardware
+    // reads as being *under* the kawaii art, and trails are occluded by bodies.
+    // The crisp 2D bullet cores stay untouched for danmaku readability.
+    actorOverlay = bg3dActive && window.GRO_BG3D.renderActors &&
+      window.GRO_BG3D.renderActors({ stage: stageIndex, bullets, enemyBullets, enemies, player, dt: frameDt });
+    if (actorOverlay) blitOverlay();
     drawHazards();
     for (const r of shockwaves) {
       ctx.save(); ctx.globalAlpha = Math.max(0, r.life / r.max); ctx.strokeStyle = r.color; ctx.lineWidth = 5 + r.life * 8; ctx.shadowColor = r.color; ctx.shadowBlur = 18;
@@ -9460,6 +9510,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const e of enemies) drawEnemy(e);
     drawBossTelegraphOverlay();
     if (state === 'playing' || state === 'over' || (state === 'menu' && menuStep === 'title')) drawPlayer();
+    // Actor overlay pass 2 — the "over" layer: muzzle flashes, impact rings and
+    // explosion fireballs/debris burst in front of everything they touch.
+    if (actorOverlay && window.GRO_BG3D.renderActors({}, 'over')) blitOverlay();
     // Additive blending makes overlapping sparks glow white-hot like real light.
     ctx.globalCompositeOperation = 'lighter';
     for (const p of particles) {
