@@ -1024,10 +1024,35 @@ import * as THREE from './assets/lib/three.module.min.js';
       }
       g.globalAlpha = 1;
     }, { repX: 24, repY: 10 });
-    const sea = new THREE.Mesh(new THREE.PlaneGeometry(1500, 520), lambert({ map: seaTex, color: 0xb8ecff }));
+    const sea = new THREE.Mesh(new THREE.PlaneGeometry(1500, 520),
+      lambert({ map: seaTex, color: 0xd6f4ff, emissive: 0x14496e, emissiveIntensity: .5 }));
     sea.rotation.x = -Math.PI / 2;
     sea.position.set(0, -17, -260);
     scene.add(sea);
+    // 水平線の照り返し: 空と海の境目に走る明るい帯。「ここから下は水面」という
+    // 一番強い手掛かりで、これが無いと下半分がただの暗い面に見える。
+    const horizonSheen = new THREE.Mesh(new THREE.PlaneGeometry(1500, 26),
+      basic({ color: 0x9fe8ff, transparent: true, opacity: .3, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+    horizonSheen.rotation.x = -Math.PI / 2;
+    horizonSheen.position.set(0, -16.7, -470);
+    scene.add(horizonSheen);
+    // 近景水面のツヤ: 手前ほど明るい加算の面。フォグで沈む near 側を持ち上げ、
+    // 画面下端が「暗い床」ではなく「光を返す水」に見えるようにする。
+    const sheenTex = makeTex(32, 128, (g, w, h) => {
+      const gr = g.createLinearGradient(0, 0, 0, h);
+      gr.addColorStop(0, 'rgba(255,255,255,0)');
+      gr.addColorStop(.55, 'rgba(255,255,255,.35)');
+      gr.addColorStop(1, 'rgba(255,255,255,.85)');
+      g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    });
+    const nearSheen = new THREE.Mesh(new THREE.PlaneGeometry(1500, 240),
+      new THREE.MeshBasicMaterial({
+        map: sheenTex, transparent: true, opacity: .22, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false
+      }));
+    nearSheen.rotation.x = -Math.PI / 2;
+    nearSheen.position.set(0, -16.95, -130);
+    scene.add(nearSheen);
     // 月光が海面に落ちる光帯
     const moonPath = new THREE.Mesh(new THREE.PlaneGeometry(34, 300),
       basic({ color: 0xbaf6ff, transparent: true, opacity: .14, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
@@ -1053,58 +1078,107 @@ import * as THREE from './assets/lib/three.module.min.js';
         g.fillRect(x, 0, rand(6, 12), h);
       }
     }, { repX: 7, repY: 1 });
+    // 手前ほど帯を太く明るくする。近景(z>-60)は画面下端いっぱいに広がるので、
+    // ここが「海の上を飛んでいる」感じを作る主役になる。
     const swell = [];
-    const SWELL_NEAR = -34, SWELL_FAR = -300;
-    for (let i = 0; i < 16; i++) {
+    const SWELL_NEAR = -18, SWELL_FAR = -300;
+    for (let i = 0; i < 26; i++) {
       const crest = new THREE.Mesh(new THREE.PlaneGeometry(1500, 5),
         new THREE.MeshBasicMaterial({
           map: crestTex, transparent: true, opacity: .3, depthWrite: false,
           blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false
         }));
       crest.rotation.x = -Math.PI / 2;
-      crest.position.set(0, -16.9, SWELL_FAR + (SWELL_NEAR - SWELL_FAR) * (i / 16));
+      crest.position.set(0, -16.9, SWELL_FAR + (SWELL_NEAR - SWELL_FAR) * (i / 26));
       crest.userData.ph = rand(0, 6.28);
       scene.add(crest);
       swell.push(crest);
     }
 
-    // 吊り橋(AQUA HIGHWAY 本体): 主塔 + メインケーブル + ハンガー + 桁。
-    // **桁の高さはゲームの接地ライン(画面y=650)に合わせてある**。
-    // z=-70 で画面y=650 になる世界y は約 -8.0(カメラ pitch 0.283 / fov55 から逆算)。
-    // これを外すと「海に浮いた平らな道」に見えるので、動かすときは必ず再計算すること。
-    const DECK_Y = -8.0;
+    // 白波: 海面に散る泡の塊。波頭と違って個別に流れるので、水面が「動く面」に見える
+    const capTex = makeTex(64, 32, (g, w, h) => {
+      g.fillStyle = 'rgba(255,255,255,.9)';
+      for (let i = 0; i < 22; i++) {
+        g.globalAlpha = rand(.25, .9);
+        g.beginPath();
+        g.ellipse(rand(6, w - 6), rand(6, h - 6), rand(2, 7), rand(1.5, 4), 0, 0, 6.3);
+        g.fill();
+      }
+      g.globalAlpha = 1;
+    });
+    const caps = [];
+    for (let i = 0; i < 26; i++) {
+      const cap = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({
+          map: capTex, transparent: true, opacity: .5, depthWrite: false,
+          blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false
+        }));
+      cap.rotation.x = -Math.PI / 2;
+      const z = rand(SWELL_FAR, SWELL_NEAR);
+      cap.position.set(rand(-320, 320), -16.85, z);
+      cap.userData.ph = rand(0, 6.28);
+      scene.add(cap);
+      caps.push(cap);
+    }
+
+    // 月光のきらめき: 月の真下に伸びる、ちらちら光る帯(海面である最大の手掛かり)
+    const glitterTex = makeTex(64, 128, (g, w, h) => {
+      for (let i = 0; i < 90; i++) {
+        const y = rand(0, h);
+        const spread = 4 + (y / h) * (w * .42);   // 手前ほど横に広がる
+        g.globalAlpha = rand(.2, .95) * (.35 + y / h * .65);
+        g.fillStyle = '#dffbff';
+        g.fillRect(w / 2 + rand(-spread, spread), y, rand(2, 7), 1.6);
+      }
+      g.globalAlpha = 1;
+    });
+    const glitter = new THREE.Mesh(new THREE.PlaneGeometry(150, 420),
+      new THREE.MeshBasicMaterial({
+        map: glitterTex, transparent: true, opacity: .5, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false
+      }));
+    glitter.rotation.x = -Math.PI / 2;
+    glitter.position.set(-180, -16.8, -150);   // 月(x=-180)の真下に伸ばす
+    scene.add(glitter);
+
+    // 吊り橋: AQUA HIGHWAY の名物ランドマーク。**背景の遠景**として置く。
+    // 近景に置くと桁が飛行ラインを横切り「海の上を飛んでいる」感じが消えるため、
+    // z=-150 の遠方へ下げてある(海面より上に立ち、水平線寄りに小さく見える)。
+    // 桁の高さ: z=-150 で画面y=600 になる世界y ≈ -7.7(カメラ pitch 0.283 / fov55 から逆算)。
+    // z を動かすときは必ず両方を再計算すること。
+    const BRIDGE_Z = -150, DECK_Y = -7.7;
     const hwBelt = makeScroller(() => {
       const grp = new THREE.Group();
       const conc = lambert({ color: 0x2a6a8e });
       const cableMat = basic({ color: 0x65fff2, transparent: true, opacity: .55 });
       const SPAN = 210;                          // 主塔間隔
       const deck = new THREE.Mesh(new THREE.BoxGeometry(420, 2.2, 11), conc);
-      deck.position.set(210, DECK_Y - 1.1, -70); grp.add(deck);
+      deck.position.set(210, DECK_Y - 1.1, BRIDGE_Z); grp.add(deck);
       // 桁側面の帯と、路側の防護柵(海上の高架だと一目で分かる要素)
       const edge = new THREE.Mesh(new THREE.BoxGeometry(420, .5, .4),
         basic({ color: 0x65fff2, transparent: true, opacity: .5 }));
-      edge.position.set(210, DECK_Y - .2, -64.4); grp.add(edge);
+      edge.position.set(210, DECK_Y - .2, BRIDGE_Z + 5.6); grp.add(edge);
       for (let i = 0; i < 60; i++) {             // 防護柵の支柱
         const post = new THREE.Mesh(new THREE.BoxGeometry(.35, 1.9, .35), conc);
-        post.position.set(i * 7, DECK_Y + .9, -64.4); grp.add(post);
+        post.position.set(i * 7, DECK_Y + .9, BRIDGE_Z + 5.6); grp.add(post);
       }
       const rail2 = new THREE.Mesh(new THREE.BoxGeometry(420, .35, .3), conc);
-      rail2.position.set(210, DECK_Y + 1.8, -64.4); grp.add(rail2);
+      rail2.position.set(210, DECK_Y + 1.8, BRIDGE_Z + 5.6); grp.add(rail2);
       for (let i = 0; i < 3; i++) {              // 主塔(H型)
         const px = i * SPAN;
         for (const dz of [-4, 4]) {
           const leg = new THREE.Mesh(new THREE.BoxGeometry(2.2, 46, 2.6), conc);
-          leg.position.set(px, 6, -70 + dz); grp.add(leg);
+          leg.position.set(px, 6, BRIDGE_Z + dz); grp.add(leg);
         }
         const cross = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.2, 10.6), conc);
-        cross.position.set(px, 24, -70); grp.add(cross);
+        cross.position.set(px, 24, BRIDGE_Z); grp.add(cross);
         const beacon = sprite(softTex('#ff6a6a'), 0xff6a6a, 2.6, .9);
-        beacon.position.set(px, 30, -70);
+        beacon.position.set(px, 30, BRIDGE_Z);
         beacon.userData.blink = i * 2.1;
         grp.add(beacon);
         for (const ly of [4, 13, 21]) {          // 主塔の航路灯(視認性のため)
           const tl = sprite(softTex('#9ffff4'), 0x9ffff4, 2.2, .8);
-          tl.position.set(px, ly, -65.5);
+          tl.position.set(px, ly, BRIDGE_Z + 4.5);
           grp.add(tl);
         }
       }
@@ -1118,19 +1192,19 @@ import * as THREE from './assets/lib/three.module.min.js';
           const xa = x0 + (x1 - x0) * ta, xb = x0 + (x1 - x0) * tb;
           const len = Math.hypot(xb - xa, yb - ya);
           const c = new THREE.Mesh(new THREE.CylinderGeometry(.28, .28, len, 4), cableMat);
-          c.position.set((xa + xb) / 2, (ya + yb) / 2, -70);
+          c.position.set((xa + xb) / 2, (ya + yb) / 2, BRIDGE_Z);
           c.rotation.z = Math.atan2(yb - ya, xb - xa) - Math.PI / 2;
           grp.add(c);
           if (j % 2 === 0) {                     // ハンガーロープ(桁まで垂らす)
             const hgr = new THREE.Mesh(new THREE.CylinderGeometry(.12, .12, ya - DECK_Y, 3), cableMat);
-            hgr.position.set(xa, (ya + DECK_Y) / 2, -70);
+            hgr.position.set(xa, (ya + DECK_Y) / 2, BRIDGE_Z);
             grp.add(hgr);
           }
         }
       }
       for (let i = 0; i < 11; i++) {             // 橋上灯
         const lamp = sprite(softTex('#9ffff4'), 0x9ffff4, 3, .85);
-        lamp.position.set(i * 42, DECK_Y + 3.4, -70);
+        lamp.position.set(i * 42, DECK_Y + 3.4, BRIDGE_Z);
         grp.add(lamp);
       }
       // 中間橋脚: 桁から海面(y=-17)へ落ちる支柱と、水際の白い泡。
@@ -1138,10 +1212,10 @@ import * as THREE from './assets/lib/three.module.min.js';
       for (let i = 0; i < 8; i++) {
         const px = i * 52 + 26;
         const pier = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 2, 11, 8), conc);
-        pier.position.set(px, DECK_Y - 6.5, -70);
+        pier.position.set(px, DECK_Y - 6.5, BRIDGE_Z);
         grp.add(pier);
         const foam = sprite(softTex('#dffffb'), 0xdffffb, 9, .5);
-        foam.position.set(px, -16.6, -69);
+        foam.position.set(px, -16.6, BRIDGE_Z + 1);
         grp.add(foam);
       }
       return grp;
@@ -1280,7 +1354,10 @@ import * as THREE from './assets/lib/three.module.min.js';
     const turbines = [];
     turbBelt.group.traverse(o => { if (o.userData && o.userData.turb !== undefined) turbines.push(o); });
 
-    // コンテナ港: ガントリークレーンと色とりどりのコンテナ山
+    // コンテナ港: ガントリークレーンと色とりどりのコンテナ山。
+    // **外洋の遠景**として z=-235 に置く。手前に寄せると水面の帯を埋め尽くし、
+    // 「海の上を飛んでいる」ではなく「港の中にいる」画になる。
+    const PORT_Z = -235;
     const portBelt = makeScroller(() => {
       const grp = new THREE.Group();
       const steel = lambert({ color: 0x14405e });
@@ -1298,14 +1375,14 @@ import * as THREE from './assets/lib/three.module.min.js';
         cab.position.set(-4, 27, 0); frame.add(cab);
         const lampC = sprite(softTex('#ffd9a0'), 0xffd9a0, 3, .85);
         lampC.position.set(18, 29, 0); frame.add(lampC);
-        frame.position.set(x, -18, -150);
+        frame.position.set(x, -18, PORT_Z);
         grp.add(frame);
       }
-      for (let i = 0; i < 14; i++) {             // コンテナ山
+      for (let i = 0; i < 9; i++) {              // コンテナ山(密度を落として水面を空ける)
         const stack = 1 + ((i * 5) % 3);
         for (let sY = 0; sY < stack; sY++) {
           const box = new THREE.Mesh(new THREE.BoxGeometry(7, 3, 3.2), lambert({ color: pick(contCols) }));
-          box.position.set(i * 26 + rand(-4, 4), -18 + 1.5 + sY * 3.1, -150 + rand(-8, 8));
+          box.position.set(i * 34 + rand(-4, 4), -18 + 1.5 + sY * 3.1, PORT_Z + rand(-8, 8));
           grp.add(box);
         }
       }
@@ -1395,15 +1472,32 @@ import * as THREE from './assets/lib/three.module.min.js';
         }
         seaTex.offset.x += dx * (24 / 1500);      // 橋・島と同じ世界速度
         seaTex.offset.y = Math.sin(t * .4) * .012; // うねり
-        // 波頭はカメラへ迫るほど速く・明るくなる(遠近の手掛かり)
+        // 波頭はカメラへ迫るほど速く・太く・明るくなる(遠近の手掛かり)
+        const span = SWELL_NEAR - SWELL_FAR;
         for (const c of swell) {
-          const span = SWELL_NEAR - SWELL_FAR;
           const near = (c.position.z - SWELL_FAR) / span;   // 0=遠 1=近
-          c.position.z += (3 + near * 22) * dt;
+          c.position.z += (4 + near * 46) * dt;
           if (c.position.z > SWELL_NEAR) c.position.z = SWELL_FAR;
-          c.position.x = Math.sin(t * .5 + c.userData.ph) * 26 - dx * 0;
-          c.material.opacity = (.06 + near * .3) * (.8 + .2 * Math.sin(t * 1.4 + c.userData.ph));
+          c.position.x = Math.sin(t * .5 + c.userData.ph) * 26;
+          c.scale.set(1, 1 + near * 5, 1);
+          c.material.opacity = (.07 + near * .5) * (.8 + .2 * Math.sin(t * 1.4 + c.userData.ph));
         }
+        // 白波: 流れながら横にも漂い、泡が明滅する
+        for (const c of caps) {
+          const near = (c.position.z - SWELL_FAR) / span;
+          c.position.z += (4 + near * 46) * dt;
+          c.position.x -= dx * .5;
+          if (c.position.z > SWELL_NEAR) {
+            c.position.z = SWELL_FAR;
+            c.position.x = rand(-320, 320);
+          }
+          if (c.position.x < -340) c.position.x += 680;
+          const s = 10 + near * 46;
+          c.scale.set(s, s * .55, 1);
+          c.material.opacity = (.1 + near * .45) * (.6 + .4 * Math.sin(t * 2.2 + c.userData.ph));
+        }
+        glitter.material.opacity = .42 + .12 * Math.sin(t * 1.9);
+        glitterTex.offset.y -= dt * .12;          // きらめきが手前へ流れる
         for (const b of blinkers) b.material.opacity = .3 + .7 * Math.max(0, Math.sin(t * 2.2 + b.userData.blink));
         const p = sprayGeo.attributes.position.array;
         for (let i = 0; i < N_SPRAY; i++) {

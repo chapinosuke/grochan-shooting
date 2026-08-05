@@ -5872,7 +5872,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.translate(bgCamX * -.4 + br.x * 1.6, bgCam * -.4 + br.y * 1.6);
     ctx.globalAlpha = .42; ctx.fillStyle = '#050212';
     const off = ((elapsed * speed) % 420 + 420) % 420;
-    for (let i = -1; i < 5; i++) {
+    // Aqua's band is a dark wave silhouette: over the 3D sea it just drains the
+    // near water to near-black and reads as rocks, so the 3D swell owns it.
+    const skipBand = bg3dActive && stage.theme === 'aqua';
+    for (let i = -1; i < 5 && !skipBand; i++) {
       const x = i * 420 - off;
       if (stage.theme === 'neon') {
         ctx.fillRect(x, 688, 340, 12);
