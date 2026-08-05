@@ -1505,6 +1505,9 @@ import * as THREE from './assets/lib/three.module.min.js';
       return g;
     }
     const whale = buildWhale();
+    // 素の全長52ユニットでは z=-130 で約275pxにしかならず「巨大」に見えない。
+    // 2倍で全長104ユニット ≒ 550px(可視幅の半分弱)。跳躍高度もこれに合わせてある。
+    whale.scale.setScalar(2);
     whale.position.set(0, -40, -130);
     whale.userData.wait = rand(3, 8);
     whale.userData.p = -1;                       // -1 = 潜航中
@@ -1661,8 +1664,8 @@ import * as THREE from './assets/lib/three.module.min.js';
             W.dur = 3.4 + Math.random() * 1.2;
             // 跳躍高度: 海面(y=-17)を 30ユニット以上抜けないと体が出ない。
             // 開始xは画面中央寄り(z=-130 での可視幅は概ね ±110ユニット)。
-            W.arc = 54 + Math.random() * 12;
-            whale.position.set(rand(-55, 55), -42, -130 + rand(-25, 25));
+            W.arc = 62 + Math.random() * 14;      // 体が大きい分だけ高く抜く
+            whale.position.set(rand(-45, 45), -46, -130 + rand(-25, 25));
             whale.rotation.y = Math.random() < .5 ? 0 : Math.PI;   // 向きも振る
           }
         } else {
@@ -1670,18 +1673,18 @@ import * as THREE from './assets/lib/three.module.min.js';
           W.p += dt / W.dur;
           if (W.p >= 1) {                         // 着水しきったら潜航へ
             W.p = -1; W.wait = 5 + Math.random() * 8;
-            whale.position.y = -42;
+            whale.position.y = -46;
           } else {
             const s = Math.sin(W.p * Math.PI);     // 0→1→0 の放物線
-            whale.position.y = -42 + W.arc * s;
+            whale.position.y = -46 + W.arc * s;
             whale.position.x += (whale.rotation.y ? -1 : 1) * 11 * dt - dx * .8;
             // 上昇中は機首上げ、下降中は機首下げ(実際の跳躍の姿勢)
             whale.rotation.z = Math.cos(W.p * Math.PI) * .85;
             whale.userData.blow.material.opacity =
               W.p > .42 && W.p < .6 ? .8 * Math.sin((W.p - .42) / .18 * Math.PI) : 0;
             // 海面(y=-17)を横切った瞬間に水しぶき
-            if (prevY < -17 && whale.position.y >= -17) splash(whale.position.x, whale.position.z, 34);
-            if (prevY > -17 && whale.position.y <= -17) splash(whale.position.x, whale.position.z, 48);
+            if (prevY < -17 && whale.position.y >= -17) splash(whale.position.x, whale.position.z, 62);
+            if (prevY > -17 && whale.position.y <= -17) splash(whale.position.x, whale.position.z, 88);
           }
         }
         for (const sp of splashes) {
@@ -1967,24 +1970,144 @@ import * as THREE from './assets/lib/three.module.min.js';
       scene.add(col); emberCols.push(col);
     }
 
-    // 巨大歯車: 中景で噛み合って回る(工場の心臓部)
-    const gears = [];
-    for (const [gx, gy, gz, r, sp] of [[-120, 4, -118, 15, .35], [-96, 12, -118, 9, -.58], [150, 2, -132, 19, -.26]]) {
-      const gear = new THREE.Group();
-      const gm = lambert({ color: 0x6a2438 });
-      gear.add(new THREE.Mesh(new THREE.CylinderGeometry(r, r, 3, 22), gm));
-      for (let k = 0; k < 14; k++) {
-        const tooth = new THREE.Mesh(new THREE.BoxGeometry(r * .3, 3.4, r * .22), gm);
-        const a = (k / 14) * Math.PI * 2;
-        tooth.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
-        tooth.rotation.y = -a;
-        gear.add(tooth);
+    // --- 本物の歯車機構 -----------------------------------------------
+    // 歯形は Shape を押し出して作る(円柱＋箱の疑似歯だとシルエットが歯車に
+    // 見えない)。Shape は XY 平面なので押し出すだけで歯面がカメラを向き、
+    // 回転は Z 軸まわり=画面内の回転になる。
+    // 金属感は MeshPhongMaterial の鏡面反射で出す(Lambert だと平坦な板になる)。
+    function gearShape(rOuter, teeth, toothH, rHole) {
+      const sh = new THREE.Shape();
+      const rRoot = rOuter - toothH, step = Math.PI * 2 / teeth;
+      // 1歯あたり4点: 歯底→歯先(立ち上がり)→歯先(歯先面)→歯底(立ち下がり)
+      const prof = [[0, rRoot], [.14, rOuter], [.36, rOuter], [.50, rRoot]];
+      for (let i = 0; i < teeth; i++) {
+        for (const [f, r] of prof) {
+          const a = (i + f) * step;
+          const x = Math.cos(a) * r, y = Math.sin(a) * r;
+          if (i === 0 && f === 0) sh.moveTo(x, y); else sh.lineTo(x, y);
+        }
       }
-      gear.add(new THREE.Mesh(new THREE.CylinderGeometry(r * .22, r * .22, 4, 10), lambert({ color: 0x8a3a4a })));
-      gear.rotation.x = Math.PI / 2;             // 歯車の面をカメラへ向ける
-      gear.position.set(gx, gy, gz);
-      gear.userData.sp = sp;
-      scene.add(gear); gears.push(gear);
+      sh.closePath();
+      const hole = new THREE.Path();
+      hole.absarc(0, 0, rHole, 0, Math.PI * 2, true);
+      sh.holes.push(hole);
+      return sh;
+    }
+    // 炉の照り返しを emissive に持たせないと、赤い空を背に真っ黒な影絵になる
+    const steelMat = new THREE.MeshPhongMaterial({ color: 0xb0707c, specular: 0xffd8b0, shininess: 46, emissive: 0x3a1418 });
+    const steelDark = new THREE.MeshPhongMaterial({ color: 0x76323f, specular: 0xe09080, shininess: 30, emissive: 0x280d12 });
+    function buildGear(rOuter, teeth, thick) {
+      const g = new THREE.Group();
+      const toothH = rOuter * .17, rHub = rOuter * .2, rHole = rOuter * .46;
+      const body = new THREE.Mesh(
+        new THREE.ExtrudeGeometry(gearShape(rOuter, teeth, toothH, rHole),
+          { depth: thick, bevelEnabled: true, bevelSize: thick * .18, bevelThickness: thick * .18, bevelSegments: 1, curveSegments: 2 }),
+        steelMat);
+      body.position.z = -thick / 2;
+      g.add(body);
+      // ハブとスポーク(抜けた円盤のままだとリングに見える)
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(rHub, rHub, thick * 1.6, 12), steelDark);
+      hub.rotation.x = Math.PI / 2;
+      g.add(hub);
+      for (let k = 0; k < 5; k++) {
+        const spoke = new THREE.Mesh(new THREE.BoxGeometry(rOuter * .62, rOuter * .14, thick * .7), steelDark);
+        spoke.position.set(Math.cos(k / 5 * Math.PI * 2) * rOuter * .33, Math.sin(k / 5 * Math.PI * 2) * rOuter * .33, 0);
+        spoke.rotation.z = k / 5 * Math.PI * 2;
+        g.add(spoke);
+      }
+      g.userData.r = rOuter - toothH / 2;         // ピッチ円半径(噛み合わせ計算用)
+      return g;
+    }
+    // 歯車列: 先頭のギヤを基準に、ピッチ円が接するよう順に並べて逆回転させる。
+    // 角速度比は ω1·r1 = -ω2·r2(実際の歯車と同じ)なので、見た目の連動が破綻しない。
+    const gears = [];
+    function gearTrain(x0, y0, z, specs, baseSpeed) {
+      let px = x0, py = y0, prev = null, sp = baseSpeed;
+      for (const [rOuter, teeth, dir] of specs) {
+        const g = buildGear(rOuter, teeth, 3.4);
+        if (prev) {
+          const d = prev.userData.r + g.userData.r;
+          px += Math.cos(dir) * d; py += Math.sin(dir) * d;
+          sp = -sp * prev.userData.r / g.userData.r;
+        }
+        g.position.set(px, py, z);
+        g.userData.sp = sp;
+        scene.add(g); gears.push(g);
+        prev = g;
+      }
+    }
+    gearTrain(-150, 10, -112, [[20, 20, 0], [12, 13, .5], [16, 17, -.45]], .45);
+    gearTrain(120, 4, -126, [[24, 24, 0], [14, 15, 2.55], [9, 10, 1.9]], -.3);
+
+    // フライホイール＋クランク＋ピストン: 回転が往復運動に変わる様子が見えると
+    // 一気に「稼働中の工場」になる。ロッドは毎フレーム長さと角度を作り直す。
+    const engine = new THREE.Group();
+    const flywheel = buildGear(13, 26, 4);
+    flywheel.position.set(0, 0, 0);
+    engine.add(flywheel);
+    const crankPin = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 5, 8), steelDark);
+    crankPin.rotation.x = Math.PI / 2;
+    engine.add(crankPin);
+    const rod = new THREE.Mesh(new THREE.BoxGeometry(1, 2.2, 2.2), steelMat);
+    engine.add(rod);
+    const cylinder = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 22, 14), steelDark);
+    cylinder.rotation.z = Math.PI / 2;
+    cylinder.position.set(40, 0, 0);
+    engine.add(cylinder);
+    // フランジと台座。無地の円筒は横から見るとただの角材に見えるので、
+    // 輪郭に段差を作って「機械」だと分かるようにする。
+    for (const fx of [30, 40, 50]) {
+      const flange = new THREE.Mesh(new THREE.CylinderGeometry(5.4, 5.4, 1.4, 14), steelMat);
+      flange.rotation.z = Math.PI / 2;
+      flange.position.set(fx, 0, 0);
+      engine.add(flange);
+    }
+    const bed = new THREE.Mesh(new THREE.BoxGeometry(64, 2.6, 12), steelDark);
+    bed.position.set(20, -8, 0);
+    engine.add(bed);
+    for (const lx of [-4, 24, 50]) {
+      const col = new THREE.Mesh(new THREE.BoxGeometry(3.4, 8, 6), steelDark);
+      col.position.set(lx, -12, 0);
+      engine.add(col);
+    }
+    const piston = new THREE.Mesh(new THREE.CylinderGeometry(3.7, 3.7, 5, 12), steelMat);
+    piston.rotation.z = Math.PI / 2;
+    engine.add(piston);
+    const engineSteam = sprite(softTex('#e8d0d8', 128, .12), 0xe8d0d8, 12, 0, THREE.NormalBlending);
+    engineSteam.position.set(50, 6, 0);
+    engine.add(engineSteam);
+    engine.scale.setScalar(1.3);
+    engine.position.set(-20, 10, -92);
+    scene.add(engine);
+    let engAng = 0;
+
+    // 3Dコンベア: 赤熱した鋼片が乗って流れる(火の粉と光を撒く)
+    const convBelt = new THREE.Group();
+    const beltBase = new THREE.Mesh(new THREE.BoxGeometry(420, 1.6, 7), steelDark);
+    beltBase.position.set(210, -13, -78);
+    convBelt.add(beltBase);
+    for (let i = 0; i < 15; i++) {                // ローラー
+      const roll = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 7.4, 8), steelMat);
+      roll.rotation.x = Math.PI / 2;
+      roll.position.set(i * 28, -14.6, -78);
+      convBelt.add(roll);
+    }
+    for (let i = 0; i < 12; i++) {                // 支柱
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(1.6, 5, 1.6), steelDark);
+      leg.position.set(i * 36, -16, -78);
+      convBelt.add(leg);
+    }
+    scene.add(convBelt);
+    const ingots = [];
+    for (let i = 0; i < 9; i++) {
+      const ing = new THREE.Group();
+      const slab = new THREE.Mesh(new THREE.BoxGeometry(9, 3, 5),
+        lambert({ color: 0xff8a2a, emissive: 0xff5a10, emissiveIntensity: 1 }));
+      ing.add(slab);
+      const hot = sprite(softTex('#ffb04a'), 0xff9a2a, 22, .5);
+      hot.position.z = 2; ing.add(hot);
+      ing.position.set(rand(-260, 260), -10.6, -78);
+      scene.add(ing); ingots.push(ing);
     }
 
     // 中景: 煙突(煙つき)とガントリークレーン
@@ -2109,7 +2232,39 @@ import * as THREE from './assets/lib/three.module.min.js';
           if (gl.position.x < -300) gl.position.x += 620;
           gl.material.opacity = .38 + .16 * Math.sin(t * 3.1 + gl.position.x * .05);
         }
-        for (const g2 of gears) g2.rotation.y += g2.userData.sp * dt;
+        // 歯車は面がカメラを向いているので Z 軸(画面内)まわりに回す
+        for (const g2 of gears) {
+          g2.rotation.z += g2.userData.sp * dt;
+          g2.position.x -= dx * .9;
+          if (g2.position.x < -320) g2.position.x += 700;
+        }
+        // フライホイール→クランク→ピストンの往復
+        engAng += dt * 1.5;
+        const crankR = 9;
+        const cxk = Math.cos(engAng) * crankR, cyk = Math.sin(engAng) * crankR;
+        crankPin.position.set(cxk, cyk, 0);
+        const rodLen = 34;
+        // ピストンピンは x 軸上。クランクピンとの距離からロッドの姿勢を出す
+        const px2 = cxk + Math.sqrt(Math.max(1, rodLen * rodLen - cyk * cyk));
+        piston.position.set(px2, 0, 0);
+        rod.position.set((cxk + px2) / 2, cyk / 2, 0);
+        rod.rotation.z = Math.atan2(-cyk, px2 - cxk);
+        rod.scale.x = Math.hypot(px2 - cxk, cyk);
+        flywheel.rotation.z = engAng;
+        engine.position.x -= dx * .9;
+        if (engine.position.x < -300) engine.position.x += 680;
+        // 排気: 上死点付近で蒸気を噴く
+        const stroke = (Math.cos(engAng) + 1) / 2;
+        engineSteam.material.opacity = stroke > .82 ? (stroke - .82) / .18 * .5 : 0;
+        engineSteam.scale.setScalar(10 + stroke * 12);
+        // コンベアの赤熱鋼片
+        for (const ing of ingots) {
+          ing.position.x += 26 * dt - dx;
+          if (ing.position.x > 300) ing.position.x -= 600;
+          if (ing.position.x < -300) ing.position.x += 600;
+        }
+        convBelt.position.x -= dx;
+        if (convBelt.position.x < -420) convBelt.position.x += 420;
         // 取鍋クレーン: 桁の上を往復し、周期的に湯を注ぐ
         trolley.position.x = Math.sin(t * .22) * 62;
         ladleRig.position.x -= dx * .9;

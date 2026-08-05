@@ -4308,7 +4308,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // (bg3d aqua scene) breaches with real splashes instead. Small fish stay.
       for (const p of bgProps) if (p.kind === 'fish') drawFish(p, stage);
     } else if (theme === 'factory') {
-      for (const p of bgProps) if (p.kind === 'gear') drawGear(p, stage);
+      // drawGear paints flat discs; the 3D gear trains (bg3d factory scene) have
+      // real extruded teeth, hubs and spokes, so the 2D ones only read as
+      // stickers next to them.
       drawFurnaceRow(stage);
       for (const p of bgProps) if (p.kind === 'hammer') drawHammerPress(p, stage);
       drawConveyor(stage);
