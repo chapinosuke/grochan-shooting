@@ -13,7 +13,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   const browser = await puppeteer.launch({
     executablePath: CHROME, headless: 'new',
-    args: ['--use-gl=swiftshader', '--enable-webgl', '--no-sandbox', '--window-size=1280,720'],
+    args: ['--use-angle=swiftshader', '--enable-webgl', '--no-sandbox', '--window-size=1280,720'],
   });
   const page = await browser.newPage();
   await page.evaluateOnNewDocument(() => {

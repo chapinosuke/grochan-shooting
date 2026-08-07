@@ -161,3 +161,13 @@ SERVER GOLEM は2026-08-01にステージ4ボスとして復帰。旧ステー�
 | `assets/sfx/boss-quake.mp3` | 地響き1 | ボス登場 |
 | `assets/sfx/boss-superhit.mp3` | 超必殺技がヒット1 | フェーズ2突入（HP50%） |
 | `assets/sfx/boss-collapse.mp3` | 建物の崩壊1 | ボス撃破 |
+
+## Three.js（3D背景ライブラリ）
+
+2026-08-04 にユーザー指示で導入。npm レジストリの `three@0.185.1` 公式ビルドを同梱
+（実行時ネットワーク依存なし・CDN不使用）。
+
+| ゲーム内ファイル | 出典 | ライセンス |
+| --- | --- | --- |
+| `assets/lib/three.module.min.js` | three.js r185（`three@0.185.1` の `build/three.module.min.js`） | MIT（`assets/lib/three-LICENSE.txt` に同梱） |
+| `assets/lib/three.core.min.js` | 同上（`build/three.core.min.js`、module.min が内部 import する分割コア） | MIT（同上） |

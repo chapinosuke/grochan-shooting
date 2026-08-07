@@ -241,7 +241,9 @@
   let difficultyKey = 'normal';
   let musicClock = 0;
   let musicStep = 0;
-  let soundOn = false;
+  // Sound starts ON; browsers still gate real playback until the first user
+  // gesture, which the title screen's click always provides (startMenuBgm).
+  let soundOn = true;
   let currentBgmKey = null;
   let bgmFadeToken = 0;
   let openingTimeout = 0;
@@ -294,6 +296,46 @@
   let bossCrit = 0;      // 0..1 fade of the palace's blood-red sky in the queen's last act
   let bgCam = 0;
   let bgCamX = 0;        // horizontal camera yaw, eased from player.x (parallax)
+  let bg3dActive = false; // true while the Three.js backdrop rendered this frame (set in drawBackdrop)
+  let actorOverlay = false; // true while the Three.js actor overlay rendered this frame
+  let frameDt = .016;    // last gameplay dt, fed to the 3D effect layer
+
+  // Composite a Three.js canvas, plus a cheap bloom: the same image redrawn
+  // blurred and additively. Bright pixels pile up into a glow while dark ones
+  // add nothing, so neon signs and bullet trails bleed light like real optics —
+  // no post-processing library, and alpha stays correct over the 2D art below.
+  // Costs one extra blurred blit, so it only runs at full background quality.
+  function blit3d(cv, dx, dy, dw, dh, glow, blur) {
+    ctx.drawImage(cv, dx, dy, dw, dh);
+    if (!glow || bgQuality() < 2) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = glow;
+    ctx.filter = `blur(${blur}px)`;
+    ctx.drawImage(cv, dx, dy, dw, dh);
+    ctx.restore();
+  }
+  // The actor overlay is a pure light layer: every pool in it is additively
+  // blended, so it must be ADDED to the frame, never drawn source-over. Drawn
+  // normally, a solid additive ring writes alpha 1 and replaces the city behind
+  // it with a flat opaque hoop — 'lighter' is what makes it read as light.
+  function blitOverlay() {
+    const cv = window.GRO_BG3D.actorCanvas;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(cv, 0, 0, VW, VH);
+    if (bgQuality() >= 2) {                 // bloom: the same light, spread wide
+      ctx.globalAlpha = .5;
+      ctx.filter = 'blur(9px)';
+      ctx.drawImage(cv, 0, 0, VW, VH);
+    }
+    ctx.restore();
+  }
+  // '#rrggbb' → 0xrrggbb for the Three.js layer, which takes numeric colours.
+  const hexNum = s => parseInt(String(s).replace('#', ''), 16) || 0xffffff;
+  // Fire a 3D combat effect. A no-op without the overlay, so every call site
+  // stays a plain one-liner next to its existing 2D burst.
+  const fx3d = (kind, x, y, opts) => { if (actorOverlay) window.GRO_BG3D.fx(kind, x, y, opts); };
   let bokeh = [];        // front-of-camera defocused light orbs
   let shoppers = [];     // pedestrians walking the shopping street (neon stage)
   let formationTimer = 3;
@@ -1181,23 +1223,27 @@
     if (theme === 'neon') {
       bgProps = Array.from({ length: 3 }, (_, i) => ({ kind: 'car', x: Math.random() * VW, y: 150 + i * 90 + Math.random() * 40, v: 60 + Math.random() * 90, dir: Math.random() < .5 ? -1 : 1 }));
       bgProps.push({ kind: 'searchlight', x: 260, phase: 0, speed: .5 }, { kind: 'searchlight', x: 940, phase: 2.4, speed: .38 });
-      // Festival fireworks over the Shibuya skyline + giant club speakers that
-      // pump with the BGM, flanking the shopping street.
+      // Festival fireworks over the Shibuya skyline.
       bgProps.push({ kind: 'firework', x: 330, timer: 2 + Math.random() * 3 }, { kind: 'firework', x: 950, timer: 5 + Math.random() * 3 });
-      bgProps.push({ kind: 'speaker', x: 96, ringT: -9 }, { kind: 'speaker', x: 1112, ringT: -9 });
       // Shoppers strolling the sidewalk in front of the storefronts. Farther ones
       // sit higher and smaller for depth; each carries an optional shopping bag.
       const coats = ['#ff5a8a', '#4a9cff', '#ffd24a', '#8a6cff', '#3ad6a0', '#ff8a3a'];
       const bags = ['#ffe15a', '#ff3e9d', '#31e8ff', '#ffffff'];
+      // Feet sit on the street strip below the 3D shop doors (bg3d street belt),
+      // and scale follows baseY strictly so the crowd obeys the 3D perspective:
+      // lower on screen = closer = bigger, no exceptions.
       shoppers = Array.from({ length: 11 }, () => {
         const depth = Math.random();
         return {
-          x: Math.random() * VW, baseY: 614 + depth * 28, scale: .78 + depth * .5,
+          x: Math.random() * VW, baseY: 640 + depth * 36, scale: .55 + depth * .55,
           dir: Math.random() < .5 ? -1 : 1, spd: 15 + Math.random() * 24, phase: Math.random() * 6.28,
           coat: coats[Math.floor(Math.random() * coats.length)],
           bag: Math.random() < .62, bagC: bags[Math.floor(Math.random() * bags.length)]
         };
       });
+      // Painter's order: draw the far (small) pedestrians first so near ones
+      // overlap them instead of the other way around.
+      shoppers.sort((a, b) => a.baseY - b.baseY);
     } else if (theme === 'aqua') {
       for (let i = 0; i < 26; i++) ambient.push(makeAmbient('bubble'));
       bgProps.push({ kind: 'lighthouse', x: 1050, phase: 0 });
@@ -1225,6 +1271,9 @@
         { kind: 'firework', x: 250, timer: 3 + Math.random() * 4 },
         { kind: 'firework', x: 1030, timer: 6 + Math.random() * 4 }
       );
+      // Giant club speakers flanking the queen's ballroom, pumping with the BGM
+      // (moved here from stage 1 — the final stage is the one big dance floor).
+      bgProps.push({ kind: 'speaker', x: 96, ringT: -9 }, { kind: 'speaker', x: 1112, ringT: -9 });
     }
     // Stable scene dressing gives every run a busy, inhabited world without
     // affecting collision or gameplay readability.
@@ -1426,6 +1475,7 @@
     }
     // Visible muzzle flash so walk-shoot reads clearly.
     burst(muzzleX, muzzleY, '#ffe15a', player.grounded ? 8 : 5, player.grounded ? 200 : 150);
+    fx3d('muzzle', muzzleX, muzzleY, { color: 0xffe15a, dir: 0 });
     if (player.grounded) {
       particles.push({ x: muzzleX + 6, y: muzzleY, vx: 220, vy: (Math.random() - .5) * 40, life: .12, max: .12, color: '#ff8a35', size: 6, gravity: 0 });
       particles.push({ x: muzzleX + 2, y: muzzleY, vx: 160, vy: (Math.random() - .5) * 30, life: .1, max: .1, color: '#fff', size: 4, gravity: 0 });
@@ -1494,6 +1544,7 @@
     hazards = hazards.filter(hz => hz.t >= hz.warn);
     for (const hz of hazards) hz.dead = true;
     burst(cx, cy, '#c9d6ec', 34, 420); sfx('shield'); updateBombButton();
+    fx3d('nova', cx, cy, { color: 0xc9d6ec, size: 1.15 });
   }
 
   function updateBombButton() {
@@ -2293,6 +2344,7 @@
     hitStop = Math.max(hitStop, .12 + e.tier * .03);
     shockwaves.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, r: 24, speed: 620, life: .85, max: .85, color: stages[idx].accent2 });
     shockwaves.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, r: 10, speed: 380, life: 1.1, max: 1.1, color: '#fff' });
+    fx3d('nova', e.x + e.w / 2, e.y + e.h / 2, { color: hexNum(stages[idx].accent2), size: .85 });
     burst(e.x + e.w / 2, e.y + e.h / 2, stages[idx].accent2, 40, 420);
     burstDebris(e.x + e.w / 2, e.y + e.h / 2, ['#fff', stages[idx].accent], 14, 300);
     e.tierBanner = 1.9;
@@ -3105,6 +3157,9 @@
   }
 
   function update(dt) {
+    // The 3D effect layer advances on gameplay time, not wall-clock, so
+    // explosions freeze with the hit-stop and stretch with slow-motion.
+    frameDt = dt;
     if (state === 'menu' && !paused) {
       // Attract mode for the title screen: keep the neon backdrop animating
       // (elapsed drives it and resetGame() zeroes it anyway) and fly Gro-chan
@@ -3625,6 +3680,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
             shockwaves.push({ x: b.x, y: b.y, r: 3, speed: 130, life: .24, max: .24, color: '#a8b7d6' }); sfx('shield');
           }
           e.hp -= damage; e.hit = .11; special = Math.min(100, special + .35 + (b.missile ? .5 : 0)); shake = 3; burst(b.x, b.y, '#31e8ff', 5, 150); burstDebris(b.x, b.y, ['#c9d6ec', '#8fa3c8'], 2, 140); sfx('hit');
+          fx3d('impact', b.x, b.y, { color: 0x9fe8ff, dir: Math.atan2(b.vy, b.vx) });
           // Bosses hit back harder in feel: a heavier kick and chips in their own colour.
           if (e.type === 'boss' || e.type === 'midboss') {
             shake = Math.max(shake, e.crit ? 5 : 4);
@@ -3724,6 +3780,11 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     burstDebris(ex, ey, organicKill ? ['#cfe6ff', '#7fb8c9', '#3a5f72'] : [stages[stageIndex].accent2, '#5a4058', '#2a1f2c'], isMajor ? (isBoss ? 26 : 18) : e.type === 'tank' ? 12 : 7, isMajor ? 420 : e.type === 'tank' ? 300 : 220);
     // A dumbo octopus inks the water as it dies — the real animal's last resort.
     if (e.type === 'dumbo') burst(ex, ey, '#5a1a72', 18, 170);
+    // 3D fireball + shockwave rings + tumbling debris on top of the 2D burst.
+    fx3d('explode', ex, ey, {
+      color: hexNum(organicKill ? '#8ffcff' : stages[stageIndex].accent2),
+      size: isBoss ? 2.6 : isMidBoss ? 1.9 : e.type === 'tank' ? 1.3 : 1
+    });
     shake = isMajor ? (isBoss ? 28 : 20) : e.type === 'tank' ? 12 : 6; flash = isMajor ? (isBoss ? 1 : .6) : e.type === 'tank' ? .35 : .12; sfx(isMajor ? 'bigBoom' : 'boom');
     hitStop = Math.max(hitStop, isMajor ? (isBoss ? .12 : .09) : e.type === 'tank' ? .05 : .03);
     if (isMajor) {
@@ -4166,26 +4227,49 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     const dp = skyDither();
     if (dp) { ctx.save(); ctx.fillStyle = dp; ctx.fillRect(-30, -30, VW + 60, VH + 60); ctx.restore(); }
     const dir = backgroundDirector();
+    // Three.js layer (bg3d.js): when the module loaded and WebGL works, the
+    // sky-to-midground band is a real 3D scene (perspective, fog, lighting)
+    // composited here under the 2D art passes. The flat theme backdrop, far
+    // landmarks and the fake-3D volume pass are replaced by it; the chapter
+    // wash, inhabitants, motes, stage direction, ambient/near scenery and
+    // atmosphere stay 2D on top so the neon-kawaii hand-drawn feel survives.
+    // No module / no WebGL (file:// included) falls back to the 2D path.
+    const bg3d = window.GRO_BG3D;
+    const use3d = !!(bg3d && bg3d.ready && bg3d.render({
+      stage: stageIndex, speed: gameSpeed, camX: bgCamX, camY: bgCam,
+      energy: dir.energy, boss: dir.boss, warning: dir.warning,
+      chapter: dir.chapter, chapterT: dir.chapterT, quality: dir.q
+    }));
+    bg3dActive = use3d;
+    if (use3d) blit3d(bg3d.canvas, -30, -30, VW + 60, VH + 60, .22, 6);
     // Chapter tint goes under the scenery — it should read as the light in the
     // air, not as a filter over the buildings.
     drawChapterWash(stage, dir);
-    const theme = stage.theme;
-    if (theme === 'neon') drawNeonBackdrop(stage);
-    else if (theme === 'aqua') drawAquaBackdrop(stage);
-    else if (theme === 'factory') drawFactoryBackdrop(stage);
-    else if (theme === 'storm') drawStormBackdrop(stage);
-    else drawPalaceBackdrop(stage);
-    // Landmarks and inhabitants must come AFTER the theme backdrop: several
-    // backdrops (neon especially) repaint the whole sky band opaquely, so
-    // anything drawn under them is simply erased. They stay below the volume
-    // pass, so real foreground geometry still occludes them.
-    drawFarLandmarks(stage, dir);
+    if (use3d) {
+      // Hybrid pass: the 3D scene owns sky/far/midground, but the hand-drawn
+      // street-level signatures (shops, bridge traffic, molten river, throne…)
+      // stay 2D on top — they carry the neon-kawaii charm and several
+      // environment hazards visually anchor to them.
+      drawNearScenery3D(stage);
+    } else {
+      const theme = stage.theme;
+      if (theme === 'neon') drawNeonBackdrop(stage);
+      else if (theme === 'aqua') drawAquaBackdrop(stage);
+      else if (theme === 'factory') drawFactoryBackdrop(stage);
+      else if (theme === 'storm') drawStormBackdrop(stage);
+      else drawPalaceBackdrop(stage);
+      // Landmarks and inhabitants must come AFTER the theme backdrop: several
+      // backdrops (neon especially) repaint the whole sky band opaquely, so
+      // anything drawn under them is simply erased. They stay below the volume
+      // pass, so real foreground geometry still occludes them.
+      drawFarLandmarks(stage, dir);
+    }
     drawMotes(stage, dir, true);
     drawLifeLayer(stage, dir);
     // A dedicated volume pass sits above the flat scenic layers but below
     // particles/gameplay. Every stage gets large objects with visible top/side
     // faces, a shared vanishing point and strong scale separation.
-    drawStageVolume(stage);
+    if (!use3d) drawStageVolume(stage);
     // The route is more than a looping panorama: phase, mid-boss and boss state
     // direct one-off scenic beats and lighting changes for the whole stage.
     // Kept below ambient/gameplay so even the largest spectacle cannot cover
@@ -4196,6 +4280,68 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawMotes(stage, dir, false);
     drawAtmosphere(stage);
     ctx.restore();
+  }
+
+  // Street-level 2D pass kept on top of the Three.js backdrop (bg3d.js).
+  // Only the near-ground signature pieces of each theme backdrop — everything
+  // that reads as "the town the player almost touches" plus the anchors the
+  // environment hazards rely on (molten river, storm ground, palace floor).
+  function drawNearScenery3D(stage) {
+    const theme = stage.theme;
+    if (theme === 'neon') {
+      // Storefronts and the big screen are real 3D now (bg3d.js street belt).
+      // drawScrambleCrossing / drawGroundPlane are 2D fake-perspective fans
+      // converging on their own vanishing point — over the real 3D street they
+      // read as a ghost road receding into the distance, so they stay off here.
+      drawGroundLayer();
+      drawTokyoRoadLights(stage);
+      drawShoppers();
+    } else if (theme === 'aqua') {
+      // drawOcean paints an opaque sea from y556 down, which would bury the 3D
+      // bridge and the water it stands in — the 3D sea plane is the water now.
+      // drawHighway is likewise gone: a flat 2D road strip over real water
+      // reads as tarmac floating on the sea. The 3D suspension bridge (deck
+      // pinned to this same ground line, piers plunging into the swell) is the
+      // highway. Only the inhabitants stay 2D.
+      drawAquaTanker(stage);
+      // bigFish is a flat cartoon that fills half the screen; the 3D humpback
+      // (bg3d aqua scene) breaches with real splashes instead. Small fish stay.
+      for (const p of bgProps) if (p.kind === 'fish') drawFish(p, stage);
+    } else if (theme === 'factory') {
+      // drawGear paints flat discs; the 3D gear trains (bg3d factory scene) have
+      // real extruded teeth, hubs and spokes, so the 2D ones only read as
+      // stickers next to them.
+      drawFurnaceRow(stage);
+      for (const p of bgProps) if (p.kind === 'hammer') drawHammerPress(p, stage);
+      drawConveyor(stage);
+      drawMoltenRiver(stage);
+    } else if (theme === 'storm') {
+      drawHoloGrid(stage);
+      drawStormGround(stage);
+      drawLightningBolt(stage);
+    } else {
+      // Palace keeps its dramatic lighting even in 3D mode: the queen's
+      // critical-phase sky stain and the throne the boss fight happens on.
+      const wantBossLight = stageIndex === 4 && ['active', 'transition', 'final'].includes(bossState) ? 1 : 0;
+      palaceBossMix += (wantBossLight - palaceBossMix) * .02;
+      if (bossCrit > 0) {
+        ctx.save(); ctx.globalAlpha = Math.min(1, bossCrit) * .55;
+        const g = cachedGrad('critSky', () => {
+          const r = ctx.createLinearGradient(0, 0, 0, VH);
+          r.addColorStop(0, '#2a0008'); r.addColorStop(.5, '#7d0b25'); r.addColorStop(1, '#ff2a3c');
+          return r;
+        });
+        ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH); ctx.restore();
+      }
+      bgLayer(.15, () => drawPalaceThrone(stage));
+      drawPalaceFloor(stage);
+      // drawGroundPlane's converging fan is skipped in 3D mode — the real 3D
+      // checkerboard floor already recedes with the correct vanishing point.
+      // The queen's ballroom sound system (music-reactive club speakers).
+      bgLayer(.12, () => {
+        for (const p of bgProps) if (p.kind === 'speaker') drawSpeaker(p, stage);
+      });
+    }
   }
 
   // Vertical camera parallax: layers shift with the player's height. The gameplay
@@ -5727,7 +5873,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     ctx.translate(bgCamX * -.4 + br.x * 1.6, bgCam * -.4 + br.y * 1.6);
     ctx.globalAlpha = .42; ctx.fillStyle = '#050212';
     const off = ((elapsed * speed) % 420 + 420) % 420;
-    for (let i = -1; i < 5; i++) {
+    // Aqua's band is a dark wave silhouette: over the 3D sea it just drains the
+    // near water to near-black and reads as rocks, so the 3D swell owns it.
+    const skipBand = bg3dActive && stage.theme === 'aqua';
+    for (let i = -1; i < 5 && !skipBand; i++) {
       const x = i * 420 - off;
       if (stage.theme === 'neon') {
         ctx.fillRect(x, 688, 340, 12);
@@ -5749,7 +5898,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       }
     }
     ctx.restore();
-    drawStageForegroundFrame(stage);
+    // The edge-framing pillars are a 2D-era device ("super-near buildings by
+    // the lens"). Over the real 3D backdrop they read as floating black slabs
+    // with no depth context, so they only draw on the 2D fallback path.
+    if (!bg3dActive) drawStageForegroundFrame(stage);
     drawBokeh(stage);
   }
 
@@ -6086,7 +6238,6 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       drawCity((elapsed * -20) % 120, 600, stage.city, 54, .78, 18);
       drawTokyoExpressway(stage);
       drawNeonRail(stage);
-      for (const p of bgProps) if (p.kind === 'speaker') drawSpeaker(p, stage);
       drawStorefronts(stage);
       drawShibuyaScreen(stage);
     });
@@ -6347,12 +6498,13 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   ];
   const SHOP_STRIP = 1460;
 
-  // Walk the shoppers along the street: the world scrolls left at the shop speed
-  // (~20px/s) and each person adds their own gait on top, so some overtake and
-  // some drift back. They wrap around either edge.
+  // Walk the shoppers along the street: the world drift must match the 3D shop
+  // belt behind them (bg3d street at z=-95 → SCROLL 4 u/s × 691.6/95 ≈ 29px/s),
+  // otherwise the crowd visibly slides against the storefronts. Each person adds
+  // their own gait on top, so some overtake and some drift back.
   function stepShoppers(dt) {
     for (const p of shoppers) {
-      p.x += (p.dir * p.spd - 20) * dt * gameSpeed;
+      p.x += (p.dir * p.spd - 29) * dt * gameSpeed;
       p.phase += dt * (4.5 + p.spd * .12);
       if (p.x < -50) p.x = VW + 50 + Math.random() * 90;
       else if (p.x > VW + 60) p.x = -50 - Math.random() * 90;
@@ -8131,6 +8283,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     volFlush();
     drawPalaceFloor(stage);
     drawGroundPlane(stage, { horizonY: 652, bottom: 716, color: '#ff9ccf', alpha: .12, speed: 150, gap: 128 });
+    // The queen's ballroom sound system (music-reactive club speakers).
+    bgLayer(.12, () => {
+      for (const p of bgProps) if (p.kind === 'speaker') drawSpeaker(p, stage);
+    });
   }
 
   // --- Stained glass, god rays and chandeliers (palace) -------------------
@@ -9348,6 +9504,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const b of bullets) drawPlayerBullet(b);
     ctx.globalCompositeOperation = 'source-over';
     for (const b of enemyBullets) drawEnemyBullet(b);
+    // Three.js actor overlay (bg3d.js), pass 1 of 2 — the "under" layer:
+    // hull parts (wings, engine pods, canopies), thrusters, rotors, boss auras
+    // and bullet trails. Composited before the enemy sprites so the 3D hardware
+    // reads as being *under* the kawaii art, and trails are occluded by bodies.
+    // The crisp 2D bullet cores stay untouched for danmaku readability.
+    actorOverlay = bg3dActive && window.GRO_BG3D.renderActors &&
+      window.GRO_BG3D.renderActors({ stage: stageIndex, bullets, enemyBullets, enemies, player, dt: frameDt });
+    if (actorOverlay) blitOverlay();
     drawHazards();
     for (const r of shockwaves) {
       ctx.save(); ctx.globalAlpha = Math.max(0, r.life / r.max); ctx.strokeStyle = r.color; ctx.lineWidth = 5 + r.life * 8; ctx.shadowColor = r.color; ctx.shadowBlur = 18;
@@ -9356,6 +9520,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const e of enemies) drawEnemy(e);
     drawBossTelegraphOverlay();
     if (state === 'playing' || state === 'over' || (state === 'menu' && menuStep === 'title')) drawPlayer();
+    // Actor overlay pass 2 — the "over" layer: muzzle flashes, impact rings and
+    // explosion fireballs/debris burst in front of everything they touch.
+    if (actorOverlay && window.GRO_BG3D.renderActors({}, 'over')) blitOverlay();
     // Additive blending makes overlapping sparks glow white-hot like real light.
     ctx.globalCompositeOperation = 'lighter';
     for (const p of particles) {
