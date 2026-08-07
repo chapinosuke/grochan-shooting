@@ -20,7 +20,9 @@ import * as THREE from './assets/lib/three.module.min.js';
 
 (() => {
   const VW = 1280, VH = 720;
-  const api = { ready: false, canvas: null, render: () => false, setQuality: () => {} };
+  // version は「今ブラウザが実際に読んでいる bg3d.js」を確認するための目印。
+  // ローカルは Cache-Control が無く古い版が残りやすいので、修正のたびに更新する。
+  const api = { version: 'whale-4', ready: false, canvas: null, render: () => false, setQuality: () => {} };
   window.GRO_BG3D = api;
 
   let renderer;
@@ -1720,8 +1722,13 @@ import * as THREE from './assets/lib/three.module.min.js';
             // 上昇中は機首上げ、下降中は機首下げ。ただし**傾けすぎない**:
             // 全長135ユニットの体を45°傾けると尾が中心から約48ユニット上へ跳ね、
             // 着水間際でも尾だけ水面上に残る。終盤(p>.7)は水平へ戻していく。
-            const level = W.p > .7 ? 1 - (W.p - .7) / .3 : 1;
-            whale.rotation.z = Math.cos(W.p * Math.PI) * .42 * level;
+            // 体が水面下に入ったら即座に水平へ戻す。傾いたまま沈めると、体長の
+            // 半分(約68ユニット)が梃子になって尾だけ水面上に残り続ける。
+            const submerged = whale.position.y < -17 - WHALE_HALF * .2;
+            const level = submerged ? 0 : (W.p > .62 ? 1 - (W.p - .62) / .38 : 1);
+            whale.rotation.z = Math.cos(W.p * Math.PI) * .42 * Math.max(0, level);
+            // 完全に水面下へ入ったら、そこで隠して沈黙させる(浮き上がって見えない)
+            if (whale.position.y < -17 - WHALE_HALF && W.p > .5) whale.visible = false;
             whale.userData.blow.material.opacity =
               W.p > .42 && W.p < .6 ? .8 * Math.sin((W.p - .42) / .18 * Math.PI) : 0;
             // 水しぶきは「中心が海面を越えた時」ではなく「体が水面に触れた時」に出す。
