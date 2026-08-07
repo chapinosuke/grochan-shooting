@@ -1506,28 +1506,79 @@ import * as THREE from './assets/lib/three.module.min.js';
     }
     const whale = buildWhale();
     // 素の全長52ユニットでは z=-130 で約275pxにしかならず「巨大」に見えない。
-    // 2倍で全長104ユニット ≒ 550px(可視幅の半分弱)。跳躍高度もこれに合わせてある。
-    whale.scale.setScalar(2);
-    whale.position.set(0, -40, -130);
+    // 2.6倍 = 全長135ユニット ≒ 720px(画面幅の半分強)。
+    // WHALE_HALF は体の上下方向の張り出し(尾びれ込み)。潜航時の深さと
+    // 水しぶきの発生タイミングを全部これから決めるので、scale を変えたら必ず更新する。
+    const WHALE_SCALE = 2.6, WHALE_HALF = 8.5 * WHALE_SCALE;
+    const WHALE_DEEP = -17 - WHALE_HALF - 14;    // 完全に水中へ隠れる深さ
+    whale.scale.setScalar(WHALE_SCALE);
+    whale.position.set(0, WHALE_DEEP, -130);
     whale.userData.wait = rand(3, 8);
     whale.userData.p = -1;                       // -1 = 潜航中
     scene.add(whale);
 
     // 水しぶき: 離水・着水の瞬間に海面へ広がる泡のプール
+    // 泡のかたまり: 滑らかな放射グラデだと「白い靄」にしか見えないので、
+    // 粒を寄せ集めたテクスチャにして水泡の粒立ちを出す。
+    const foamTex = makeTex(128, 128, (g, w, h) => {
+      for (let i = 0; i < 90; i++) {
+        const a = Math.random() * 6.3, r = Math.pow(Math.random(), .6) * w * .46;
+        const x = w / 2 + Math.cos(a) * r, y = h / 2 + Math.sin(a) * r * .7;
+        const rr = (1 - r / (w * .5)) * 15 + 3;
+        g.globalAlpha = (1 - r / (w * .52)) * rand(.35, .95);
+        g.fillStyle = '#ffffff';
+        g.beginPath(); g.ellipse(x, y, rr, rr * rand(.6, 1), 0, 0, 6.3); g.fill();
+      }
+      g.globalAlpha = 1;
+    });
     const splashes = [];
-    for (let i = 0; i < 10; i++) {
-      const sp = sprite(softTex('#f0ffff'), 0xf0ffff, 10, 0, THREE.NormalBlending);
+    for (let i = 0; i < 14; i++) {
+      const sp = sprite(foamTex, 0xf4ffff, 10, 0, THREE.NormalBlending);
       sp.visible = false;
+      // depthTest を切らないと、同じ深度にいるクジラの巨体に飛沫が飲み込まれて
+      // 一切見えなくなる(「水しぶきが出ない」の原因はこれ)。描画順で手前に出す。
+      sp.material.depthTest = false;
+      sp.renderOrder = 6;
       scene.add(sp);
       splashes.push(sp);
     }
-    function splash(x, z, size) {
+    const drops = [];
+    for (let i = 0; i < 90; i++) {
+      const dp = sprite(softTex('#ffffff'), 0xeaffff, 3, 0, THREE.NormalBlending);
+      dp.visible = false;
+      dp.material.depthTest = false;
+      dp.renderOrder = 7;
+      scene.add(dp);
+      drops.push(dp);
+    }
+
+    // 1回の出入水につき複数枚を散らす。1枚だけだと「白い丸」に見えて
+    // 水しぶきとして読めない。
+    function splash(x, z, size, n) {
+      let spawned = 0;
       for (const sp of splashes) {
+        if (spawned >= n) break;
         if (sp.visible) continue;
         sp.visible = true;
-        sp.position.set(x + rand(-6, 6), -15.5, z);
-        sp.userData = { t: 0, life: .9 + Math.random() * .5, size: size * rand(.7, 1.3) };
-        return;
+        sp.position.set(x + rand(-size * .5, size * .5), -15.5 + rand(0, size * .12), z + 12 + rand(-4, 4));
+        sp.userData = {
+          t: 0, life: 1.1 + Math.random() * .7,
+          size: size * rand(.55, 1.15), rise: rand(6, 20)
+        };
+        spawned++;
+      }
+      // 水滴: 泡のかたまりだけだと靄に見える。放物線を描いて落ちる粒があって
+      // はじめて「水しぶき」として読める。
+      let d = 0;
+      for (const dp of drops) {
+        if (d >= n * 5) break;
+        if (dp.visible) continue;
+        dp.visible = true;
+        dp.position.set(x + rand(-size * .35, size * .35), -16, z + 12);
+        const a = -Math.PI / 2 + rand(-1.05, 1.05);
+        const v = rand(18, 46) * (size / 90 + .55);
+        dp.userData = { t: 0, life: 1 + Math.random() * .8, vx: Math.cos(a) * v, vy: -Math.sin(a) * v, s: rand(1.6, 4.2) };
+        d++;
       }
     }
 
@@ -1662,29 +1713,41 @@ import * as THREE from './assets/lib/three.module.min.js';
           if (W.wait <= 0) {
             W.p = 0;
             W.dur = 3.4 + Math.random() * 1.2;
-            // 跳躍高度: 海面(y=-17)を 30ユニット以上抜けないと体が出ない。
-            // 開始xは画面中央寄り(z=-130 での可視幅は概ね ±110ユニット)。
-            W.arc = 62 + Math.random() * 14;      // 体が大きい分だけ高く抜く
-            whale.position.set(rand(-45, 45), -46, -130 + rand(-25, 25));
+            // 跳躍高度: 体の張り出し(WHALE_HALF)ぶんを海面から抜かないと
+            // 「浮き上がっただけ」に見える。中心が海面の 1.6倍上まで届く高さにする。
+            W.arc = (-17 - WHALE_DEEP) + WHALE_HALF * 1.6 + Math.random() * 14;
+            whale.position.set(rand(-45, 45), WHALE_DEEP, -130 + rand(-25, 25));
             whale.rotation.y = Math.random() < .5 ? 0 : Math.PI;   // 向きも振る
+            W.wet = false;                        // 水面をまだ割っていない
           }
         } else {
           const prevY = whale.position.y;
           W.p += dt / W.dur;
           if (W.p >= 1) {                         // 着水しきったら潜航へ
             W.p = -1; W.wait = 5 + Math.random() * 8;
-            whale.position.y = -46;
+            whale.position.y = WHALE_DEEP;
+            // **姿勢を水平に戻す**。傾いたまま潜らせると、体の長さぶん尾が
+            // 跳ね上がって水面から突き出したままになる(潜航中に尻尾が出る不具合)。
+            whale.rotation.z = 0;
           } else {
             const s = Math.sin(W.p * Math.PI);     // 0→1→0 の放物線
-            whale.position.y = -46 + W.arc * s;
+            whale.position.y = WHALE_DEEP + W.arc * s;
             whale.position.x += (whale.rotation.y ? -1 : 1) * 11 * dt - dx * .8;
             // 上昇中は機首上げ、下降中は機首下げ(実際の跳躍の姿勢)
             whale.rotation.z = Math.cos(W.p * Math.PI) * .85;
             whale.userData.blow.material.opacity =
               W.p > .42 && W.p < .6 ? .8 * Math.sin((W.p - .42) / .18 * Math.PI) : 0;
-            // 海面(y=-17)を横切った瞬間に水しぶき
-            if (prevY < -17 && whale.position.y >= -17) splash(whale.position.x, whale.position.z, 62);
-            if (prevY > -17 && whale.position.y <= -17) splash(whale.position.x, whale.position.z, 88);
+            // 水しぶきは「中心が海面を越えた時」ではなく「体が水面に触れた時」に出す。
+            // 中心基準だと、体半分が既に空中に出てから飛沫が湧いて繋がって見えない。
+            const surf = -17 - WHALE_HALF * .7;
+            if (!W.wet && whale.position.y >= surf) {      // 離水
+              W.wet = true;
+              splash(whale.position.x, whale.position.z, 78, 4);
+            }
+            if (W.wet && whale.position.y < surf && W.p > .5) {   // 着水
+              W.wet = false;
+              splash(whale.position.x, whale.position.z, 120, 6);
+            }
           }
         }
         for (const sp of splashes) {
@@ -1693,9 +1756,23 @@ import * as THREE from './assets/lib/three.module.min.js';
           u.t += dt;
           const q = u.t / u.life;
           if (q >= 1) { sp.visible = false; continue; }
-          const sc = u.size * (.4 + q * 1.3);
-          sp.scale.set(sc, sc * .5, 1);
-          sp.material.opacity = .75 * (1 - q) * (q < .12 ? q / .12 : 1);
+          // 立ち上がって広がりながら落ちる: 上へ伸びてから重力で潰れる
+          const sc = u.size * (.35 + q * 1.15);
+          sp.scale.set(sc, sc * (.75 - q * .35), 1);
+          sp.position.y = -15.5 + u.rise * Math.sin(Math.min(1, q * 1.7) * Math.PI * .5) - q * q * u.rise * .8;
+          sp.material.opacity = .9 * (1 - q * q) * (q < .1 ? q / .1 : 1);
+        }
+        for (const dp of drops) {                 // 水滴: 放物線を描いて落ちる
+          if (!dp.visible) continue;
+          const u = dp.userData;
+          u.t += dt;
+          const q = u.t / u.life;
+          if (q >= 1) { dp.visible = false; continue; }
+          dp.position.x += u.vx * dt;
+          dp.position.y += (u.vy - 34 * u.t) * dt;
+          const s2 = u.s * (1 - q * .35);
+          dp.scale.set(s2, s2, 1);
+          dp.material.opacity = .95 * (1 - q * q);
         }
 
         cargo.position.x -= dx * .55 + 3.5 * dt;
