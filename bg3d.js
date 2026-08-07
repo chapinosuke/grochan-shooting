@@ -1413,26 +1413,9 @@ import * as THREE from './assets/lib/three.module.min.js';
       scene.add(bu); buoys.push(bu);
     }
 
-    // 帆船(ゆっくり滑り、波でわずかに揺れる)
-    const boats = [];
-    for (let i = 0; i < 3; i++) {
-      const bo = new THREE.Group();
-      const hull = new THREE.Mesh(new THREE.BoxGeometry(6.5, 1.4, 2), lambert({ color: 0x1c4a6e }));
-      hull.position.y = .5; bo.add(hull);
-      const mast = new THREE.Mesh(new THREE.CylinderGeometry(.12, .16, 7, 4), lambert({ color: 0xdaf0f8 }));
-      mast.position.y = 4.4; bo.add(mast);
-      const sailShape = new THREE.Shape();
-      sailShape.moveTo(0, 0); sailShape.lineTo(0, 6); sailShape.lineTo(3.4, .4); sailShape.lineTo(0, 0);
-      const sail = new THREE.Mesh(new THREE.ShapeGeometry(sailShape),
-        lambert({ color: 0xf4fbff, side: THREE.DoubleSide, emissive: 0x223a4a }));
-      sail.position.set(.15, 1.2, 0);
-      bo.add(sail);
-      const cabinLight = sprite(softTex('#ffd9a0'), 0xffd9a0, 1.6, .9);
-      cabinLight.position.set(-2, 1.4, 0); bo.add(cabinLight);
-      bo.position.set(rand(-200, 240), -16.6, rand(-150, -105));
-      bo.userData = { ph: rand(0, 6.28), v: rand(1.5, 3.5) * pick([-1, 1]), min: -260, span: 520 };
-      scene.add(bo); boats.push(bo);
-    }
+    // 帆船は撤去した。この距離だと三角帆が水面から突き出す暗い三角形になり、
+    // 「クジラの尻尾が出たまま潜らない」と見えてしまう(実際に誤認された)。
+    // 海上の人の気配は、灯りが多く形の分かる貨物船が担当する。
 
     // --- ザトウクジラ: 実3Dのブリーチング -----------------------------
     // 旧2Dの巨大魚(平面のカートゥーン)の置き換え。旋盤形状の流線型ボディに
@@ -1615,7 +1598,8 @@ import * as THREE from './assets/lib/three.module.min.js';
     // 跳ねる魚群: 小さな銀色の紡錘が水面を出入りする
     const jumpers = [];
     for (let i = 0; i < 12; i++) {
-      const f = new THREE.Mesh(new THREE.SphereGeometry(1, 6, 5), lambert({ color: 0xbfe4f5 }));
+      const f = new THREE.Mesh(new THREE.SphereGeometry(1, 6, 5),
+        lambert({ color: 0xdff2ff, emissive: 0x3a5a70, emissiveIntensity: .6 }));
       f.scale.set(2.6, .8, .5);
       f.position.set(rand(-260, 260), -18, rand(-120, -55));
       f.userData = { ph: rand(0, 6.28), sp: rand(.7, 1.4) };
@@ -1667,13 +1651,6 @@ import * as THREE from './assets/lib/three.module.min.js';
           bu.position.y = -17 + Math.sin(t * 1.6 + bu.userData.ph) * .5;
           bu.rotation.z = Math.sin(t * 1.2 + bu.userData.ph) * .12;
           bu.userData.light.material.opacity = .3 + .7 * Math.max(0, Math.sin(t * 2.6 + bu.userData.ph));
-        }
-        for (const bo of boats) {
-          bo.position.x -= dx * .9 - bo.userData.v * dt;
-          if (bo.position.x < bo.userData.min) bo.position.x += bo.userData.span;
-          else if (bo.position.x > bo.userData.min + bo.userData.span) bo.position.x -= bo.userData.span;
-          bo.position.y = -16.6 + Math.sin(t * 1.3 + bo.userData.ph) * .3;
-          bo.rotation.z = Math.sin(t * .9 + bo.userData.ph) * .06;
         }
         seaTex.offset.x += dx * (24 / 1500);      // 橋・島と同じ世界速度
         seaTex.offset.y = Math.sin(t * .4) * .012; // うねり
@@ -1791,7 +1768,7 @@ import * as THREE from './assets/lib/three.module.min.js';
           f.position.x -= dx * .9;
           if (f.position.x < -280) f.position.x += 560;
           const a = Math.sin(t * f.userData.sp + f.userData.ph);
-          f.position.y = -18 + Math.max(0, a) * 5.5;
+          f.position.y = -18.5 + Math.max(0, a) * 3.4;
           f.rotation.z = Math.cos(t * f.userData.sp + f.userData.ph) * .7;
         }
         for (const b of blinkers) b.material.opacity = .3 + .7 * Math.max(0, Math.sin(t * 2.2 + b.userData.blink));
