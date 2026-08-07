@@ -23,6 +23,10 @@
 
 ## 3. 実行と動作確認
 ローカルサーバ（`file://` だと一部アセットが読めないので必須）:
+- **`bg3d.js` / `game.js` を変えたら `index.html` の `?v=` を必ず上げる。**
+  `python3 -m http.server` は `Cache-Control` を返さないため、Chrome が
+  Last-Modified からヒューリスティックに古い版を使い続け、
+  「修正したのに変わらない」という誤診に何度もつながる（実機確認前に必ず）。
 ```
 python3 -m http.server 8123      # プロジェクト直下で起動
 # 停止: lsof -ti:8123 | xargs kill
