@@ -1707,6 +1707,9 @@ import * as THREE from './assets/lib/three.module.min.js';
         // --- クジラのブリーチング -------------------------------------
         const W = whale.userData;
         if (W.p < 0) {                            // 潜航中: 次の跳躍を待つ
+          // 潜っている間は完全に隠す。海面プレーンの遮蔽に頼ると、体長135ユニットの
+          // 巨体はわずかな姿勢の残りでも尾が水面から突き出してしまう。
+          whale.visible = false;
           W.wait -= dt;
           whale.position.x -= dx * .8 + 6 * dt;
           if (whale.position.x < -300) whale.position.x += 620;
@@ -1718,6 +1721,8 @@ import * as THREE from './assets/lib/three.module.min.js';
             W.arc = (-17 - WHALE_DEEP) + WHALE_HALF * 1.6 + Math.random() * 14;
             whale.position.set(rand(-45, 45), WHALE_DEEP, -130 + rand(-25, 25));
             whale.rotation.y = Math.random() < .5 ? 0 : Math.PI;   // 向きも振る
+            whale.rotation.z = 0;
+            whale.visible = true;
             W.wet = false;                        // 水面をまだ割っていない
           }
         } else {
@@ -1730,11 +1735,16 @@ import * as THREE from './assets/lib/three.module.min.js';
             // 跳ね上がって水面から突き出したままになる(潜航中に尻尾が出る不具合)。
             whale.rotation.z = 0;
           } else {
-            const s = Math.sin(W.p * Math.PI);     // 0→1→0 の放物線
+            // 上りは放物線、下りは指数を効かせて一気に沈める(尾を長く見せない)
+            const s = W.p <= .5 ? Math.sin(W.p * Math.PI)
+              : Math.pow(Math.sin(W.p * Math.PI), 1.9);
             whale.position.y = WHALE_DEEP + W.arc * s;
             whale.position.x += (whale.rotation.y ? -1 : 1) * 11 * dt - dx * .8;
-            // 上昇中は機首上げ、下降中は機首下げ(実際の跳躍の姿勢)
-            whale.rotation.z = Math.cos(W.p * Math.PI) * .85;
+            // 上昇中は機首上げ、下降中は機首下げ。ただし**傾けすぎない**:
+            // 全長135ユニットの体を45°傾けると尾が中心から約48ユニット上へ跳ね、
+            // 着水間際でも尾だけ水面上に残る。終盤(p>.7)は水平へ戻していく。
+            const level = W.p > .7 ? 1 - (W.p - .7) / .3 : 1;
+            whale.rotation.z = Math.cos(W.p * Math.PI) * .42 * level;
             whale.userData.blow.material.opacity =
               W.p > .42 && W.p < .6 ? .8 * Math.sin((W.p - .42) / .18 * Math.PI) : 0;
             // 水しぶきは「中心が海面を越えた時」ではなく「体が水面に触れた時」に出す。
