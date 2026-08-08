@@ -1585,3 +1585,95 @@ palace だけは画家キューに `volPush(COLOSSUS_Z, …)` で最奥として
   無く古い bg3d.js が残りやすいので、「修正が反映されていない」と言われたら
   **まずコンソールで version を確認**すること。修正のたびにこの文字列と
   `index.html` の `?v=` を更新する。
+
+### 状態: Three.js ステージ豪華化フルパス (2026-08-08, lux-1)
+**目的**: 全5ステージの 3D 背景を「名物セットピース + ボス/警告 mood」で底上げ。
+**version**: `GRO_BG3D.version = 'lux-1'` / `index.html ?v=13`
+
+#### 共通インフラ
+- `moodT(s)` — warning/boss/energy から 0..1 の緊張度
+- `mixFog(fog, calm, tense, t, farCalm, farTense)` — fog 色と far を補間
+- `breath(t, ph, lo, hi, rate)` — ビーコン等の呼吸明滅
+
+#### ステージ別
+| St | 追加・強化 |
+|----|-----------|
+| S1 | 首都高の車種差(タクシー黄/トラック)、boss/warning で fog を赤紫へ・ネオン点滅加速 |
+| S2 | mood 連動で fog/月光を深めるのみ(クジラ・橋は非接触) |
+| S3 | boss/warning で fog 深化・フレア炎強化 |
+| **S4** | **巨大データコア塔**(回転リング+噴流)、**浮遊サーバ群**(走査ビーム)、**ホロ広告板**、落雷着弾リング、渦/落雷の mood 連動 |
+| **S5** | **巨大中央シャンデリア**、**玉座**(段丘+天蓋+紋章、ボス時に接近・明化)、列柱アーチ+奥列、床ライトプール、薔薇花びら粒子、ハート壁 emissive 点滅 |
+
+#### 戦闘オーバーレイ
+- ボス: 三重オーラ + 軌道光球 5→7、ステージ accent 色
+- explode: 第三リングに hull/ステージ色
+
+#### 検証
+- headless `shot-bg3d.js` で S1–S5 before/after を `.devtools/baseline/` に保存
+- ランタイム: `ready:true` / `version:'lux-1'` / pageerror なし
+- **実機 F1 ≥55 はユーザー確認待ち**(密度増のため)
+- キャッシュ: コンソールで `GRO_BG3D.version` を確認
+
+#### 残
+- コミットはユーザー指示待ち
+- 追加ステージ検討は別トラック
+- ハザード(pour/train)と 3D 演出の完全同期は未着手(mood 経由の雰囲気変化のみ)
+
+### 追記: S5 作り込み — スピーカー＋雑魚(2026-08-08, lux-s5)
+**version**: `GRO_BG3D.version = 'lux-s5'` / `index.html ?v=14`
+
+#### スピーカー
+- 2D `drawSpeaker`: 3段PA(サブ/ミッド/トップ)、グリル布・ハンドル・コーナー金具・
+  LED VU・バスレフ・ホーン。`musicLevel()` で箱全体がガタつき、コーン伸縮、
+  キックで衝撃波リング＋足元ダスト。`drawSpeakerCone` を共通化。
+- 3D: `buildPalace` に左右 PA スタック。`render({ music })` でコーン/LED/振動。
+  game.js の `drawBackdrop` が `music: musicLevel()` を渡す。
+
+#### 雑魚(見た目＋体躯)
+| type | 変更 |
+|------|------|
+| cupid | 全面描き直し: 四枚羽根・後光・金弓矢・リボン。w/h・HP アップ |
+| knight | 面頬ヘルム・三層マント・リベット鎧・ランス発光。w/h・HP アップ |
+| rosebud | オーラ＋金粉芯、scale 1.12、HP5 |
+| cardguard | 箔押し・宝石冠・scale 1.14、HP9 |
+| teacup | 反射・煮立つ茶・scale 1.14、HP6 |
+
+
+### 状態: 最終ステージ Finale Weight フル実装 (2026-08-08, finale-1)
+**version**: `GRO_BG3D.version = 'finale-1'` / `index.html ?v=16`
+
+#### サウンド
+- 専用 SFX 9 本を assets/sfx に追加（効果音ラボ・THIRD_PARTY 追記）
+- `royalSfx` を entrance/phase/impact/cast/charge/defeat/heartbeat に拡張
+- 女王ボイス: `necromancer-oldwoman` rate 0.9（S2 witch と分離）
+- BGM ローパス圧 `setPalaceBgmPressure`（道中で溜め→入場で開放→撃破で再び）
+- 雑魚個性音: heartPop / cardSlash / teacupClink
+- シャンデリア: creak 予兆 + wallBreak/royalBoom 着弾
+- PA キック時の低音ワンショット（gate 付き）
+- S5 のみ boom/bigBoom をわずかに重く
+
+#### 演出
+- 最終 WARNING を 5.4s の緞帳シネマ（FINAL ACT 文言）
+- 女王 `mode:'entrance'` でゆっくり入場→着地衝撃波
+- 幕転換・crit の hitStop / shake を女王だけ増強
+- 撃破: royalSfx('defeat') + 花火/鐘の遅延レイヤー
+- 床ひび `floorCracks`（シャンデリア着弾後）
+
+#### 3D 背景
+- 観客シルエット帯、二重宮殿シルエット
+- tier/crit/cinema/dying で fog・玉座接近・崩壊金屑
+- 床の低音呼吸、PA ボス時振動増
+
+#### 確認
+- headless: ready true / render ok
+- 実機 F1・BGM ON での入場〜撃破はユーザー確認待ち
+- コミットはユーザー指示待ち
+
+
+### 追記: 効果音を元に戻した (2026-08-08)
+- 最終ステージ向けに入れた専用SFX配線・`royalSfx`拡張・BGMローパス圧・
+  雑魚個性音・心拍/PAキック・女王ボイス差し替えを**すべて撤去**。
+- `royalSfx` は従来の既存サンプル重ね＋合成和音に復帰。
+- 女王ボイスは `witch` rate 1.0 に復帰。
+- 視覚演出（シネマ/入場/3D/床ひび等）はそのまま。
+- `index.html ?v=17`

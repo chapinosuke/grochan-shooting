@@ -711,6 +711,8 @@
   let aquaRings = [];    // expanding surface ripples left by the big fish (cosmetic)
   let boltGhosts = [];   // fading after-images of recent lightning strikes (cosmetic)
   let palaceBossMix = 0; // eased 0..1: palace shifts to battle lighting while the queen is on stage
+  let queenCinema = 0;   // final-boss warning cinematic timer (seconds remaining)
+  let floorCracks = [];  // decorative marble cracks after chandelier impacts
   let nearProps = [];
   let lifeAgents = [];   // background inhabitants (birds, fish, drones, courtiers...)
   let motes = [];        // depth-layered airborne particulate (the weather pass)
@@ -1021,7 +1023,7 @@
     bossState = 'waiting'; bossWarning = 0; midBossDone = false;
     stageIndex = 0; stageTime = 0; stageBanner = 3; stageTransition = 0;
     musicClock = 0; musicStep = 0;
-    totalKills = 0; stageResult = null; lightning = 0; palaceBossMix = 0; delayedBursts = [];
+    totalKills = 0; stageResult = null; lightning = 0; palaceBossMix = 0; queenCinema = 0; floorCracks = []; delayedBursts = [];
     special = 35; specialFlash = 0; formationTimer = 2.8;
     continuesLeft = 3; continueBanner = 0; powerDownBanner = 0;
     bombStock = 0; charmStock = 0; charmFlash = 0;
@@ -1193,6 +1195,7 @@
     if (!soundOn || !def || !pool) return false;
     const voice = pool.voices[pool.cursor++ % pool.voices.length];
     voice.pause(); voice.currentTime = 0; voice.volume = def.volume;
+    try { voice.playbackRate = 1; } catch (_) {}
     voice.play().catch(() => { /* audio resumes on the next user gesture */ });
     if (def.max) setTimeout(() => { if (!voice.paused && voice.currentTime >= def.max - .08) { voice.pause(); voice.currentTime = 0; } }, def.max * 1000);
     return true;
@@ -1521,7 +1524,17 @@
     // Don't let a boss counter-attack into the bomb's own invulnerability window.
     const bombed = enemies.find(e => e.type === 'boss');
     if (bombed) bombed.sp = Math.max(bombed.sp || 0, 1.4);
-    burst(cx, cy, '#ffe15a', 70, 620); sfx('special'); voice('special'); updateSpecialButton();
+    burst(cx, cy, '#ffe15a', 70, 620);
+    // 必殺は常に重く、最終ステージではもう一段階
+    hitStop = Math.max(hitStop, stageIndex === 4 ? .12 : .08);
+    flash = Math.max(flash, stageIndex === 4 ? .55 : .4);
+    if (stageIndex === 4) {
+      shockwaves.push({ x: cx, y: cy, r: 30, speed: 880, life: 1.15, max: 1.15, color: '#ff3e9d' });
+      fx3d('nova', cx, cy, { color: 0xffe15a, size: 1.45 });
+    } else {
+      fx3d('nova', cx, cy, { color: 0xffe15a, size: 1.15 });
+    }
+    sfx('special'); voice('special'); updateSpecialButton();
   }
 
   function updateSpecialButton() {
@@ -1651,7 +1664,7 @@
     else if (type === 'manta') e = { type, x: VW + 90, y: Math.min(y, 455), baseY: Math.min(y, 455), w: 88, h: 52, hp: 4, maxHp: 4, vx: 125 + rank * 28, t: Math.random() * 6, wave: true, points: 440, fire: 1.45 };
     else if (type === 'walker') e = { type, x: VW + 90, y: 548, baseY: 548, w: 84, h: 92, hp: 8, maxHp: 8, vx: 92 + rank * 18, t: Math.random() * 2, wave: false, points: 760, fire: .85 };
     else if (type === 'seeker') e = { type, x: VW + 80, y, baseY: y, w: 68, h: 68, hp: 5, maxHp: 5, vx: 155 + rank * 30, t: Math.random() * 6, wave: true, points: 520, fire: 1.15 };
-    else if (type === 'knight') e = { type, x: VW + 80, y: Math.min(y, 500), baseY: Math.min(y, 500), w: 72, h: 82, hp: 7, maxHp: 7, vx: 115 + rank * 20, t: Math.random() * 6, wave: true, points: 680, fire: 1.3 };
+    else if (type === 'knight') e = { type, x: VW + 80, y: Math.min(y, 500), baseY: Math.min(y, 500), w: 84, h: 96, hp: 9, maxHp: 9, vx: 108 + rank * 18, t: Math.random() * 6, wave: true, points: 820, fire: 1.2 };
     // --- Stage-signature small fry --------------------------------------
     else if (type === 'crow') e = { type, x: VW + 70, y, baseY: y, w: 76, h: 54, hp: 2, maxHp: 2, vx: 235 + rank * 44, t: Math.random() * 6, wave: true, points: 210, fire: 99 };
     else if (type === 'alleycat') e = { type, x: VW + 80, y: 570, baseY: 570, w: 82, h: 64, hp: 4, maxHp: 4, vx: 155 + rank * 28, t: Math.random() * 6, wave: false, points: 390, fire: 1.8 };
@@ -1662,9 +1675,9 @@
     else if (type === 'cloudray') e = { type, x: VW + 90, y, baseY: y, w: 98, h: 60, hp: 4, maxHp: 4, vx: 142 + rank * 30, t: Math.random() * 6, wave: true, points: 520, fire: 1.8 };
     else if (type === 'voltbug') e = { type, x: VW + 70, y, baseY: y, w: 68, h: 66, hp: 3, maxHp: 3, vx: 190 + rank * 38, t: Math.random() * 6, wave: true, points: 430, fire: 1.4 };
     else if (type === 'packetwyrm') e = { type, x: VW + 120, y, baseY: y, w: 154, h: 64, hp: 10, maxHp: 10, vx: 92 + rank * 18, t: Math.random() * 6, wave: true, points: 1200, fire: 1.7 };
-    else if (type === 'rosebud') e = { type, x: VW + 70, y, baseY: y, w: 72, h: 72, hp: 4, maxHp: 4, vx: 118 + rank * 24, t: Math.random() * 6, wave: true, points: 520, fire: 1.75 };
-    else if (type === 'cardguard') e = { type, x: VW + 80, y: 554, baseY: 554, w: 74, h: 86, hp: 7, maxHp: 7, vx: 110 + rank * 20, t: Math.random() * 6, wave: false, points: 760, fire: 1.3 };
-    else if (type === 'teacup') e = { type, x: VW + 80, y: 582, baseY: 582, w: 82, h: 56, hp: 5, maxHp: 5, vx: 145 + rank * 24, t: Math.random() * 6, wave: false, points: 590, fire: 1.65 };
+    else if (type === 'rosebud') e = { type, x: VW + 70, y, baseY: y, w: 82, h: 82, hp: 5, maxHp: 5, vx: 112 + rank * 22, t: Math.random() * 6, wave: true, points: 600, fire: 1.65 };
+    else if (type === 'cardguard') e = { type, x: VW + 80, y: 548, baseY: 548, w: 86, h: 98, hp: 9, maxHp: 9, vx: 102 + rank * 18, t: Math.random() * 6, wave: false, points: 900, fire: 1.2 };
+    else if (type === 'teacup') e = { type, x: VW + 80, y: 576, baseY: 576, w: 94, h: 64, hp: 6, maxHp: 6, vx: 138 + rank * 22, t: Math.random() * 6, wave: false, points: 700, fire: 1.55 };
     // --- AQUA HIGHWAY deep-sea fauna -------------------------------------
     // Dumbo octopus (メンダコ): the slowest thing in the stage, drifting on its
     // ear fins. Soft, cheap to kill, but it fogs the lane with ink on the way out.
@@ -1680,7 +1693,7 @@
     // off to the right of it. Holds station and lunges, jaws first, instead of
     // shooting; `lunge`/`recoil`/`jaw` drive both the dash and the art.
     else if (type === 'moray') e = { type, x: VW + 260, y: clamp(y, 60, 470), baseY: clamp(y, 60, 470), w: 150, h: 92, hp: 16, maxHp: 16, vx: 40 + rank * 10, t: Math.random() * 6, wave: true, points: 1800, fire: 2.8, lunge: 0, recoil: 0, jaw: 0 };
-    else e = { type: 'cupid', x: VW + 70, y, baseY: y, w: 62, h: 58, hp: 3, maxHp: 3, vx: 120, t: Math.random() * 6, wave: true, points: 340, fire: 1.6 };
+    else e = { type: 'cupid', x: VW + 70, y, baseY: y, w: 78, h: 72, hp: 4, maxHp: 4, vx: 128 + rank * 22, t: Math.random() * 6, wave: true, points: 480, fire: 1.45 };
     const variantRoll = Math.random();
     // Stage 1 mostly fields plain enemies so the player learns the base patterns
     // before armored/elite variants start soaking shots.
@@ -1955,8 +1968,13 @@
     shake = 18; flash = .55;
     playBgm(stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle', true);
     sfx('warning');
-    if (isFinalBoss) royalSfx('entrance');
-    else { sfx('boss'); sfx('bossRoar'); sfx('bossQuake'); }
+    if (isFinalBoss) {
+      royalSfx('entrance');
+      boss.mode = 'entrance';
+      boss.entranceT = 0;
+      queenCinema = 0;
+      shake = Math.max(shake, 24); flash = Math.max(flash, .7);
+    } else { sfx('boss'); sfx('bossRoar'); sfx('bossQuake'); }
     bossVoice(stageIndex, 'appear');
   }
 
@@ -1997,7 +2015,8 @@
         warn: 1.0 * D.telMul, live: .24, fade: .18, lock: .6 * D.telMul, aim: true, t: 0,
         damage: 28, color: stages[stageIndex].accent2,
       });
-      e.attackT = .5; sfx('boss'); shake = Math.max(shake, 6);
+      e.attackT = .5; sfx('boss'); shake = Math.max(shake, stageIndex === 4 ? 9 : 6);
+      if (stageIndex === 4) { flash = Math.max(flash, .15); hitStop = Math.max(hitStop, .04); }
       e.beamT = rage ? 4.4 : 6;
     }
     if (engaged && e.fire <= 0) {
@@ -2006,10 +2025,14 @@
       const count = Math.max(4, Math.round((rage ? 9 : 6) * difficulties[difficultyKey].barrage));
       for (let i = 0; i < count; i++) {
         const a = aim + (i - (count - 1) / 2) * .17;
-        enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * (270 + stageIndex * 22), vy: Math.sin(a) * (270 + stageIndex * 22), r: 10, life: 6.5, damage: 21 + stageIndex * 2, boss: true, volt: stageIndex === 3, fire: stageIndex === 2, heart: stageIndex === 4, bubble: stageIndex === 1 });
+        enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * (270 + stageIndex * 22), vy: Math.sin(a) * (270 + stageIndex * 22), r: stageIndex === 4 ? 11 : 10, life: 6.5, damage: 21 + stageIndex * 2, boss: true, volt: stageIndex === 3, fire: stageIndex === 2, heart: stageIndex === 4, bubble: stageIndex === 1 });
       }
-      burst(ox, oy, stages[stageIndex].accent2, 16, 230); e.fire = rage ? .38 : .54;
-      e.attackT = .45; shake = Math.max(shake, 5);
+      burst(ox, oy, stages[stageIndex].accent2, stageIndex === 4 ? 22 : 16, stageIndex === 4 ? 280 : 230); e.fire = rage ? .38 : .54;
+      e.attackT = .45; shake = Math.max(shake, stageIndex === 4 ? 8 : 5);
+      if (stageIndex === 4) {
+        shockwaves.push({ x: ox, y: oy, r: 10, speed: 380, life: .4, max: .4, color: stages[stageIndex].accent2 });
+        hitStop = Math.max(hitStop, .03);
+      }
     }
     if (engaged && e.sp <= 0) {
       e.attackT = .55;
@@ -2017,7 +2040,7 @@
       const count = Math.max(10, Math.round((rage ? 20 : 14) * difficulties[difficultyKey].barrage));
       for (let i = 0; i < count; i++) {
         const a = i / count * Math.PI * 2 + e.t * .4;
-        enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 195, vy: Math.sin(a) * 195, r: 9, life: 6, damage: 19 + stageIndex * 2, boss: true });
+        enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 195, vy: Math.sin(a) * 195, r: stageIndex === 4 ? 10 : 9, life: 6, damage: 19 + stageIndex * 2, boss: true });
       }
       // Side cannons
       for (const side of [-1, 1]) {
@@ -2027,7 +2050,12 @@
       }
       shockwaves.push({ x: cx, y: cy, r: 20, speed: 400, life: .7, max: .7, color: stages[stageIndex].accent2 });
       shockwaves.push({ x: cx, y: cy, r: 8, speed: 260, life: .5, max: .5, color: '#fff' });
-      sfx('boss'); shake = Math.max(shake, 9); e.sp = rage ? 2.1 : 2.9;
+      sfx('boss'); shake = Math.max(shake, stageIndex === 4 ? 13 : 9);
+      if (stageIndex === 4) {
+        flash = Math.max(flash, .25); hitStop = Math.max(hitStop, .06);
+        fx3d('impact', cx, cy, { color: 0xff3e9d, size: 1.2 });
+      }
+      e.sp = rage ? 2.1 : 2.9;
     }
   }
 
@@ -2339,9 +2367,9 @@
 
   function bossBreak(e, idx) {
     clearEnemyFire();
-    shake = 12 + e.tier * 5;
-    flash = .40 + e.tier * .16;
-    hitStop = Math.max(hitStop, .12 + e.tier * .03);
+    shake = 12 + e.tier * 5 + (idx === 4 ? 6 : 0);
+    flash = .40 + e.tier * .16 + (idx === 4 ? .1 : 0);
+    hitStop = Math.max(hitStop, .12 + e.tier * .03 + (idx === 4 ? .06 : 0));
     shockwaves.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, r: 24, speed: 620, life: .85, max: .85, color: stages[idx].accent2 });
     shockwaves.push({ x: e.x + e.w / 2, y: e.y + e.h / 2, r: 10, speed: 380, life: 1.1, max: 1.1, color: '#fff' });
     fx3d('nova', e.x + e.w / 2, e.y + e.h / 2, { color: hexNum(stages[idx].accent2), size: .85 });
@@ -2354,6 +2382,52 @@
     e.sp = .9; e.fire = .5;
     if (idx === 4 && e.tier === 1) summonConsorts(e);
     if (e.tier >= 1) startBossHide(e);
+  }
+
+
+  // 攻撃の「重さ」: 既存SFXは変えず、揺れ・ヒットストップ・衝撃波・3D FX で厚みを出す。
+  // stage 4（女王）を本命に、他ボスも special 時だけ一段重く。
+  function attackWeight(kind = 'cast') {
+    const queen = stageIndex === 4;
+    const cx = (() => {
+      const b = enemies.find(e => e.type === 'boss');
+      return b ? { x: b.x + b.w * (queen ? .27 : .5), y: b.y + b.h * (queen ? .36 : .5) } : { x: VW * .7, y: VH * .4 };
+    })();
+    if (kind === 'charge') {
+      shake = Math.max(shake, queen ? 6 : 4);
+      flash = Math.max(flash, queen ? .12 : .06);
+      if (queen) {
+        burst(cx.x, cx.y, '#ff9ccf', 10, 180);
+        fx3d('muzzle', cx.x, cx.y, { color: 0xff3e9d, size: 1.2 });
+      }
+      return;
+    }
+    if (kind === 'cast') {
+      shake = Math.max(shake, queen ? 10 : 6);
+      flash = Math.max(flash, queen ? .22 : .12);
+      hitStop = Math.max(hitStop, queen ? .055 : .03);
+      burst(cx.x, cx.y, queen ? '#ff3e9d' : stages[stageIndex].accent2, queen ? 22 : 14, queen ? 320 : 240);
+      shockwaves.push({ x: cx.x, y: cx.y, r: 14, speed: queen ? 560 : 420, life: .55, max: .55, color: queen ? '#ff9ccf' : stages[stageIndex].accent2 });
+      if (queen) {
+        shockwaves.push({ x: cx.x, y: cx.y, r: 6, speed: 380, life: .7, max: .7, color: '#ffe15a' });
+        fx3d('impact', cx.x, cx.y, { color: 0xff3e9d, size: 1.35 });
+      }
+      return;
+    }
+    if (kind === 'impact') {
+      shake = Math.max(shake, queen ? 18 : 12);
+      flash = Math.max(flash, queen ? .4 : .25);
+      hitStop = Math.max(hitStop, queen ? .1 : .06);
+      burst(cx.x, cx.y, queen ? '#ff3e9d' : stages[stageIndex].accent2, queen ? 36 : 22, queen ? 420 : 300);
+      shockwaves.push({ x: cx.x, y: cx.y, r: 22, speed: 640, life: .75, max: .75, color: queen ? '#ff3e9d' : stages[stageIndex].accent2 });
+      shockwaves.push({ x: cx.x, y: cx.y, r: 10, speed: 420, life: .95, max: .95, color: '#fff' });
+      fx3d('nova', cx.x, cx.y, { color: queen ? 0xff3e9d : hexNum(stages[stageIndex].accent2), size: queen ? 1.25 : .9 });
+      return;
+    }
+    // strike / default
+    shake = Math.max(shake, queen ? 14 : 9);
+    flash = Math.max(flash, queen ? .3 : .18);
+    hitStop = Math.max(hitStop, queen ? .07 : .04);
   }
 
   // One place that arms a telegraph, so every attack pays the same reaction tax.
@@ -2369,6 +2443,11 @@
       e.attackIdx = type === 'cannon' ? 3 : type === 'ring' ? 2
         : type === 'lattice' || type === 'curtain' || type === 'curtain2' || type === 'wave' ? 1 : 0;
       royalSfx('charge');
+      attackWeight('charge');
+      // 大技は予兆を少し長くして「溜め」を読ませる
+      if (type === 'cannon' || type === 'lattice') {
+        e.telMax = sec * 1.12; e.tel = e.telMax;
+      }
     } else sfx('boss');
   }
 
@@ -2399,6 +2478,19 @@
       return;
     }
     const parkX = VW - e.w - 40;
+    // 女王入場: ゆっくり歩み入り、床が脈打ち、スポットが当たる
+    if (idx === 4 && e.mode === 'entrance') {
+      e.entranceT = (e.entranceT || 0) + dt;
+      e.x -= 110 * dt;
+      shake = Math.max(shake, 3 + Math.sin(e.entranceT * 8) * 2);
+      if (e.x <= parkX) {
+        e.x = parkX; e.mode = 'hover';
+        royalSfx('impact');
+        shockwaves.push({ x: e.x + e.w * .35, y: e.y + e.h * .85, r: 30, speed: 520, life: .9, max: .9, color: '#ff3e9d' });
+      }
+      e.entering = true;
+      return;
+    }
     if (e.x > parkX && e.mode !== 'dash' && e.mode !== 'return') e.x -= 250 * dt;
     // He is the only boss with an actual gait, so the approach is a walk rather
     // than a hover. Read by drawBoss; harmless on every other boss.
@@ -2428,7 +2520,12 @@
     if (e.tel > 0) {
       e.tel -= dt;
       // A rising rumble under the windup, so a long telegraph builds instead of waiting.
-      shake = Math.max(shake, Math.pow(1 - e.tel / (e.telMax || 1), 3) * 7);
+      {
+        const wind = Math.pow(1 - e.tel / (e.telMax || 1), 3);
+        const amp = stageIndex === 4 ? 12 : 7;
+        shake = Math.max(shake, wind * amp);
+        if (stageIndex === 4 && wind > .55) flash = Math.max(flash, wind * .08);
+      }
       if (e.tel <= 0) executeBossSpecial(e);
     } else if (e.followUp > 0) {
       e.followUp -= dt;
@@ -2625,10 +2722,10 @@
     const aim = Math.atan2(player.y + 45 - oy, player.x - ox);
     for (let i = 0; i < n; i++) {
       const a = aim + (i - (n - 1) / 2) * .19;
-      enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 285, vy: Math.sin(a) * 285, r: 10, life: 6, damage: 24, boss: true });
+      enemyBullets.push({ x: ox, y: oy, vx: Math.cos(a) * 285, vy: Math.sin(a) * 285, r: stageIndex === 4 ? 12 : 10, life: 6, damage: 24, boss: true, heart: stageIndex === 4 });
     }
-    burst(ox, oy, '#ff3e9d', 15, 240); shake = Math.max(shake, 4);
-    if (stageIndex === 4) royalSfx('cast');
+    burst(ox, oy, '#ff3e9d', stageIndex === 4 ? 22 : 15, stageIndex === 4 ? 300 : 240); shake = Math.max(shake, stageIndex === 4 ? 8 : 4);
+    if (stageIndex === 4) { royalSfx('cast'); attackWeight('cast'); }
   }
 
   function bossBubbles(e) {
@@ -2952,9 +3049,10 @@
     for (let i = 0; i < 8; i++) {
       const y = 60 + i * 85;
       if (Math.abs(y - gapY) < half) continue;
-      enemyBullets.push({ x: e.x - 30, y, vx: -245, vy: 0, r: 11, life: 8, damage: 24, heart: true, grazeMul: .4 });
+      enemyBullets.push({ x: e.x - 30, y, vx: -245, vy: 0, r: 12, life: 8, damage: 24, heart: true, grazeMul: .4 });
     }
-    royalSfx('cast');
+    royalSfx('cast'); attackWeight('cast');
+    shockwaves.push({ x: e.x, y: gapY, r: 16, speed: 480, life: .5, max: .5, color: '#ff3e9d' });
   }
 
   function bossHeartRing(e) {
@@ -2964,9 +3062,9 @@
     const n = Math.max(8, Math.round(13 * difficulties[difficultyKey].barrage));
     for (let i = 0; i < n; i++) {
       const a = i / n * Math.PI * 2;
-      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, r: 10, life: 7, damage: 23, heart: true, homing: .5 });
+      enemyBullets.push({ x: cx, y: cy, vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, r: 11, life: 7, damage: 23, heart: true, homing: .5 });
     }
-    burst(cx, cy, '#ff9ccf', 12, 210); royalSfx('cast');
+    burst(cx, cy, '#ff9ccf', 18, 280); royalSfx('cast'); attackWeight('cast');
   }
 
   // A full-height wall of shot with one corridor, opened at the height the
@@ -2988,8 +3086,10 @@
       enemyBullets.push({ x: VW + 26, y, vx: -sp, vy: 0, r: 12, life: 9, damage: 20, grazeMul: .4, ...tag });
     }
     e.curtainY = cy;
-    if (stageIndex === 4) { if (side === 0) royalSfx('cast'); }
-    else sfx('boss');
+    if (stageIndex === 4) {
+      if (side === 0) { royalSfx('cast'); attackWeight('cast'); }
+      else { attackWeight('cast'); shake = Math.max(shake, 8); }
+    } else sfx('boss');
   }
 
   // Inverse of the curtain: columns of fire everywhere except the lane the
@@ -3115,8 +3215,15 @@
       warn: telFor(h / 2 + 34), live: .62, fade: .32, lock: 0, t: 0,
       damage: 38, color: '#ff3e9d',
     });
-    for (let i = 0; i < 4; i++) delayedBursts.push({ x: e.x + e.w * .27, y: e.y + e.h * .36, t: .26 + i * .28, color: '#ff9ccf' });
-    shake = Math.max(shake, 14); royalSfx('impact');
+    for (let i = 0; i < 6; i++) delayedBursts.push({ x: e.x + e.w * .27, y: e.y + e.h * .36, t: .18 + i * .22, color: i % 2 ? '#ff9ccf' : '#ffe15a' });
+    royalSfx('impact'); attackWeight('impact');
+    // ビーム本体が生きる瞬間にもう一押し
+    setTimeout(() => {
+      if (state !== 'playing' || stageIndex !== 4) return;
+      shake = Math.max(shake, 16); flash = Math.max(flash, .35);
+      hitStop = Math.max(hitStop, .08);
+      sfx('bossQuake');
+    }, Math.max(80, telFor(h / 2 + 34) * 1000 * .92));
   }
 
   // Four arms whose bullets leave at staggered speeds, so the volley unrolls
@@ -3130,11 +3237,11 @@
     for (let a = 0; a < arms; a++) {
       const ang = (e.spiral || 0) + a / arms * Math.PI * 2;
       for (let i = 0; i < per; i++) {
-        enemyBullets.push({ x: cx, y: cy, vx: Math.cos(ang) * (120 + i * 26), vy: Math.sin(ang) * (120 + i * 26), r: 10, life: 7, damage: 18, heart: true, grazeMul: .4 });
+        enemyBullets.push({ x: cx, y: cy, vx: Math.cos(ang) * (120 + i * 26), vy: Math.sin(ang) * (120 + i * 26), r: 11, life: 7, damage: 18, heart: true, grazeMul: .4 });
       }
     }
-    burst(cx, cy, '#ff5a9d', 12, 220);
-    royalSfx('cast');
+    burst(cx, cy, '#ff5a9d', 20, 300);
+    royalSfx('cast'); attackWeight('cast');
   }
 
   // Two shootable hearts orbiting the queen from act two, so she can never be
@@ -3192,6 +3299,10 @@
     shake = Math.max(0, shake - dt * 25); flash = Math.max(0, flash - dt * 3);
     specialFlash = Math.max(0, specialFlash - dt);
     bossVoiceCd = Math.max(0, bossVoiceCd - dt);
+    if (queenCinema > 0) queenCinema = Math.max(0, queenCinema - dt);
+    // シャンデリア跡の床ひび
+    for (const c of floorCracks) c.t += dt;
+    floorCracks = floorCracks.filter(c => c.t < c.life);
     player.inv = Math.max(0, player.inv - dt);
     player.hit = Math.max(0, player.hit - dt);
     bgCam += (((player.y - 360) / 360) * 14 - bgCam) * Math.min(1, dt * 3);
@@ -3217,7 +3328,12 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       bossWarning -= dt;
       if (bossWarning <= 0) spawnMidBoss();
     } else if (bossState === 'waiting' && midBossDone && stageTime >= bossAt) {
-      bossState = 'warning'; bossWarning = 3.6; enemies = []; clearEnemyFire(); bullets = []; sfx('warning'); voice('bossAppear');
+      bossState = 'warning';
+      bossWarning = stageIndex === 4 ? 5.4 : 3.6;
+      queenCinema = stageIndex === 4 ? 5.4 : 0;
+      enemies = []; clearEnemyFire(); bullets = [];
+      sfx('warning'); voice('bossAppear');
+
     } else if (bossState === 'waiting' && !midBossDone && stageTime >= bossAt) {
       // Safety: if mid was skipped somehow, force mid first
       bossState = 'midboss-warning'; bossWarning = 2.5; enemies = []; clearEnemyFire(); sfx('warning');
@@ -3623,6 +3739,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         shake = Math.max(shake, 13); flash = Math.max(flash, .22); sfx('thunder');
       } else if (hz.kind === 'chand' && !hz.landed && hz.t >= hz.warn + hz.live) {
         hz.landed = true; shake = Math.max(shake, 12); sfx('boom'); sfx('shield');
+        floorCracks.push({ x: hz.x, y: hz.floor, t: 0, life: 4.5, seed: hz.seed || Math.random() * 99 });
         burstDebris(hz.x, hz.floor, ['#ffe15a', '#fff6d8', '#ff9ccf'], 22, 330);
         shockwaves.push({ x: hz.x, y: hz.floor, r: 12, speed: 480, life: .5, max: .5, color: '#ffe15a' });
         // Crystal shards fan up and out, then rain back down under gravity.
@@ -3683,10 +3800,20 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
           fx3d('impact', b.x, b.y, { color: 0x9fe8ff, dir: Math.atan2(b.vy, b.vx) });
           // Bosses hit back harder in feel: a heavier kick and chips in their own colour.
           if (e.type === 'boss' || e.type === 'midboss') {
-            shake = Math.max(shake, e.crit ? 5 : 4);
-            burstDebris(b.x, b.y, [BOSS_TINT[stageIndex].hit, '#ffffff'], 2, 200);
+            const queen = stageIndex === 4 && e.type === 'boss';
+            shake = Math.max(shake, queen ? (e.crit ? 8 : 6) : (e.crit ? 5 : 4));
+            burstDebris(b.x, b.y, [BOSS_TINT[stageIndex].hit, '#ffffff'], queen ? 4 : 2, queen ? 240 : 200);
+            if (queen) {
+              e.hit = .16;
+              hitStop = Math.max(hitStop, b.missile ? .05 : .035);
+              burst(b.x, b.y, e.crit ? '#ffe15a' : '#ff9ccf', b.missile ? 12 : 7, 190);
+              if (b.missile) {
+                shockwaves.push({ x: b.x, y: b.y, r: 8, speed: 360, life: .35, max: .35, color: '#ff3e9d' });
+                flash = Math.max(flash, .1);
+              }
+            }
           }
-          if (e.hp <= 0) destroyEnemy(e); else hitStop = Math.max(hitStop, .02);
+          if (e.hp <= 0) destroyEnemy(e); else hitStop = Math.max(hitStop, e.type === 'boss' && stageIndex === 4 ? .03 : .02);
           if (!b.pierce) break;
         }
       }
@@ -3851,7 +3978,15 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // The armor soaks the hit down to a third before difficulty scaling; the
     // knockback/power-down side of getting hit is deliberately NOT reduced.
     if (armorOn()) damage *= ARMOR_DAMAGE_MUL;
-    health = Math.max(0, health - damage * difficulties[difficultyKey].damage); player.inv = 1.4; player.hit = .45; combo = 0; shake = 18; flash = .7; hitStop = Math.max(hitStop, .07);
+    health = Math.max(0, health - damage * difficulties[difficultyKey].damage); player.inv = 1.4; player.hit = .45; combo = 0;
+    // 被弾の重さ: 最終ステージは画面ごと一拍たためる
+    if (stageIndex === 4) {
+      shake = Math.max(shake, 22); flash = Math.max(flash, .85); hitStop = Math.max(hitStop, .1);
+      const px = player.x + player.w / 2, py = player.y + player.h / 2;
+      shockwaves.push({ x: px, y: py, r: 12, speed: 520, life: .45, max: .45, color: '#ff3e9d' });
+    } else {
+      shake = 18; flash = .7; hitStop = Math.max(hitStop, .07);
+    }
     stageDamaged = true;
     // Getting hit knocks the shot power down one level (Gradius-style risk/reward),
     // unless a stocked charm (shop-only) cancels this one demotion.
@@ -4235,10 +4370,16 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     // atmosphere stay 2D on top so the neon-kawaii hand-drawn feel survives.
     // No module / no WebGL (file:// included) falls back to the 2D path.
     const bg3d = window.GRO_BG3D;
+    const queenBoss = enemies.find(e => e.type === 'boss');
     const use3d = !!(bg3d && bg3d.ready && bg3d.render({
       stage: stageIndex, speed: gameSpeed, camX: bgCamX, camY: bgCam,
       energy: dir.energy, boss: dir.boss, warning: dir.warning,
-      chapter: dir.chapter, chapterT: dir.chapterT, quality: dir.q
+      chapter: dir.chapter, chapterT: dir.chapterT, quality: dir.q,
+      music: musicLevel(),
+      queenTier: queenBoss ? (queenBoss.tier || 0) : 0,
+      queenCrit: bossCrit,
+      queenDying: !!(queenBoss && queenBoss.dying > 0),
+      cinema: queenCinema
     }));
     bg3dActive = use3d;
     if (use3d) blit3d(bg3d.canvas, -30, -30, VW + 60, VH + 60, .22, 6);
@@ -6248,45 +6389,167 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     drawShoppers();
   }
 
-  // Giant club-speaker stack pumping with the BGM: two cabinets, cones that
-  // swell with the bass level (real AnalyserNode over http, sin-pulse on
-  // file://) and a dust ring that pops on each hard beat.
+  // Club PA stack: 3-cabinet tower (sub / mid / top) with grille cloth, handles,
+  // LED meters, bass ports. Whole tower shakes with bass; cones pump hard.
+  // Real AnalyserNode over http, sin-pulse fallback on file://.
   function drawSpeaker(p, stage) {
     const level = musicLevel();
+    const kick = level * level;                  // キックで一段強く
     const base = 648;
-    if (level > .8 && elapsed - p.ringT > .35) p.ringT = elapsed;
+    if (level > .72 && elapsed - p.ringT > .28) p.ringT = elapsed;
+    // 振動: 低音で箱全体がガタガタする(位相を左右でずらすと対向が噛み合う)
+    const shakeX = Math.sin(elapsed * 48 + (p.x > VW / 2 ? 1 : 0)) * kick * 2.6
+      + Math.sin(elapsed * 91) * kick * 1.1;
+    const shakeY = Math.cos(elapsed * 37 + p.x * .01) * kick * 1.8;
     ctx.save();
-    ctx.translate(p.x, 0);
-    for (let c = 0; c < 2; c++) {
-      const cy = base - 118 - c * 122, cw = 118, ch = 118;
-      drawVolumeBox(-cw / 2, cy, cw, ch, 12, '#120b30', '#07051d', '#2a1e5e', .92, hexA(stage.accent2, .3 + level * .35));
-      // woofer + tweeter, scaled by the live bass level
-      const cones = [[cy + ch * .62, 34], [cy + ch * .24, 17]];
-      for (const [wy, wr] of cones) {
-        const s = 1 + level * .12;
-        ctx.save(); ctx.translate(0, wy); ctx.scale(s, s);
-        ctx.fillStyle = '#07051d'; ctx.beginPath(); ctx.arc(0, 0, wr, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = hexA(stage.accent, .55 + level * .4); ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(0, 0, wr - 2, 0, Math.PI * 2); ctx.stroke();
-        ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(0, 0, wr * .55, 0, Math.PI * 2); ctx.stroke();
-        ctx.fillStyle = hexA(stage.accent2, .5 + level * .5);
-        ctx.beginPath(); ctx.arc(0, 0, wr * .2, 0, Math.PI * 2); ctx.fill();
-        ctx.restore();
+    ctx.translate(p.x + shakeX, shakeY);
+
+    // フロアの影(振動でわずかに伸びる)
+    ctx.fillStyle = 'rgba(5,2,18,.55)';
+    ctx.beginPath(); ctx.ellipse(0, base + 4, 78 + kick * 10, 11 + kick * 3, 0, 0, Math.PI * 2); ctx.fill();
+
+    // キャビネット: 下=サブ(大ウーファー) / 中=ミッド / 上=トップ(ホーン+ツィータ)
+    const cabs = [
+      { h: 138, yOff: 0, kind: 'sub', face: '#1a0e38' },
+      { h: 108, yOff: 140, kind: 'mid', face: '#221245' },
+      { h: 86, yOff: 250, kind: 'top', face: '#2a1558' }
+    ];
+    let yCursor = base;
+    for (let ci = 0; ci < cabs.length; ci++) {
+      const cab = cabs[ci];
+      const cw = ci === 0 ? 132 : ci === 1 ? 118 : 104;
+      const ch = cab.h;
+      const cy = yCursor - ch;
+      yCursor = cy - 2;                          // 微小な隙間
+      // 本体の立体感
+      drawVolumeBox(-cw / 2, cy, cw, ch, 14, cab.face, '#07041a', '#3a2468', .95,
+        hexA(stage.accent2, .22 + level * .4));
+      // コーナー金具
+      ctx.fillStyle = '#ffe15a';
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        ctx.fillRect(sx * (cw / 2 - 6) - 3, cy + (sy < 0 ? 4 : ch - 10), 6, 6);
       }
-    }
-    // beat ring: a fast additive pulse leaving the woofer on hard beats
-    const ringAge = elapsed - p.ringT;
-    if (ringAge >= 0 && ringAge < .4 && bgQuality() > 0) {
+      // サイドハンドル
+      ctx.fillStyle = '#0a0618';
+      ctx.fillRect(-cw / 2 - 6, cy + ch * .35, 6, 22);
+      ctx.fillRect(cw / 2, cy + ch * .35, 6, 22);
+      ctx.fillStyle = '#c8a060';
+      ctx.fillRect(-cw / 2 - 4, cy + ch * .38, 3, 16);
+      ctx.fillRect(cw / 2 + 1, cy + ch * .38, 3, 16);
+      // 前面グリル布(斜線のテクスチャ)
+      ctx.save();
+      ctx.beginPath(); ctx.roundRect(-cw / 2 + 8, cy + 8, cw - 16, ch - 16, 6); ctx.clip();
+      ctx.fillStyle = '#0c0820';
+      ctx.fillRect(-cw / 2 + 8, cy + 8, cw - 16, ch - 16);
+      ctx.strokeStyle = 'rgba(80,50,120,.35)'; ctx.lineWidth = 1;
+      for (let g = -ch; g < cw + ch; g += 5) {
+        ctx.beginPath();
+        ctx.moveTo(-cw / 2 + 8 + g, cy + 8);
+        ctx.lineTo(-cw / 2 + 8 + g - ch, cy + ch - 8);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // コーン / ホーン
+      if (cab.kind === 'sub') {
+        drawSpeakerCone(0, cy + ch * .52, 42, 1 + level * .22 + kick * .08, stage, true);
+        // バスレフポート2つ
+        for (const px of [-38, 38]) {
+          ctx.fillStyle = '#040210';
+          ctx.beginPath(); ctx.ellipse(px, cy + ch * .88, 12, 7, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = hexA(stage.accent, .25 + level * .3); ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.ellipse(px, cy + ch * .88, 12, 7, 0, 0, Math.PI * 2); ctx.stroke();
+        }
+      } else if (cab.kind === 'mid') {
+        drawSpeakerCone(0, cy + ch * .55, 30, 1 + level * .16, stage, false);
+        // LED VU メータ帯
+        const bars = 8;
+        for (let i = 0; i < bars; i++) {
+          const lit = level > i / bars;
+          const hot = level > .75 && i >= bars - 2;
+          ctx.fillStyle = lit ? (hot ? '#ff3e9d' : stage.accent) : 'rgba(40,20,70,.6)';
+          ctx.fillRect(-cw / 2 + 14 + i * 11, cy + 12, 8, 6);
+        }
+      } else {
+        // ホーン + ツィータ
+        ctx.fillStyle = '#1a1038';
+        ctx.beginPath();
+        ctx.moveTo(-28, cy + ch * .55); ctx.lineTo(-8, cy + ch * .28);
+        ctx.lineTo(8, cy + ch * .28); ctx.lineTo(28, cy + ch * .55);
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = hexA(stage.accent2, .5 + level * .4); ctx.lineWidth = 2;
+        ctx.stroke();
+        drawSpeakerCone(0, cy + ch * .62, 14, 1 + level * .1, stage, false);
+        // ブランドプレート
+        ctx.fillStyle = hexA('#ffe15a', .7);
+        ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
+        ctx.fillText('♥ GRO', 0, cy + ch - 10);
+      }
+      // 前面アクセントライン(キックで発光)
       ctx.save(); ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = (1 - ringAge / .4) * .5;
-      ctx.strokeStyle = stage.accent; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(0, base - 118 + 118 * .62 - 122, 36 + ringAge * 190, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = hexA(stage.accent2, .15 + level * .45); ctx.lineWidth = 2;
+      ctx.strokeRect(-cw / 2 + 4, cy + 4, cw - 8, ch - 8);
       ctx.restore();
     }
-    // grounding shadow
-    ctx.fillStyle = 'rgba(5,2,18,.5)';
-    ctx.beginPath(); ctx.ellipse(0, base, 66, 9, 0, 0, Math.PI * 2); ctx.fill();
+
+    // ビートリング: サブウーファーから広がる衝撃波
+    const ringAge = elapsed - p.ringT;
+    if (ringAge >= 0 && ringAge < .45 && bgQuality() > 0) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = (1 - ringAge / .45) * (.45 + kick * .25);
+      ctx.strokeStyle = stage.accent2; ctx.lineWidth = 3 + kick * 2;
+      const ry = base - 138 * .48;
+      ctx.beginPath(); ctx.arc(0, ry, 40 + ringAge * 220, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = stage.accent; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(0, ry, 28 + ringAge * 160, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+    // 低音の空気震え(足元のピンクダスト)
+    if (level > .35 && bgQuality() > 0) {
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = kick * .35;
+      ctx.fillStyle = stage.accent2;
+      for (let i = 0; i < 6; i++) {
+        const a = elapsed * 9 + i * 1.1;
+        ctx.beginPath();
+        ctx.arc(Math.sin(a + i) * 40, base - 8 - (a % 1) * 30 * level, 2 + kick * 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // ウーファー/ツィータ共通: 外枠→サスペンション→コーン→ダストキャップ
+  function drawSpeakerCone(x, y, r, scale, stage, isSub) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale * (.92 + (scale - 1) * .3)); // 押し出しで縦にわずかに潰れる
+    // マグネット部の影
+    ctx.fillStyle = '#050310';
+    ctx.beginPath(); ctx.arc(0, 0, r + 4, 0, Math.PI * 2); ctx.fill();
+    // リム
+    ctx.strokeStyle = '#2a1a50'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(0, 0, r + 1, 0, Math.PI * 2); ctx.stroke();
+    // コーン本体(放射グラデ)
+    const cone = ctx.createRadialGradient(-r * .2, -r * .25, 1, 0, 0, r);
+    cone.addColorStop(0, isSub ? '#3a2858' : '#4a3070');
+    cone.addColorStop(.55, '#120a28');
+    cone.addColorStop(1, '#060312');
+    ctx.fillStyle = cone;
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    // サスペンションの同心円
+    ctx.strokeStyle = 'rgba(255,200,240,.12)'; ctx.lineWidth = 1.2;
+    for (let k = 3; k >= 1; k--) {
+      ctx.beginPath(); ctx.arc(0, 0, r * (k / 3.6), 0, Math.PI * 2); ctx.stroke();
+    }
+    // ダストキャップ + アクセントリング
+    ctx.strokeStyle = hexA(stage.accent, .5 + (scale - 1) * 2); ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(0, 0, r * .55, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = hexA(stage.accent2, .45 + (scale - 1) * 1.5);
+    ctx.beginPath(); ctx.arc(0, 0, r * .18, 0, Math.PI * 2); ctx.fill();
+    // ハイライト
+    ctx.fillStyle = 'rgba(255,255,255,.14)';
+    ctx.beginPath(); ctx.ellipse(-r * .28, -r * .3, r * .22, r * .1, -.5, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
 
@@ -9481,6 +9744,35 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     }
   }
 
+
+  // シャンデリア着弾後に大理石へ残る金縁のひび（演出専用・当たりなし）
+  function drawFloorCracks() {
+    if (!floorCracks.length) return;
+    for (const c of floorCracks) {
+      const a = 1 - c.t / c.life;
+      if (a <= 0) continue;
+      ctx.save();
+      ctx.globalAlpha = a * .85;
+      ctx.translate(c.x, c.y);
+      ctx.strokeStyle = '#ffe15a';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = '#ff3e9d';
+      ctx.shadowBlur = 8;
+      const s = c.seed || 0;
+      ctx.beginPath();
+      for (let i = 0; i < 5; i++) {
+        const ang = s + i * 1.1;
+        const len = 28 + (i % 3) * 14;
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(ang) * len, Math.sin(ang) * len * .35);
+        ctx.moveTo(Math.cos(ang) * len * .55, Math.sin(ang) * len * .2);
+        ctx.lineTo(Math.cos(ang + .4) * len * .8, Math.sin(ang + .4) * len * .28);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   // The queen's skirt hanging over the field while she is aloft. Drawn under
   // every actor so it darkens the stage rather than hiding the fight.
   function drawThroneShadow() {
@@ -9513,6 +9805,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       window.GRO_BG3D.renderActors({ stage: stageIndex, bullets, enemyBullets, enemies, player, dt: frameDt });
     if (actorOverlay) blitOverlay();
     drawHazards();
+    drawFloorCracks();
     for (const r of shockwaves) {
       ctx.save(); ctx.globalAlpha = Math.max(0, r.life / r.max); ctx.strokeStyle = r.color; ctx.lineWidth = 5 + r.life * 8; ctx.shadowColor = r.color; ctx.shadowBlur = 18;
       ctx.beginPath(); ctx.arc(r.x, r.y, r.r, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
@@ -10338,22 +10631,26 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     }
     if (e.type === 'rosebud') {
       const open = .5 + Math.sin(e.t * 2.5) * .16, charge = clamp(1 - e.fire / Math.max(.1, e.fireMax), 0, 1);
+      ctx.save(); ctx.translate(4, 4); ctx.scale(1.12, 1.12);
+      // オーラ(チャージで金→マゼンタ)
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = .15 + charge * .4;
+      const ag = ctx.createRadialGradient(36, 33, 4, 36, 33, 40 + charge * 12);
+      ag.addColorStop(0, charge > .5 ? '#ffe15a' : '#ff9ecf'); ag.addColorStop(1, 'rgba(255,60,150,0)');
+      ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(36, 33, 40 + charge * 12, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
       // A thorny prehensile stem curls behind the flower and visibly anchors its
       // locomotion. Thorns alternate sides like a real rose cane.
       ctx.strokeStyle = '#194b31'; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(38, 39); ctx.bezierCurveTo(55, 48, 48, 67, 65, 72); ctx.stroke();
       ctx.strokeStyle = '#4bb566'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(38, 39); ctx.bezierCurveTo(55, 48, 48, 67, 65, 72); ctx.stroke();
-      for (let i = 0; i < 4; i++) { const x = 46 + i * 5, y = 49 + i * 6, s = i % 2 ? -1 : 1; ctx.fillStyle = '#b7db55'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + s * 11, y - 5); ctx.lineTo(x + s * 3, y + 4); ctx.closePath(); ctx.fill(); }
-      // Two veined leaves twist in opposite directions as the stem bobs.
+      for (let i = 0; i < 5; i++) { const x = 44 + i * 5, y = 48 + i * 5.5, s = i % 2 ? -1 : 1; ctx.fillStyle = '#b7db55'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + s * 12, y - 6); ctx.lineTo(x + s * 3, y + 4); ctx.closePath(); ctx.fill(); }
       for (const s of [-1, 1]) {
         const lx = 54 + s * 10, ly = 59;
         ctx.fillStyle = s < 0 ? '#287d4a' : '#43a85b'; ctx.beginPath(); ctx.moveTo(51, 58); ctx.quadraticCurveTo(lx, ly - 13, lx + s * 15, ly); ctx.quadraticCurveTo(lx, ly + 9, 51, 58); ctx.fill();
         ctx.strokeStyle = 'rgba(205,255,175,.42)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(52, 58); ctx.lineTo(lx + s * 12, ly); ctx.stroke();
       }
-      // Green sepals clasp the bud from behind, preventing the petals from
-      // reading as a free-floating pink circle.
       ctx.fillStyle = '#236d43';
       for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; ctx.beginPath(); ctx.moveTo(36, 35); ctx.lineTo(36 + Math.cos(a) * 31, 35 + Math.sin(a) * 25); ctx.lineTo(36 + Math.cos(a + .45) * 17, 35 + Math.sin(a + .45) * 15); ctx.closePath(); ctx.fill(); }
-      // Three nested petal whorls create a rose spiral rather than a daisy.
       const petalRings = bgQuality() ? 3 : 2;
       for (let ring = 0; ring < petalRings; ring++) for (let i = 7 - ring; i >= 0; i--) {
         const count = 8 - ring, a = i / count * Math.PI * 2 + e.t * .08 + ring * .42, r = (20 - ring * 6) * open;
@@ -10364,41 +10661,59 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
         ctx.strokeStyle = 'rgba(255,220,238,.22)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(px, py, size * .65, a, a + Math.PI * .8); ctx.stroke();
       }
       ctx.fillStyle = '#4d0d32'; ctx.beginPath(); ctx.arc(36, 33, 12, 0, Math.PI * 2); ctx.fill();
+      // 芯の金粉
+      ctx.fillStyle = '#ffe15a';
+      for (let i = 0; i < 6; i++) {
+        const a = e.t * 2 + i;
+        ctx.beginPath(); ctx.arc(36 + Math.cos(a) * 5, 33 + Math.sin(a) * 4, 1.4, 0, Math.PI * 2); ctx.fill();
+      }
       ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .2 + charge * .55; ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.arc(36, 32, 11 + charge * 8, 0, Math.PI * 2); ctx.fill(); ctx.restore();
-      drawKawaiiEyes(29, 34, 43, 6, 2); return true;
+      drawKawaiiEyes(29, 34, 43, 6, 2);
+      ctx.restore(); return true;
     }
     if (e.type === 'cardguard') {
       const march = Math.sin(e.t * 7) * 5;
-      // Boots, arms and spear all sit behind the card plane, giving the thin
-      // soldier a believable layered construction.
+      ctx.save(); ctx.scale(1.14, 1.14);
+      // Boots, arms and spear all sit behind the card plane
       for (const s of [-1, 1]) {
         ctx.strokeStyle = '#351126'; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(31 + s * 14, 68); ctx.lineTo(31 + s * 14 + march * s, 82); ctx.stroke();
         ctx.fillStyle = '#6b274d'; ctx.beginPath(); ctx.ellipse(31 + s * 14 + march * s - 4, 83, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
       }
       ctx.strokeStyle = '#6b274d'; ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(18, 32); ctx.lineTo(0, 44); ctx.moveTo(59, 31); ctx.lineTo(70, 41); ctx.stroke();
       ctx.fillStyle = '#fff0bd'; ctx.beginPath(); ctx.arc(0, 44, 6, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(70, 41, 6, 0, Math.PI * 2); ctx.fill();
-      // Extruded card stock: dark side face and gold bottom edge.
       ctx.fillStyle = '#42112e'; ctx.beginPath(); ctx.roundRect(14, 6, 55, 72, 7); ctx.fill();
       ctx.fillStyle = '#9f6a38'; ctx.beginPath(); ctx.moveTo(10, 69); ctx.lineTo(63, 69); ctx.lineTo(69, 78); ctx.lineTo(16, 78); ctx.closePath(); ctx.fill();
       const card = ctx.createLinearGradient(12, 5, 67, 77); card.addColorStop(0, '#fff8dc'); card.addColorStop(.55, '#f1dca6'); card.addColorStop(1, '#9b653c');
       ctx.fillStyle = card; ctx.beginPath(); ctx.roundRect(8, 2, 55, 72, 7); ctx.fill();
       ctx.strokeStyle = '#d42362'; ctx.lineWidth = 3; ctx.beginPath(); ctx.roundRect(14, 8, 43, 59, 3); ctx.stroke();
-      // Corner indices, suit pip and embossed filigree make this an actual card.
-      ctx.fillStyle = '#d42362'; ctx.font = 'bold 10px monospace'; ctx.fillText('Q', 16, 20); ctx.save(); ctx.translate(55, 61); ctx.rotate(Math.PI); ctx.fillText('Q', 0, 0); ctx.restore();
-      ctx.fillStyle = '#d42362'; heartPath(36, 42, 14); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.35)'; heartPath(31, 36, 5); ctx.fill();
+      // 箔押しの光沢
+      ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .18;
+      const sheen = ctx.createLinearGradient(8, 2, 40, 40);
+      sheen.addColorStop(0, '#ffffff'); sheen.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = sheen; ctx.beginPath(); ctx.roundRect(10, 4, 24, 50, 5); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#d42362'; ctx.font = 'bold 11px monospace'; ctx.fillText('Q', 16, 20); ctx.save(); ctx.translate(55, 61); ctx.rotate(Math.PI); ctx.fillText('Q', 0, 0); ctx.restore();
+      ctx.fillStyle = '#d42362'; heartPath(36, 42, 15); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.4)'; heartPath(31, 36, 5.5); ctx.fill();
+      // スート装飾(A/♠ 風の角)
+      ctx.fillStyle = '#d42362'; ctx.font = 'bold 9px monospace';
+      ctx.fillText('♥', 16, 58); ctx.save(); ctx.translate(55, 22); ctx.rotate(Math.PI); ctx.fillText('♥', 0, 0); ctx.restore();
       ctx.strokeStyle = 'rgba(155,101,60,.35)'; ctx.lineWidth = 1; for (let y = 25; y < 60; y += 8) { ctx.beginPath(); ctx.moveTo(16, y); ctx.quadraticCurveTo(36, y - 7, 56, y); ctx.stroke(); }
-      // Folded paper crown with bevel and five points.
       ctx.fillStyle = '#351126'; ctx.beginPath(); ctx.moveTo(12, 5); ctx.lineTo(23, -10); ctx.lineTo(34, 4); ctx.lineTo(45, -11); ctx.lineTo(59, 5); ctx.lineTo(58, 12); ctx.lineTo(14, 12); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#8f315c'; ctx.beginPath(); ctx.moveTo(13, 3); ctx.lineTo(23, -7); ctx.lineTo(34, 5); ctx.lineTo(45, -8); ctx.lineTo(58, 3); ctx.lineTo(56, 8); ctx.lineTo(15, 8); ctx.closePath(); ctx.fill();
-      // Halberd has a shaft, counterweight, blade and heart cutout.
-      ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(68, 18); ctx.lineTo(74, 72); ctx.stroke();
+      // 宝石付き冠
+      for (const jx of [23, 34, 45]) {
+        ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.arc(jx, -4, 2.5, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.strokeStyle = '#c89a40'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(68, 18); ctx.lineTo(74, 72); ctx.stroke();
+      ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(68, 18); ctx.lineTo(74, 72); ctx.stroke();
       ctx.fillStyle = '#fff1a8'; ctx.beginPath(); ctx.moveTo(68, 19); ctx.lineTo(74, 2); ctx.lineTo(81, 20); ctx.lineTo(75, 17); ctx.lineTo(72, 29); ctx.closePath(); ctx.fill();
       ctx.fillStyle = '#d42362'; heartPath(74, 15, 4); ctx.fill(); ctx.fillStyle = '#8f315c'; ctx.beginPath(); ctx.arc(74, 73, 6, 0, Math.PI * 2); ctx.fill();
-      drawKawaiiEyes(23, 28, 48, 7, 2); return true;
+      drawKawaiiEyes(23, 28, 48, 7, 2);
+      ctx.restore(); return true;
     }
     if (e.type === 'teacup') {
       const rattle = Math.sin(e.t * 8) * 3, steam = Math.sin(e.t * 3), charge = clamp(1 - e.fire / Math.max(.1, e.fireMax), 0, 1);
-      // Tiny silver feet and a thick saucer establish a real tabletop object.
+      ctx.save(); ctx.translate(2, 0); ctx.scale(1.14, 1.14);
       for (const x of [22,57]) { ctx.fillStyle = '#6b2a55'; ctx.fillRect(x, 48, 7, 8); ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.ellipse(x + 2, 56, 8, 3, 0, 0, Math.PI * 2); ctx.fill(); }
       ctx.fillStyle = '#43152f'; ctx.beginPath(); ctx.ellipse(41, 53, 41, 9, 0, 0, Math.PI * 2); ctx.fill();
       const saucer = ctx.createLinearGradient(0, 44, 0, 55); saucer.addColorStop(0, '#fff8e8'); saucer.addColorStop(.45, '#e7a9c5'); saucer.addColorStop(1, '#84355e');
@@ -10406,23 +10721,25 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(39, 48, 31, 5, 0, 0, Math.PI * 2); ctx.stroke();
       const china = ctx.createLinearGradient(9, 5, 62, 49); china.addColorStop(0, '#fffbe8'); china.addColorStop(.45, '#ffcfdf'); china.addColorStop(1, '#a74475');
       ctx.fillStyle = china; ctx.beginPath(); ctx.moveTo(7, 10); ctx.quadraticCurveTo(10, 48, 48, 48); ctx.quadraticCurveTo(62, 32, 58, 10); ctx.closePath(); ctx.fill();
-      // Handle gets a dark back rim and bright porcelain front rim for thickness.
+      // ハイライト反射
+      ctx.fillStyle = 'rgba(255,255,255,.28)';
+      ctx.beginPath(); ctx.ellipse(20, 24, 8, 14, -.3, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#6d234c'; ctx.lineWidth = 11; ctx.beginPath(); ctx.arc(60, 27, 16, -1.2, 1.2); ctx.stroke();
       ctx.strokeStyle = '#f5b4cf'; ctx.lineWidth = 7; ctx.beginPath(); ctx.arc(59, 25, 15, -1.1, 1.1); ctx.stroke();
-      // Gold rim, painted roses, vines and a hairline crack in the china.
       ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(33, 10, 27, 7, 0, 0, Math.PI * 2); ctx.stroke();
       ctx.strokeStyle = '#4d9a55'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(14, 33); ctx.quadraticCurveTo(28, 22, 46, 35); ctx.stroke();
       for (const [x,y] of [[20,29],[36,31],[45,37]]) { ctx.fillStyle = '#e33c7d'; heartPath(x, y, 4); ctx.fill(); ctx.fillStyle = '#ffe15a'; ctx.beginPath(); ctx.arc(x, y, 1, 0, Math.PI * 2); ctx.fill(); }
       ctx.strokeStyle = 'rgba(82,31,59,.45)'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(48, 12); ctx.lineTo(44, 21); ctx.lineTo(49, 27); ctx.lineTo(45, 34); ctx.stroke();
-      // Tea surface swirls faster during wind-up; bubbles rise from the vortex.
       ctx.fillStyle = '#5e173e'; ctx.beginPath(); ctx.ellipse(33, 11, 27, 7, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#e18a9f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(33 + Math.sin(e.t * 4) * 3, 11, 17 - charge * 4, 3, 0, 0, Math.PI * 2); ctx.stroke();
-      for (let i = 0; i < 3; i++) { const k = (e.t * (1 + charge) + i * .33) % 1; ctx.fillStyle = hexA('#ffd7ea', .7 * (1 - k)); ctx.beginPath(); ctx.arc(22 + i * 10 + Math.sin(e.t + i) * 3, 9 - k * 17, 2.5 - k, 0, Math.PI * 2); ctx.fill(); }
-      // A teaspoon is carried like a lance and rattles against the saucer.
+      // 茶の渦(チャージで赤く煮立つ)
+      const teaCol = charge > .6 ? '#a02040' : '#e18a9f';
+      ctx.strokeStyle = teaCol; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(33 + Math.sin(e.t * 4) * 3, 11, 17 - charge * 4, 3, e.t, 0, Math.PI * 2); ctx.stroke();
+      for (let i = 0; i < 4; i++) { const k = (e.t * (1 + charge) + i * .25) % 1; ctx.fillStyle = hexA('#ffd7ea', .7 * (1 - k)); ctx.beginPath(); ctx.arc(20 + i * 9 + Math.sin(e.t + i) * 3, 9 - k * 20, 2.8 - k, 0, Math.PI * 2); ctx.fill(); }
       ctx.save(); ctx.translate(11, 37); ctx.rotate(-.7 + rattle * .03); ctx.strokeStyle = '#d9dfeb'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-26, 16); ctx.stroke(); ctx.fillStyle = '#f8fbff'; ctx.beginPath(); ctx.ellipse(-30, 19, 8, 5, -.6, 0, Math.PI * 2); ctx.fill(); ctx.restore();
       ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 3;
-      for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(22 + i * 12, 6); ctx.quadraticCurveTo(13 + i * 15 + rattle, -7, 25 + i * 10 + steam * 4, -18); ctx.stroke(); }
-      drawKawaiiEyes(20, 27, 45, 8, 2); return true;
+      for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(20 + i * 10, 6); ctx.quadraticCurveTo(11 + i * 14 + rattle, -8, 24 + i * 9 + steam * 4, -20); ctx.stroke(); }
+      drawKawaiiEyes(20, 27, 45, 8, 2);
+      ctx.restore(); return true;
     }
     return false;
   }
@@ -10788,36 +11105,150 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.fillStyle = '#d6ffd0'; ctx.fillRect(24, 31, 20, 5);
       ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.arc(26, 24, 5, 0, Math.PI * 2); ctx.fill();
     } else if (e.type === 'knight') {
-      // cape volume
-      ctx.fillStyle = '#2a0a22';
-      ctx.beginPath(); ctx.moveTo(50, 22); ctx.lineTo(74, 32); ctx.lineTo(72, 82); ctx.lineTo(44, 66); ctx.closePath(); ctx.fill();
-      const cape = ctx.createLinearGradient(55, 14, 72, 78); cape.addColorStop(0, '#ff6eb0'); cape.addColorStop(1, '#4d123d');
-      ctx.fillStyle = cape; ctx.beginPath(); ctx.moveTo(48, 19); ctx.lineTo(70, 28); ctx.lineTo(67, 78); ctx.lineTo(42, 62); ctx.closePath(); ctx.fill();
-      // armor extrude then front
+      // ハートの女王の近衛兵: 羽織マント・板金・面頬・ランス・飾緒
+      const bob = Math.sin(e.t * 5) * 2;
+      const charge = clamp(1 - e.fire / Math.max(.1, e.fireMax), 0, 1);
+      ctx.save(); ctx.translate(0, bob);
+      // マント(風になびく三層)
+      for (let layer = 0; layer < 3; layer++) {
+        const sway = Math.sin(e.t * 3.2 + layer) * (4 + layer * 2);
+        const grad = ctx.createLinearGradient(48, 10, 88, 90);
+        grad.addColorStop(0, layer === 0 ? '#ff9ecf' : '#c04080');
+        grad.addColorStop(1, '#2a0a22');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(46, 18);
+        ctx.quadraticCurveTo(70 + sway, 20 + layer * 6, 78 + sway, 40);
+        ctx.quadraticCurveTo(82 + sway * .6, 70, 58, 92 - layer * 4);
+        ctx.lineTo(40, 70);
+        ctx.closePath(); ctx.fill();
+      }
+      // 鎧の押し出し
       ctx.fillStyle = '#3b1730';
-      ctx.beginPath(); ctx.moveTo(22, 22); ctx.lineTo(40, 8); ctx.lineTo(60, 22); ctx.lineTo(62, 70); ctx.lineTo(40, 84); ctx.lineTo(18, 70); ctx.closePath(); ctx.fill();
-      const armor = ctx.createLinearGradient(10, 5, 57, 72);
-      armor.addColorStop(0, '#fff3bd'); armor.addColorStop(.3, '#ffe15a'); armor.addColorStop(.7, '#9d5c27'); armor.addColorStop(1, '#3b1730');
+      ctx.beginPath();
+      ctx.moveTo(24, 24); ctx.lineTo(44, 6); ctx.lineTo(66, 24);
+      ctx.lineTo(70, 78); ctx.lineTo(44, 94); ctx.lineTo(18, 78);
+      ctx.closePath(); ctx.fill();
+      const armor = ctx.createLinearGradient(12, 4, 66, 88);
+      armor.addColorStop(0, '#fff6d0'); armor.addColorStop(.25, '#ffe15a');
+      armor.addColorStop(.65, '#c07830'); armor.addColorStop(1, '#4a2030');
       ctx.fillStyle = armor;
-      ctx.beginPath(); ctx.moveTo(18, 18); ctx.lineTo(36, 3); ctx.lineTo(55, 18); ctx.lineTo(57, 65); ctx.lineTo(36, 79); ctx.lineTo(15, 65); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#25051d'; ctx.fillRect(20, 22, 33, 17); ctx.fillStyle = '#ff9ccf'; ctx.fillRect(26, 27, 21, 4);
-      ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 5; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(9, 32); ctx.lineTo(-5, 74); ctx.stroke();
-      ctx.fillStyle = '#ff3e9d'; heartPath(36, 55, 10); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fillRect(22, 12, 8, 4);
+      ctx.beginPath();
+      ctx.moveTo(20, 20); ctx.lineTo(40, 2); ctx.lineTo(62, 20);
+      ctx.lineTo(66, 74); ctx.lineTo(40, 90); ctx.lineTo(16, 74);
+      ctx.closePath(); ctx.fill();
+      // 胸当てリベットとハート紋章
+      ctx.fillStyle = '#8a5020';
+      for (const [rx, ry] of [[28, 36], [52, 36], [28, 58], [52, 58], [40, 48]]) {
+        ctx.beginPath(); ctx.arc(rx, ry, 2.2, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#ff3e9d'; heartPath(40, 62, 12); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.35)'; heartPath(36, 56, 5); ctx.fill();
+      // 面頬ヘルム
+      ctx.fillStyle = '#2a1020';
+      ctx.beginPath(); ctx.moveTo(24, 22); ctx.lineTo(40, 4); ctx.lineTo(58, 22); ctx.lineTo(54, 40); ctx.lineTo(28, 40); ctx.closePath(); ctx.fill();
+      const helm = ctx.createLinearGradient(24, 6, 58, 40);
+      helm.addColorStop(0, '#fff0b0'); helm.addColorStop(1, '#8a5520');
+      ctx.fillStyle = helm;
+      ctx.beginPath(); ctx.moveTo(26, 20); ctx.lineTo(40, 6); ctx.lineTo(56, 20); ctx.lineTo(52, 36); ctx.lineTo(28, 36); ctx.closePath(); ctx.fill();
+      // バイザーのスリット
+      ctx.fillStyle = '#120610';
+      ctx.fillRect(30, 24, 22, 5);
+      ctx.fillStyle = hexA('#ff9ecf', .5 + charge * .4);
+      ctx.fillRect(32, 25, 18, 3);
+      // 羽根飾り
+      ctx.strokeStyle = '#ff3e9d'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      for (let i = 0; i < 4; i++) {
+        const a = -1.2 + i * .25 + Math.sin(e.t * 4 + i) * .08;
+        ctx.beginPath(); ctx.moveTo(40, 8);
+        ctx.quadraticCurveTo(40 + Math.cos(a) * 10, 8 + Math.sin(a) * 18, 40 + Math.cos(a) * 22, Math.sin(a) * 28);
+        ctx.stroke();
+      }
+      // ランス(チャージで先端が発光)
+      ctx.strokeStyle = '#c8a040'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(12, 36); ctx.lineTo(-18, 88); ctx.stroke();
+      ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(12, 36); ctx.lineTo(-18, 88); ctx.stroke();
+      ctx.fillStyle = charge > .5 ? '#fff0c0' : '#ffd06a';
+      ctx.beginPath(); ctx.moveTo(-14, 78); ctx.lineTo(-28, 96); ctx.lineTo(-8, 90); ctx.closePath(); ctx.fill();
+      if (charge > .4) {
+        ctx.save(); ctx.globalCompositeOperation = 'lighter';
+        ctx.fillStyle = hexA('#ff3e9d', charge * .55);
+        ctx.beginPath(); ctx.arc(-20, 92, 8 + charge * 10, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+      // 飾緒
+      ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(22, 44, 8, .2, 2.2); ctx.stroke();
+      drawKawaiiEyes(32, 28, 48, 5, 1);
+      ctx.restore();
     } else if (e.type === 'cupid') {
-      const flap = Math.sin(e.t * 10) * 8;
-      ctx.fillStyle = 'rgba(255,200,230,.35)';
-      ctx.beginPath(); ctx.ellipse(10, 24 + flap * .4, 18, 10, -.5, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(52, 24 + flap * .4, 18, 10, .5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,.9)';
-      ctx.beginPath(); ctx.ellipse(8, 22 + flap * .4, 16, 8, -.5, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(54, 22 + flap * .4, 16, 8, .5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#7a1848'; heartPath(34, 33, 24); ctx.fill();
-      ctx.fillStyle = '#ff3e9d'; heartPath(31, 30, 22); ctx.fill();
-      ctx.fillStyle = '#ffd7ea'; heartPath(26, 25, 9); ctx.fill();
-      drawKawaiiEyes(22, 36, 28, 6, 2);
-      ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(2, 32, 10, -1.1, 1.1); ctx.stroke();
+      // ハートの使者: 羽根・リボン・金の弓・チャージ矢
+      const flap = Math.sin(e.t * 11);
+      const charge = clamp(1 - e.fire / Math.max(.1, e.fireMax), 0, 1);
+      // 後光
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = .2 + charge * .35;
+      const halo = ctx.createRadialGradient(39, 34, 4, 39, 34, 48);
+      halo.addColorStop(0, '#ffe15a'); halo.addColorStop(1, 'rgba(255,225,90,0)');
+      ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(39, 34, 48, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+      // 四枚羽根(上下で位相をずらす)
+      for (const s of [-1, 1]) {
+        for (let tier = 0; tier < 2; tier++) {
+          const fy = 22 + tier * 14 + flap * (tier ? -3 : 5) * s * .2;
+          const spread = .45 + tier * .15;
+          ctx.fillStyle = tier ? 'rgba(255,180,220,.55)' : 'rgba(255,255,255,.92)';
+          ctx.beginPath();
+          ctx.ellipse(12 + (s > 0 ? 54 : 0), fy, 22 - tier * 4, 11 - tier * 2, s * spread, 0, Math.PI * 2);
+          ctx.fill();
+          // 羽脈
+          ctx.strokeStyle = 'rgba(200,80,140,.35)'; ctx.lineWidth = 1;
+          for (let v = 0; v < 4; v++) {
+            ctx.beginPath();
+            ctx.moveTo(12 + (s > 0 ? 54 : 0), fy);
+            ctx.lineTo(12 + (s > 0 ? 54 : 0) + s * (10 + v * 4), fy - 6 + v * 3);
+            ctx.stroke();
+          }
+        }
+      }
+      // 体=立体ハート(影→本体→ハイライト)
+      ctx.fillStyle = '#5a1038'; heartPath(42, 38, 28); ctx.fill();
+      const body = ctx.createRadialGradient(30, 24, 2, 38, 36, 28);
+      body.addColorStop(0, '#ffd0e8'); body.addColorStop(.4, '#ff3e9d'); body.addColorStop(1, '#7a1848');
+      ctx.fillStyle = body; heartPath(39, 34, 26); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.45)'; heartPath(32, 26, 10); ctx.fill();
+      // 頬のハートそばかす
+      ctx.fillStyle = '#ff9ecf';
+      for (const [hx, hy] of [[24, 40], [52, 40], [28, 48], [48, 48]]) {
+        heartPath(hx, hy, 2.5); ctx.fill();
+      }
+      drawKawaiiEyes(28, 38, 36, 7, 2);
+      // 金の弓
+      ctx.strokeStyle = '#c89a40'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(6, 36, 16, -1.35, 1.35); ctx.stroke();
+      ctx.strokeStyle = '#ffe15a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(6, 36, 16, -1.35, 1.35); ctx.stroke();
+      // 弦
+      ctx.strokeStyle = 'rgba(255,240,200,.7)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(6, 22); ctx.lineTo(6 - charge * 8, 36); ctx.lineTo(6, 50); ctx.stroke();
+      // 矢(チャージで先端がハート化)
+      ctx.save();
+      ctx.translate(6 - charge * 6, 36);
+      ctx.strokeStyle = '#fff0c0'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-28 - charge * 6, 0); ctx.stroke();
+      ctx.fillStyle = charge > .55 ? '#ff3e9d' : '#ffe15a';
+      if (charge > .55) { heartPath(-32 - charge * 6, 0, 5 + charge * 3); ctx.fill(); }
+      else {
+        ctx.beginPath(); ctx.moveTo(-28, 0); ctx.lineTo(-36, -4); ctx.lineTo(-36, 4); ctx.closePath(); ctx.fill();
+      }
+      // 羽
+      ctx.fillStyle = '#ff9ecf';
+      ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(2, -5); ctx.lineTo(2, 5); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      // 頭のリボン
+      ctx.fillStyle = '#ffe15a';
+      ctx.beginPath(); ctx.moveTo(34, 12); ctx.lineTo(28, 2); ctx.lineTo(34, 6); ctx.lineTo(40, 2); ctx.closePath(); ctx.fill();
     } else if (e.type === 'dumbo') {
       // Grimpoteuthis (メンダコ). Anatomy kept honest: a gelatinous bell mantle,
       // the pair of ear-like fins it actually rows with, and eight short arms
@@ -12300,9 +12731,47 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       ctx.textAlign = 'left';
     }
     if (bossState === 'warning' || bossState === 'midboss-warning') {
-      ctx.globalAlpha = .55 + Math.sin(bossWarning * 12) * .35; ctx.fillStyle = stage.accent2; ctx.fillRect(0, 292, VW, 102);
-      ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '28px "Press Start 2P", monospace'; ctx.fillText('WARNING', VW / 2, 344);
-      ctx.font = '11px "Press Start 2P", monospace'; ctx.fillText(bossState === 'midboss-warning' ? 'MID BOSS APPROACHING' : 'BOSS APPROACHING', VW / 2, 374); ctx.textAlign = 'left';
+      const finale = bossState === 'warning' && stageIndex === 4;
+      if (finale) {
+        // 緞帳＋スポット：最終ボスの儀式入場
+        const k = clamp(queenCinema / 5.4, 0, 1);
+        const pulse = .55 + Math.sin(elapsed * 10) * .35;
+        ctx.save();
+        ctx.fillStyle = `rgba(20,0,12,${.55 + (1 - k) * .25})`;
+        ctx.fillRect(0, 0, VW, VH);
+        // 中央スポット
+        const g = ctx.createRadialGradient(VW * .62, VH * .42, 20, VW * .62, VH * .42, 280);
+        g.addColorStop(0, `rgba(255,60,140,${.22 * pulse})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+        // 緞帳の縁
+        ctx.fillStyle = '#4a0a28';
+        ctx.fillRect(0, 0, VW, 48 + (1 - k) * 40);
+        ctx.fillRect(0, VH - 48 - (1 - k) * 40, VW, 48 + (1 - k) * 40);
+        ctx.fillStyle = '#ffe15a';
+        for (let x = 0; x < VW; x += 28) {
+          ctx.fillRect(x, 40 + (1 - k) * 40, 14, 6);
+          ctx.fillRect(x, VH - 46 - (1 - k) * 40, 14, 6);
+        }
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#ffe15a';
+        ctx.font = '22px "Press Start 2P", monospace';
+        ctx.globalAlpha = pulse;
+        ctx.fillText('FINAL ACT', VW / 2, 320);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#fff';
+        ctx.font = '13px "DotGothic16", monospace';
+        ctx.fillText('ハートの女王が、玉座から立ち上がる', VW / 2, 358);
+        ctx.fillStyle = stage.accent2;
+        ctx.font = '10px "Press Start 2P", monospace';
+        ctx.fillText('QUEEN OF HEARTBREAK', VW / 2, 388);
+        ctx.restore();
+        ctx.textAlign = 'left';
+      } else {
+        ctx.globalAlpha = .55 + Math.sin(bossWarning * 12) * .35; ctx.fillStyle = stage.accent2; ctx.fillRect(0, 292, VW, 102);
+        ctx.globalAlpha = 1; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = '28px "Press Start 2P", monospace'; ctx.fillText('WARNING', VW / 2, 344);
+        ctx.font = '11px "Press Start 2P", monospace'; ctx.fillText(bossState === 'midboss-warning' ? 'MID BOSS APPROACHING' : 'BOSS APPROACHING', VW / 2, 374); ctx.textAlign = 'left';
+      }
     }
     if (continueBanner > 0) {
       const a = Math.min(1, continueBanner, (3 - continueBanner) * 3);
@@ -12559,6 +13028,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       });
     } catch (_) { /* optional finale embellishment */ }
   }
+
 
   function setPaused(value) {
     if (state !== 'playing') return;

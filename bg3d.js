@@ -22,7 +22,7 @@ import * as THREE from './assets/lib/three.module.min.js';
   const VW = 1280, VH = 720;
   // version は「今ブラウザが実際に読んでいる bg3d.js」を確認するための目印。
   // ローカルは Cache-Control が無く古い版が残りやすいので、修正のたびに更新する。
-  const api = { version: 'whale-4', ready: false, canvas: null, render: () => false, setQuality: () => {} };
+  const api = { version: 'finale-1', ready: false, canvas: null, render: () => false, setQuality: () => {} };
   window.GRO_BG3D = api;
 
   let renderer;
@@ -156,6 +156,36 @@ import * as THREE from './assets/lib/three.module.min.js';
 
   const lambert = o => new THREE.MeshLambertMaterial(o);
   const basic = o => new THREE.MeshBasicMaterial(o);
+
+  // 0 = 平穏, 1 = ボス本戦。warning / energy でも途中まで上がる。
+  // 各ステージの update で fog・ライト・名物の露出を揃える入口。
+  function moodT(s) {
+    let m = 0;
+    if (s.warning) m = Math.max(m, .55);
+    if (s.boss) m = Math.max(m, 1);
+    m = Math.max(m, Math.min(1, (s.energy || 0) * .35));
+    return m;
+  }
+  // fog 色を hex 同士で混ぜる(毎フレーム new Color を避けるためキャッシュを fog にぶら下げる)
+  // THREE.Fog には userData が無いので素のプロパティで持つ。
+  function mixFog(fog, calmHex, tenseHex, t, farCalm, farTense) {
+    const k = Math.max(0, Math.min(1, t));
+    if (!fog._moodC0) {
+      fog._moodC0 = new THREE.Color(calmHex);
+      fog._moodC1 = new THREE.Color(tenseHex);
+      fog._moodTmp = new THREE.Color();
+    } else {
+      fog._moodC0.setHex(calmHex);
+      fog._moodC1.setHex(tenseHex);
+    }
+    fog._moodTmp.copy(fog._moodC0).lerp(fog._moodC1, k);
+    fog.color.copy(fog._moodTmp);
+    if (farCalm !== undefined) fog.far = farCalm + (farTense - farCalm) * k;
+  }
+  // スプライト opacity の呼吸(点滅灯・ビーコン共用)
+  function breath(t, ph, lo = .35, hi = 1, rate = 2.2) {
+    return lo + (hi - lo) * Math.max(0, Math.sin(t * rate + ph));
+  }
 
   // ------------------------------------------------------------ actor overlay
   // 弾・敵エフェクト用の第2レイヤー。直交カメラでゲームのワールド座標
@@ -398,14 +428,22 @@ import * as THREE from './assets/lib/three.module.min.js';
       A.put(P.glow, nGlow++, cx, cy + h * .38, w * (1.6 + hit * .5), h * (.7 + hit * .3), 1,
         0, 0, 0, hit ? 0xffffff : A.GLOW_COL[st]);
       if (boss) {
-        // ボス: 巨体を包むエネルギーの二重環 + 軌道を回る光球
-        const R = Math.max(w, h) * 1.35;
-        A.put(P.aura, nAura++, cx, cy, R, R * .62, 1, 0, 0, t * .5, A.GLOW_COL[st], .75);
-        A.put(P.aura, nAura++, cx, cy, R * .74, R * .5, 1, 0, 0, -t * .7, 0xffffff, .5);
-        for (let o = 0; o < 5; o++) {
-          const a = t * 1.1 + o * 1.2566;
-          A.put(P.halo, nHalo++, cx + Math.cos(a) * R * .48, cy + Math.sin(a) * R * .22,
-            30, 30, 1, 0, 0, 0, A.GLOW_COL[st]);
+        // ボス: 巨体を包むエネルギーの三重環 + 軌道を回る光球(ステージ色)
+        // 属性アクセント: aqua=泡 / factory=炎 / storm=雷 / palace=ハート金
+        const accent = [0xff3e9d, 0x65fff2, 0xffe15a, 0x72ff68, 0xffd06a][st] || A.GLOW_COL[st];
+        const R = Math.max(w, h) * 1.4;
+        const mid = e.type === 'midboss';
+        A.put(P.aura, nAura++, cx, cy, R, R * .62, 1, 0, 0, t * .5, A.GLOW_COL[st], .8);
+        A.put(P.aura, nAura++, cx, cy, R * .78, R * .52, 1, 0, 0, -t * .7, accent, .55);
+        if (!mid && nAura < 38) {
+          A.put(P.aura, nAura++, cx, cy, R * 1.18, R * .72, 1, 0, 0, t * .25, accent, .35);
+        }
+        const nOrb = mid ? 5 : 7;
+        for (let o = 0; o < nOrb; o++) {
+          const a = t * 1.1 + o * (Math.PI * 2 / nOrb);
+          const rOrb = R * (.42 + (o % 2) * .12);
+          A.put(P.halo, nHalo++, cx + Math.cos(a) * rOrb, cy + Math.sin(a) * rOrb * .45,
+            mid ? 28 : 34, mid ? 28 : 34, 1, 0, 0, 0, o % 2 ? accent : A.GLOW_COL[st]);
         }
       } else {
         if (A.WING.has(e.type)) {
@@ -506,7 +544,7 @@ import * as THREE from './assets/lib/three.module.min.js';
         A.put(P.fxBall, nBall++, e.x, e.y, 74 * fade, 74 * fade, 1, 0, 0, 0, 0xffffff, ease);
       } else if (e.kind === 'explode') {
         const sz = e.size;
-        // 火球: 一気に膨らんでから萎む
+        // 火球: 一気に膨らんでから萎む(ステージ accent を破片色に混ぜる)
         const g = Math.sin(Math.min(1, p * 1.6) * Math.PI * .5);
         const fb = 210 * sz * g * (1 - p * .35);
         A.put(P.fxBall, nBall++, e.x, e.y, fb, fb, 1, 0, 0, e.t, p < .3 ? 0xffffff : e.color, ease);
@@ -514,6 +552,11 @@ import * as THREE from './assets/lib/three.module.min.js';
         const d1 = 40 + p * 420 * sz, d2 = 24 + p * 260 * sz;
         A.put(P.fxRing, nFxRing++, e.x, e.y, d1, d1 * .78, 1, 0, 0, e.t * 1.4, e.color, ease);
         A.put(P.fxRing, nFxRing++, e.x, e.y, d2, d2 * .92, 1, 0, 0, -e.t * 2, 0xffffff, ease * ease);
+        // 第三リング: アクセント色(爆発がステージ色を帯びる)
+        if (nFxRing < 88) {
+          const d3 = 18 + p * 180 * sz;
+          A.put(P.fxRing, nFxRing++, e.x, e.y, d3, d3 * .85, 1, 0, 0, e.t * 2.2, hull, ease * .7);
+        }
       } else if (e.kind === 'nova') {
         for (let k = 0; k < 3; k++) {
           const pp = Math.max(0, p - k * .12);
@@ -944,15 +987,29 @@ import * as THREE from './assets/lib/three.module.min.js';
     }, 360);
     scene.add(hwBelt.group);
 
-    // 車: 白(こちら向き)と赤(去り)のヘッドライト連
+    // 車: 白(こちら向き)と赤(去り)のヘッドライト連 + 車体差(タクシー黄/トラック水色)
     const carMovers = [];
     const carGroup = new THREE.Group();
-    for (let i = 0; i < 22; i++) {
+    for (let i = 0; i < 26; i++) {
       const toward = i % 2 === 0;
-      const c = sprite(softTex(toward ? '#fff6d8' : '#ff6a6a'), toward ? 0xfff6d8 : 0xff6a6a, 1.7, .95);
-      c.position.set(rand(-180, 260), hwY + 1.1, hwZ + (toward ? 2.2 : -2.2));
-      carGroup.add(c);
-      carMovers.push({ obj: c, min: -200, span: 480, v: toward ? rand(7, 12) : rand(-11, -6), k: 1 });
+      const kind = i % 5;                          // 0-2 普通 / 3 タクシー / 4 トラック
+      const speed = toward
+        ? (kind === 4 ? rand(5, 8) : rand(7, 12))
+        : (kind === 4 ? rand(-8, -5) : rand(-11, -6));
+      const head = sprite(softTex(toward ? '#fff6d8' : '#ff6a6a'), toward ? 0xfff6d8 : 0xff6a6a,
+        kind === 4 ? 2.4 : 1.7, .95);
+      const zLane = hwZ + (toward ? 2.2 : -2.2);
+      const x0 = rand(-180, 260);
+      head.position.set(x0, hwY + 1.1, zLane);
+      carGroup.add(head);
+      carMovers.push({ obj: head, min: -200, span: 480, v: speed, k: 1 });
+      if (kind === 3 || kind === 4) {
+        const body = sprite(softTex(kind === 3 ? '#ffe15a' : '#8defff'), kind === 3 ? 0xffe15a : 0x8defff,
+          kind === 4 ? 2.8 : 1.6, .55);
+        body.position.set(x0 + (toward ? -1.4 : 1.4), hwY + 1.1, zLane);
+        carGroup.add(body);
+        carMovers.push({ obj: body, min: -200, span: 480, v: speed, k: 1 });
+      }
     }
     scene.add(carGroup);
     const cars = makeMovers(carMovers);
@@ -1002,6 +1059,15 @@ import * as THREE from './assets/lib/three.module.min.js';
           beam.material.opacity = .07 + .05 * Math.sin(t * .6 + beam.userData.ph);
         }
         moonGlow.material.opacity = .26 + .06 * Math.sin(t * .8);
+        // 道中→警告→ボスで夜が赤紫に寄せ、ネオン点滅を速く
+        const m = moodT(s);
+        mixFog(scene.fog, 0x31166e, 0x4a0a48, m, 430, 360);
+        moonLight.intensity = .9 - m * .25;
+        for (const f of flickables) {
+          if (!f.userData.flick) continue;
+          const thr = -.85 + m * .35;
+          f.material.opacity = Math.sin(t * f.userData.flick * (3 + m * 4)) > thr ? .85 : .2;
+        }
       }
     };
   }
@@ -1787,10 +1853,11 @@ import * as THREE from './assets/lib/three.module.min.js';
         }
         sprayGeo.attributes.position.needsUpdate = true;
         moonGlow.material.opacity = .26 + .06 * Math.sin(t * .7);
-        // 外洋→深海チャプターはフォグを濃く、月光を落とす
+        // 外洋→深海チャプターはフォグを濃く、月光を落とす。ボス時はさらに沈む。
         const deep = Math.min(2, s.chapter + (s.chapterT || 0)) / 2;
-        scene.fog.far = 340 - deep * 90;
-        moonLight.intensity = 1.0 - deep * .35;
+        const m = moodT(s);
+        mixFog(scene.fog, 0x0a4a7d, 0x041830, Math.max(deep * .5, m), 340 - deep * 90, 250);
+        moonLight.intensity = 1.0 - deep * .35 - m * .25;
       }
     };
   }
@@ -2412,6 +2479,14 @@ import * as THREE from './assets/lib/three.module.min.js';
         }
         spGeo.attributes.position.needsUpdate = true;
         sunGlow.material.opacity = .34 + .08 * Math.sin(t * .7);
+        // ボス／警告で炉の赤を深め、火花を速く
+        const m = moodT(s);
+        mixFog(scene.fog, 0x5e1c30, 0x3a0c18, m, 330, 270);
+        sunLight.intensity = 1.3 - m * .35;
+        for (const f of flames) {
+          // 既存の揺らぎに mood で一段階強く
+          f.material.opacity = Math.min(1, (f.material.opacity || .7) + m * .12);
+        }
       }
     };
   }
@@ -2598,6 +2673,164 @@ import * as THREE from './assets/lib/three.module.min.js';
     vortex.position.set(90, 52, -290);
     scene.add(vortex);
 
+    // --- 名物: 巨大データコア塔 ------------------------------------------
+    // 遠景右寄りに常駐する回転リング塔。ボス時にスケールと光量が増す。
+    const dataCore = new THREE.Group();
+    const coreBodyMat = lambert({ color: 0x0a3028, emissive: 0x1a6048, emissiveIntensity: .75 });
+    const coreShaft = new THREE.Mesh(new THREE.CylinderGeometry(9, 14, 90, 10), coreBodyMat);
+    coreShaft.position.y = 22;
+    dataCore.add(coreShaft);
+    const coreCap = new THREE.Mesh(new THREE.CylinderGeometry(12, 9, 8, 10),
+      lambert({ color: 0x123a30, emissive: 0x31e8ff, emissiveIntensity: 1.0 }));
+    coreCap.position.y = 70;
+    dataCore.add(coreCap);
+    const coreRings = [];
+    for (const [ry, rr, sp] of [[-10, 20, .6], [12, 17, -.85], [36, 14, 1.1], [58, 12, -.7]]) {
+      const rm = basic({ color: 0x31e8ff, transparent: true, opacity: .7, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(rr, .7, 6, 36), rm);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = ry + 22;
+      ring.userData.sp = sp;
+      dataCore.add(ring);
+      coreRings.push(ring);
+    }
+    // 縦のエネルギー噴流(塔を貫く光柱)
+    const jetTex = makeTex(32, 128, (g, w, h) => {
+      const gr = g.createLinearGradient(0, 0, 0, h);
+      gr.addColorStop(0, 'rgba(49,232,255,0)');
+      gr.addColorStop(.35, 'rgba(114,255,104,.85)');
+      gr.addColorStop(.7, 'rgba(49,232,255,.55)');
+      gr.addColorStop(1, 'rgba(216,255,212,0)');
+      g.fillStyle = gr; g.fillRect(w * .3, 0, w * .4, h);
+    });
+    const coreJet = new THREE.Mesh(new THREE.PlaneGeometry(10, 100),
+      new THREE.MeshBasicMaterial({
+        map: jetTex, transparent: true, opacity: .45, blending: THREE.AdditiveBlending,
+        depthWrite: false, fog: false, side: THREE.DoubleSide
+      }));
+    coreJet.position.y = 34;
+    coreJet.scale.set(1.3, 1.15, 1);
+    dataCore.add(coreJet);
+    const coreJet2 = coreJet.clone();
+    coreJet2.rotation.y = Math.PI / 2;
+    dataCore.add(coreJet2);
+    const coreGlow = sprite(softTex('#9affb0'), 0x72ff68, 64, .45);
+    coreGlow.position.y = 72;
+    dataCore.add(coreGlow);
+    // z=-200 ならフォグ手前で塔が読め、飛行ライン(z=0)にも食い込まない
+    dataCore.position.set(110, -8, -200);
+    dataCore.userData = { baseX: 110, span: 780, min: -380 };
+    scene.add(dataCore);
+
+    // --- 浮遊サーバ群(近〜中景) ----------------------------------------
+    // 傾いたラックが編隊で流れ、LED が走査する。近景の厚みを作る主役。
+    const rackTex = makeTex(64, 128, g => {
+      g.fillStyle = '#061a14'; g.fillRect(0, 0, 64, 128);
+      for (let y = 0; y < 16; y++) {
+        g.fillStyle = y % 3 === 0 ? '#0c3a2e' : '#082820';
+        g.fillRect(4, 4 + y * 7.5, 56, 6);
+        if (Math.random() < .55) {
+          g.fillStyle = pick(['#48e87a', '#31e8ff', '#0d6a3a']);
+          g.globalAlpha = rand(.4, 1);
+          g.fillRect(8 + rand(0, 40), 5 + y * 7.5, rand(6, 18), 3.5);
+        }
+      }
+      g.globalAlpha = 1;
+    });
+    const floatRacks = [];
+    const rackBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      const face = lambert({ map: rackTex, color: 0x3a7a62, emissive: 0xffffff, emissiveIntensity: .75, emissiveMap: rackTex });
+      const side = lambert({ color: 0x0a2820 });
+      for (let i = 0; i < 6; i++) {
+        const w = rand(5, 8), h = rand(10, 18), d = rand(3, 5);
+        const rack = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [side, side, side, side, face, face]);
+        rack.position.set(i * 70 + rand(-10, 10), rand(-4, 22), rand(-72, -42));
+        rack.rotation.z = rand(-.18, .18);
+        rack.rotation.y = rand(-.25, .25);
+        rack.userData.bob = rand(0, 6.28);
+        rack.userData.baseY = rack.position.y;
+        rack.userData.spin = rand(-.08, .08);
+        grp.add(rack);
+        // ラック上端の走査ビーム(横に走る細い光)
+        const scan = new THREE.Mesh(new THREE.PlaneGeometry(w * .9, .35),
+          basic({ color: 0x72ff68, transparent: true, opacity: .7, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+        scan.position.set(rack.position.x, rack.position.y + h * .35, rack.position.z + d * .55);
+        scan.userData.scanPh = rand(0, 6.28);
+        scan.userData.baseY = scan.position.y;
+        scan.userData.bob = rack.userData.bob;
+        scan.userData.hHalf = h * .4;
+        grp.add(scan);
+      }
+      return grp;
+    }, 420);
+    rackBelt.group.traverse(o => {
+      if (o.userData && (o.userData.bob !== undefined || o.userData.scanPh !== undefined)) floatRacks.push(o);
+    });
+    scene.add(rackBelt.group);
+
+    // --- ホログラム広告板 ----------------------------------------------
+    const holoTex = makeTex(128, 64, g => {
+      g.fillStyle = 'rgba(6,40,30,.15)'; g.fillRect(0, 0, 128, 64);
+      g.strokeStyle = '#31e8ff'; g.lineWidth = 2; g.strokeRect(2, 2, 124, 60);
+      g.font = 'bold 22px "Hiragino Sans", monospace';
+      g.textAlign = 'center';
+      g.fillStyle = '#72ff68';
+      const words = ['データ', 'SYNC', 'WARN', 'CORE', '電脳', '01', 'LOAD'];
+      g.fillText(pick(words), 64, 40);
+      for (let i = 0; i < 20; i++) {
+        g.fillStyle = pick(['#48e87a', '#31e8ff']);
+        g.globalAlpha = rand(.2, .7);
+        g.fillRect(rand(6, 120), rand(6, 58), rand(2, 8), 1.5);
+      }
+      g.globalAlpha = 1;
+    });
+    const holos = [];
+    const holoBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      for (let i = 0; i < 5; i++) {
+        const tex = holoTex.clone();
+        tex.needsUpdate = true;
+        const panel = new THREE.Mesh(new THREE.PlaneGeometry(rand(14, 22), rand(7, 11)),
+          new THREE.MeshBasicMaterial({
+            map: tex, transparent: true, opacity: .55, blending: THREE.AdditiveBlending,
+            depthWrite: false, fog: false, side: THREE.DoubleSide
+          }));
+        panel.position.set(i * 95 + rand(-12, 12), rand(8, 28), rand(-110, -80));
+        panel.rotation.y = rand(-.3, .3);
+        panel.userData.flick = rand(1.2, 3.5);
+        panel.userData.swapT = rand(1, 3);
+        grp.add(panel);
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(panel.geometry.parameters.width + .6, .25, .25),
+          basic({ color: 0x31e8ff, transparent: true, opacity: .4 }));
+        frame.position.copy(panel.position);
+        frame.position.y += panel.geometry.parameters.height * .52;
+        grp.add(frame);
+      }
+      return grp;
+    }, 480);
+    holoBelt.group.traverse(o => { if (o.userData && o.userData.flick) holos.push(o); });
+    scene.add(holoBelt.group);
+
+    // 落雷の着弾リング(ボルト発生時に地表付近へ展開)
+    const strikeRings = [];
+    for (let i = 0; i < 4; i++) {
+      const ring = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({
+          color: 0xd8ffe8, transparent: true, opacity: 0,
+          blending: THREE.AdditiveBlending, depthWrite: false, fog: false, side: THREE.DoubleSide
+        }));
+      // soft リング: 衝撃波テクスチャ相当を円で
+      ring.material.map = softTex('#ffffff', 64, .55);
+      ring.material.needsUpdate = true;
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = -16.5;
+      ring.visible = false;
+      ring.userData = { life: 0, max: .45 };
+      scene.add(ring);
+      strikeRings.push(ring);
+    }
+
     // 雲内発光: フラッシュ時に雲の中がぼわっと光る
     const cloudFlashes = [];
     for (let i = 0; i < 3; i++) {
@@ -2651,27 +2884,32 @@ import * as THREE from './assets/lib/three.module.min.js';
     let flashT = 0, nextFlash = rand(2, 5);
 
     let t = 0;
+    let strikeIdx = 0;
     return {
       scene,
       update(dt, s) {
         t += dt;
         const dx = SCROLL * (s.speed || 1) * dt;
+        const m = moodT(s);
         monoBelt.update(dx);
         spineBelt.update(dx * .8);
+        rackBelt.update(dx * 1.05);
+        holoBelt.update(dx * .9);
         for (const l of cloudLayers) l.update(dx, dt);
-        for (const b of spineBlinks) b.material.opacity = .3 + .6 * Math.max(0, Math.sin(t * 2.2 + b.userData.blink));
+        for (const b of spineBlinks) b.material.opacity = breath(t, b.userData.blink, .3, .9, 2.2 + m);
         for (const gc of glyphCols) {
-          gc.material.map.offset.y += gc.userData.v * dt;
+          gc.material.map.offset.y += gc.userData.v * dt * (1 + m * .8);
           gc.position.x -= dx * .8;
           if (gc.position.x < gc.userData.min) gc.position.x += gc.userData.span;
+          gc.material.opacity = .35 + m * .2;
         }
         for (const pu of pulses) {
-          pu.position.x += pu.userData.v * dt - dx * .7;
+          pu.position.x += pu.userData.v * dt * (1 + m * .5) - dx * .7;
           if (pu.position.x < pu.userData.min) pu.position.x += pu.userData.span;
           else if (pu.position.x > pu.userData.min + pu.userData.span) pu.position.x -= pu.userData.span;
         }
         for (const arc of arcs) {
-          arc.userData.timer -= dt * (1 + (s.energy || 0));
+          arc.userData.timer -= dt * (1 + (s.energy || 0) + m);
           if (arc.userData.timer <= 0 && !arc.visible) {
             arc.visible = true; arc.userData.life = .16;
             arc.position.set(rand(-180, 180), rand(-6, 30), rand(-140, -90));
@@ -2679,22 +2917,52 @@ import * as THREE from './assets/lib/three.module.min.js';
           if (arc.visible) {
             arc.userData.life -= dt;
             arc.material.opacity = Math.max(0, arc.userData.life / .16);
-            if (arc.userData.life <= 0) { arc.visible = false; arc.userData.timer = rand(1.5, 4.5); }
+            if (arc.userData.life <= 0) { arc.visible = false; arc.userData.timer = rand(1.5, 4.5) * (1 - m * .4); }
           }
         }
-        for (const ring of vortex.children) if (ring.userData && ring.userData.sp) ring.rotation.z = t * ring.userData.sp;
-        vorCore.material.opacity = .4 + .18 * Math.sin(t * 1.7);
+        for (const ring of vortex.children) if (ring.userData && ring.userData.sp) ring.rotation.z = t * ring.userData.sp * (1 + m * .4);
+        vorCore.material.opacity = .4 + .18 * Math.sin(t * 1.7) + m * .2;
+        const vorScale = 1 + m * .35;
+        vortex.scale.setScalar(vorScale);
         for (const o of monoliths) {
           if (o.userData.spin) {
-            o.rotation.z += o.userData.spin * dt;
+            o.rotation.z += o.userData.spin * dt * (1 + m * .5);
             o.position.y = o.userData.baseY + Math.sin(t * .7 + o.userData.bobSync) * 2.2;
           } else if (o.userData.bob !== undefined) {
             o.position.y = o.userData.baseY + Math.sin(t * .7 + o.userData.bob) * 2.2;
           }
         }
+        // データコア: ゆっくり横に流れ、ボス時はリング加速＋噴流が太く
+        dataCore.position.x -= dx * .55;
+        if (dataCore.position.x < dataCore.userData.min) dataCore.position.x += dataCore.userData.span;
+        for (const r of coreRings) r.rotation.z += r.userData.sp * dt * (1 + m * 1.2);
+        coreGlow.material.opacity = .3 + .15 * Math.sin(t * 1.5) + m * .25;
+        coreJet.material.opacity = .4 + m * .25 + .08 * Math.sin(t * 3);
+        coreJet2.material.opacity = coreJet.material.opacity;
+        dataCore.scale.setScalar(1 + m * .18);
+        // 浮遊ラック: 上下に浮遊＋走査ビームがラック面を往復
+        for (const o of floatRacks) {
+          if (o.userData.scanPh !== undefined) {
+            const ph = (t * 1.4 + o.userData.scanPh) % 1;
+            o.position.y = o.userData.baseY + (ph - .5) * o.userData.hHalf * 2;
+            o.material.opacity = .45 + .4 * Math.sin(t * 6 + o.userData.scanPh);
+          } else if (o.userData.bob !== undefined) {
+            o.position.y = o.userData.baseY + Math.sin(t * .9 + o.userData.bob) * 1.8;
+            if (o.userData.spin) o.rotation.y += o.userData.spin * dt;
+          }
+        }
+        // ホロ広告: 明滅＋たまにテクスチャ offset で「切替」感
+        for (const h of holos) {
+          h.material.opacity = .4 + .25 * Math.max(0, Math.sin(t * h.userData.flick));
+          h.userData.swapT -= dt;
+          if (h.userData.swapT <= 0) {
+            h.userData.swapT = rand(1.2, 3.2);
+            if (h.material.map) h.material.map.offset.x = Math.random() > .5 ? 0 : .02;
+          }
+        }
         const rp = rainGeo.attributes.position.array;
         for (let i = 0; i < N_RAIN; i++) {
-          let x = rp[i * 6] - (60 * dt + dx * .8), y = rp[i * 6 + 1] - 90 * dt;
+          let x = rp[i * 6] - (60 * dt + dx * .8), y = rp[i * 6 + 1] - 90 * dt * (1 + m * .3);
           if (y < -45) { y = rand(60, 95); x = rand(-200, 240); }
           if (x < -220) x += 440;
           rp[i * 6] = x; rp[i * 6 + 1] = y;
@@ -2703,33 +2971,52 @@ import * as THREE from './assets/lib/three.module.min.js';
         rainGeo.attributes.position.needsUpdate = true;
         const dp = dataGeo.attributes.position.array;
         for (let i = 0; i < N_DATA; i++) {
-          dp[i * 3] += dataVel[i] * dt - dx * .6;
+          dp[i * 3] += dataVel[i] * dt * (1 + m) - dx * .6;
           if (dp[i * 3] < -240) dp[i * 3] += 480;
           if (dp[i * 3] > 240) dp[i * 3] -= 480;
         }
         dataGeo.attributes.position.needsUpdate = true;
-        // 稲妻: energy が高いほど頻発。warning 中はほぼ連続
+        // 稲妻: energy が高いほど頻発。warning / boss 中はほぼ連続
         flashT -= dt;
-        nextFlash -= dt * (1 + (s.energy || 0) * 2 + (s.warning ? 4 : 0));
+        nextFlash -= dt * (1 + (s.energy || 0) * 2 + (s.warning ? 4 : 0) + (s.boss ? 5 : 0));
         if (nextFlash <= 0) {
-          nextFlash = rand(2.2, 6);
+          nextFlash = rand(2.2, 6) * (1 - m * .55);
           flashT = .14;
           const b = pick(bolts);
           b.position.set(rand(-170, 170), 0, rand(-190, -110));
           b.visible = true;
           b.material.opacity = 1;
-          // 落雷点の上の雲をぼわっと光らせる
           for (const cf of cloudFlashes) cf.position.set(b.position.x + rand(-40, 40), rand(38, 62), b.position.z - rand(0, 40));
+          // 着弾リングを地表へ
+          const sr = strikeRings[strikeIdx++ % strikeRings.length];
+          sr.position.set(b.position.x, -16.5, Math.min(-40, b.position.z + 40));
+          sr.userData.life = sr.userData.max;
+          sr.visible = true;
+          sr.scale.set(4, 4, 1);
+          sr.material.opacity = .7;
+        }
+        for (const sr of strikeRings) {
+          if (!sr.visible) continue;
+          sr.userData.life -= dt;
+          const k = Math.max(0, sr.userData.life / sr.userData.max);
+          const sc = 4 + (1 - k) * 28;
+          sr.scale.set(sc, sc, 1);
+          sr.material.opacity = .7 * k;
+          if (k <= 0) sr.visible = false;
         }
         const f = Math.max(0, flashT / .14);
-        flashLight.intensity = f * 2.6;
-        hemi.intensity = 1.0 + f * .8;
-        for (const cf of cloudFlashes) cf.material.opacity = f * .55;
+        flashLight.intensity = f * (2.6 + m * 1.4);
+        hemi.intensity = 1.0 + f * .8 + m * .15;
+        for (const cf of cloudFlashes) cf.material.opacity = f * (.55 + m * .2);
         for (const b of bolts) {
           if (!b.visible) continue;
           b.material.opacity = f;
           if (f <= 0) b.visible = false;
         }
+        // ボス時: fog を毒緑→黒緑、渦を前へ少し
+        mixFog(scene.fog, 0x0e3c36, 0x041a14, m, 310, 250);
+        vortex.position.z = -290 + m * 30;
+        vortex.position.y = 52 - m * 8;
       }
     };
   }
@@ -2930,13 +3217,15 @@ import * as THREE from './assets/lib/three.module.min.js';
       scene.add(cd); candles.push(cd);
     }
 
-    // 列柱: 白薔薇色の円柱 + 金の柱頭
+    // 列柱: 白薔薇色の円柱 + 金の柱頭 + アーチ連結(回廊感)
     const colBelt = makeScroller(() => {
       const grp = new THREE.Group();
       const marble = lambert({ color: 0xffdae8 });
       const gold = lambert({ color: 0xffd06a, emissive: 0x664410, emissiveIntensity: .5 });
-      for (let i = 0; i < 8; i++) {
-        const x = i * 46;
+      const archMat = lambert({ color: 0xffc8dc, emissive: 0x662040, emissiveIntensity: .25 });
+      const N = 8, GAP = 46;
+      for (let i = 0; i < N; i++) {
+        const x = i * GAP;
         const col = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 52, 10), marble);
         col.position.set(x, 9, -78);
         grp.add(col);
@@ -2947,10 +3236,38 @@ import * as THREE from './assets/lib/three.module.min.js';
         const lamp = sprite(softTex('#ffd9ec'), 0xff9ecf, 8, .4);
         lamp.position.set(x, 20, -75);
         grp.add(lamp);
+        // 隣柱とアーチで繋ぐ(最後の柱は次タイルへ)
+        if (i < N - 1) {
+          const arch = new THREE.Mesh(
+            new THREE.TorusGeometry(GAP / 2 - .4, .7, 6, 14, Math.PI),
+            archMat
+          );
+          arch.rotation.y = Math.PI / 2;
+          arch.rotation.z = Math.PI;           // 上向きアーチ
+          arch.position.set(x + GAP / 2, 34, -78);
+          grp.add(arch);
+        }
       }
       return grp;
     }, 368);
     scene.add(colBelt.group);
+
+    // 二重列柱(奥列): 遠近の回廊を強調
+    const colFarBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      const marble = lambert({ color: 0xd090b0 });
+      const gold = lambert({ color: 0xc89a4a, emissive: 0x553308, emissiveIntensity: .4 });
+      for (let i = 0; i < 6; i++) {
+        const x = i * 58;
+        const col = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.9, 44, 8), marble);
+        col.position.set(x, 6, -118);
+        grp.add(col);
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(4.6, 1.6, 4.6), gold);
+        cap.position.set(x, 28.5, -118); grp.add(cap);
+      }
+      return grp;
+    }, 350);
+    scene.add(colFarBelt.group);
 
     // シャンデリア: 金のリング + 蝋燭の光点。ゆっくり揺れる
     const chandeliers = [];
@@ -2983,6 +3300,185 @@ import * as THREE from './assets/lib/three.module.min.js';
     }, 330);
     chBelt.group.traverse(o => { if (o.userData && o.userData.sway !== undefined) chandeliers.push(o); });
     scene.add(chBelt.group);
+
+    // --- 名物: 巨大中央シャンデリア ------------------------------------
+    const bigCh = new THREE.Group();
+    const goldBig = lambert({ color: 0xffce6a, emissive: 0xaa7720, emissiveIntensity: .7 });
+    for (const [r, y, t] of [[11, 0, .7], [7.5, 4, .55], [4.5, 7.5, .45]]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, t, 6, 28), goldBig);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = y;
+      bigCh.add(ring);
+    }
+    for (let j = 0; j < 16; j++) {
+      const a = j / 16 * Math.PI * 2;
+      const candle = sprite(softTex('#ffe9b8'), 0xffe9b8, 4.2, .95);
+      candle.position.set(Math.cos(a) * 11, 1.4, Math.sin(a) * 11);
+      bigCh.add(candle);
+      if (j % 2 === 0) {
+        const c2 = sprite(softTex('#ffd9ec'), 0xff9ecf, 3.2, .85);
+        c2.position.set(Math.cos(a) * 7.5, 5.2, Math.sin(a) * 7.5);
+        bigCh.add(c2);
+      }
+    }
+    const bigChain = new THREE.Mesh(new THREE.CylinderGeometry(.28, .28, 28, 5), goldBig);
+    bigChain.position.y = 20;
+    bigCh.add(bigChain);
+    const bigGlow = sprite(softTex('#ffe9b8'), 0xffd06a, 36, .28);
+    bigGlow.position.y = 2;
+    bigCh.add(bigGlow);
+    // 画面右上〜中央寄りに据えて「大広間の主役照明」として読ませる
+    bigCh.position.set(20, 30, -48);
+    bigCh.scale.setScalar(1.15);
+    bigCh.userData.sway = 0.4;
+    scene.add(bigCh);
+    chandeliers.push(bigCh);
+
+    // --- 名物: 玉座(遠景・ボス時に近づき・明るく) ----------------------
+    const crestTex = makeTex(64, 64, g => {
+      g.translate(32, 34);
+      g.fillStyle = '#ff3e9d';
+      g.shadowColor = '#ff3e9d'; g.shadowBlur = 10;
+      g.beginPath();
+      g.moveTo(0, 12);
+      g.bezierCurveTo(-26, -12, -13, -30, 0, -12);
+      g.bezierCurveTo(13, -30, 26, -12, 0, 12);
+      g.fill();
+    });
+    const throne = new THREE.Group();
+    const throneMarble = lambert({ color: 0xffdae8, emissive: 0x662040, emissiveIntensity: .2 });
+    const throneGold = lambert({ color: 0xffd06a, emissive: 0xaa7720, emissiveIntensity: .65 });
+    const throneRed = lambert({ color: 0xa01838, emissive: 0x600820, emissiveIntensity: .4 });
+    // 段丘
+    for (let i = 0; i < 4; i++) {
+      const step = new THREE.Mesh(new THREE.BoxGeometry(36 - i * 4, 1.6, 10), throneMarble);
+      step.position.set(0, -16 + i * 1.6, -4 - i * 3);
+      throne.add(step);
+    }
+    // 背もたれ
+    const back = new THREE.Mesh(new THREE.BoxGeometry(14, 22, 2.4), throneRed);
+    back.position.set(0, 2, -18);
+    throne.add(back);
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(12, 2, 8), throneRed);
+    seat.position.set(0, -6, -14);
+    throne.add(seat);
+    // 天蓋
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(20, 1.2, 12), throneGold);
+    canopy.position.set(0, 14, -16);
+    throne.add(canopy);
+    const canopyPoleL = new THREE.Mesh(new THREE.CylinderGeometry(.35, .35, 28, 6), throneGold);
+    canopyPoleL.position.set(-9, 0, -12); throne.add(canopyPoleL);
+    const canopyPoleR = canopyPoleL.clone();
+    canopyPoleR.position.x = 9; throne.add(canopyPoleR);
+    // ハート紋章
+    const crest = sprite(crestTex, 0xffffff, 14, .95);
+    crest.position.set(0, 8, -16.5);
+    crest.userData.pulse = 0;
+    throne.add(crest);
+    const throneGlow = sprite(softTex('#ff9ecf'), 0xff5aa8, 40, .2);
+    throneGlow.position.set(0, 4, -12);
+    throne.add(throneGlow);
+    throne.position.set(0, 0, -165);
+    throne.userData = { baseZ: -165, crest, glow: throneGlow };
+    scene.add(throne);
+
+    // ステンドの床ライトプール(色つき光が床に落ちる)
+    const lightPools = [];
+    const poolBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      const cols = [0xff5a8c, 0xffd06a, 0x7ab8ff, 0xff9ecf];
+      for (let i = 0; i < 6; i++) {
+        const c = cols[i % cols.length];
+        const pool = new THREE.Mesh(new THREE.PlaneGeometry(rand(10, 16), rand(18, 28)),
+          basic({ color: c, transparent: true, opacity: .14, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+        pool.rotation.x = -Math.PI / 2;
+        pool.position.set(i * 88 + rand(-10, 10), -16.7, rand(-130, -90));
+        pool.userData.ph = rand(0, 6.28);
+        grp.add(pool);
+      }
+      return grp;
+    }, 530);
+    poolBelt.group.traverse(o => { if (o.userData && o.userData.ph !== undefined) lightPools.push(o); });
+    scene.add(poolBelt.group);
+
+    // --- クラブ PA スタック(左右・近景) BGM で振動 ----------------------
+    // 2D スピーカーは画面端手前、3D は少し奥の巨大塔で奥行きを出す。
+    function buildSpeakerStack() {
+      const g = new THREE.Group();
+      const bodyMat = lambert({ color: 0x1a0e38, emissive: 0x2a1550, emissiveIntensity: .35 });
+      const faceMat = lambert({ color: 0x120a28, emissive: 0x3a2060, emissiveIntensity: .25 });
+      const goldMat = lambert({ color: 0xffe15a, emissive: 0xaa7720, emissiveIntensity: .55 });
+      const cones = [];
+      const cabs = [
+        { w: 14, h: 16, d: 12, y: 0 },
+        { w: 12, h: 12, d: 10, y: 14.5 },
+        { w: 10, h: 9, d: 9, y: 26 }
+      ];
+      for (const c of cabs) {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(c.w, c.h, c.d), bodyMat);
+        body.position.y = c.y + c.h / 2 - 17;
+        g.add(body);
+        const face = new THREE.Mesh(new THREE.BoxGeometry(c.w * .92, c.h * .88, .4), faceMat);
+        face.position.set(0, body.position.y, c.d / 2 + .3);
+        g.add(face);
+        const coneR = c.w * .32;
+        const cone = new THREE.Mesh(
+          new THREE.CircleGeometry(coneR, 16),
+          basic({ color: 0xff9ecf, transparent: true, opacity: .7, side: THREE.DoubleSide })
+        );
+        cone.position.set(0, body.position.y - c.h * .08, c.d / 2 + .55);
+        cone.userData.baseR = coneR;
+        g.add(cone);
+        cones.push(cone);
+        for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+          const bit = new THREE.Mesh(new THREE.BoxGeometry(.6, .6, .6), goldMat);
+          bit.position.set(sx * c.w * .42, body.position.y + sy * c.h * .38, c.d / 2 + .2);
+          g.add(bit);
+        }
+      }
+      const led = new THREE.Mesh(new THREE.BoxGeometry(8, .6, .4),
+        basic({ color: 0xff3e9d, transparent: true, opacity: .8 }));
+      led.position.set(0, 18, 5.5);
+      g.add(led);
+      g.userData.cones = cones;
+      g.userData.led = led;
+      g.userData.baseY = 0;
+      return g;
+    }
+    const spkL = buildSpeakerStack();
+    spkL.position.set(-42, 0, -38);
+    spkL.rotation.y = .25;
+    scene.add(spkL);
+    const spkR = buildSpeakerStack();
+    spkR.position.set(42, 0, -38);
+    spkR.rotation.y = -.25;
+    scene.add(spkR);
+    const speakerStacks = [spkL, spkR];
+
+    // 舞い散る薔薇花びら(金・薄ピンク — 弾と被らない色)
+    const N_PETAL = 48;
+    const petalPos = new Float32Array(N_PETAL * 3);
+    const petalVel = new Float32Array(N_PETAL * 3);
+    const petalCol = new Float32Array(N_PETAL * 3);
+    const pCol = new THREE.Color();
+    for (let i = 0; i < N_PETAL; i++) {
+      petalPos[i * 3] = rand(-220, 220);
+      petalPos[i * 3 + 1] = rand(-10, 42);
+      petalPos[i * 3 + 2] = rand(-120, -40);
+      petalVel[i * 3] = rand(-6, -1);
+      petalVel[i * 3 + 1] = rand(-8, -2);
+      petalVel[i * 3 + 2] = rand(-1, 1);
+      pCol.set(pick([0xff9ecf, 0xffd06a, 0xffc0dc, 0xffe9b8]));
+      petalCol[i * 3] = pCol.r; petalCol[i * 3 + 1] = pCol.g; petalCol[i * 3 + 2] = pCol.b;
+    }
+    const petalGeo = new THREE.BufferGeometry();
+    petalGeo.setAttribute('position', new THREE.BufferAttribute(petalPos, 3));
+    petalGeo.setAttribute('color', new THREE.BufferAttribute(petalCol, 3));
+    const petals = new THREE.Points(petalGeo, new THREE.PointsMaterial({
+      size: 3.2, vertexColors: true, transparent: true, opacity: .75,
+      blending: THREE.NormalBlending, depthWrite: false, sizeAttenuation: false, fog: false
+    }));
+    scene.add(petals);
 
     // 遠景の宮殿塔: 円錐屋根 + ハートの頂飾
     const heartTex = makeTex(64, 64, g => {
@@ -3017,6 +3513,63 @@ import * as THREE from './assets/lib/three.module.min.js';
     }, 650);
     scene.add(towersBelt.group);
 
+    // --- 遠景の観客シルエット（当たりなし） + 二重宮殿 -----------------
+    const crowdBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      const mat = lambert({ color: 0x1a0614, emissive: 0x3a1028, emissiveIntensity: .2 });
+      for (let i = 0; i < 18; i++) {
+        const h = rand(3.5, 7);
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(.65, .8, h, 6), mat);
+        body.position.set(i * 18 + rand(-4, 4), -17 + h * .55, rand(-155, -130));
+        grp.add(body);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(.55, 6, 6), mat);
+        head.position.set(body.position.x, -17 + h + .4, body.position.z);
+        grp.add(head);
+      }
+      return grp;
+    }, 320);
+    scene.add(crowdBelt.group);
+
+    const farCastle = makeScroller(() => {
+      const grp = new THREE.Group();
+      const m = lambert({ color: 0x4a0a30, emissive: 0x6a1848, emissiveIntensity: .25 });
+      for (let i = 0; i < 4; i++) {
+        const x = i * 160 + 40;
+        const keep = new THREE.Mesh(new THREE.BoxGeometry(28, 40, 18), m);
+        keep.position.set(x, 4, -260);
+        grp.add(keep);
+        const spire = new THREE.Mesh(new THREE.ConeGeometry(10, 22, 6),
+          lambert({ color: 0x8a1450, emissive: 0xaa2060, emissiveIntensity: .3 }));
+        spire.position.set(x, 35, -260);
+        grp.add(spire);
+        const fin = sprite(heartTex, 0xffffff, 8, .7);
+        fin.position.set(x, 48, -258);
+        fin.userData.pulse = rand(0, 6.28);
+        grp.add(fin);
+      }
+      return grp;
+    }, 640);
+    scene.add(farCastle.group);
+    const farFins = [];
+    farCastle.group.traverse(o => { if (o.userData && o.userData.pulse !== undefined) farFins.push(o); });
+
+    // 撃破時に柱から落ちる金屑
+    const N_DEB = 40;
+    const debPos = new Float32Array(N_DEB * 3);
+    const debVel = new Float32Array(N_DEB * 3);
+    for (let i = 0; i < N_DEB; i++) {
+      debPos[i * 3] = 0; debPos[i * 3 + 1] = -50; debPos[i * 3 + 2] = -80;
+      debVel[i * 3] = 0; debVel[i * 3 + 1] = 0; debVel[i * 3 + 2] = 0;
+    }
+    const debGeo = new THREE.BufferGeometry();
+    debGeo.setAttribute('position', new THREE.BufferAttribute(debPos, 3));
+    const debPts = new THREE.Points(debGeo, new THREE.PointsMaterial({
+      color: 0xffe15a, size: 3.5, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false, fog: false
+    }));
+    scene.add(debPts);
+    let collapseT = 0;
+
     // 漂う光珠
     const orbs = [];
     for (let i = 0; i < 10; i++) {
@@ -3035,13 +3588,20 @@ import * as THREE from './assets/lib/three.module.min.js';
       update(dt, s) {
         t += dt;
         const dx = SCROLL * (s.speed || 1) * dt;
-        colBelt.update(dx); chBelt.update(dx); towersBelt.update(dx * .85);
-        banBelt.update(dx * .9); roseBelt.update(dx); crysBelt.update(dx); glassBelt.update(dx * .9);
+        const m = moodT(s);
+        colBelt.update(dx); colFarBelt.update(dx * .92);
+        chBelt.update(dx); towersBelt.update(dx * .85);
+        banBelt.update(dx * .9); roseBelt.update(dx); crysBelt.update(dx);
+        glassBelt.update(dx * .9); poolBelt.update(dx * .9);
         heartWallTex.offset.x += dx * (12 / 1300);
-        checkerTex.offset.x += dx * (46 / 1500);  // 列柱と同じ世界速度
-        cofferTex.offset.x += dx * (44 / 1500);   // 天井も同じ世界速度
+        checkerTex.offset.x += dx * (46 / 1500);
+        cofferTex.offset.x += dx * (44 / 1500);
         carpetTex.offset.x += dx * (40 / 1500);
-        for (const ch of chandeliers) ch.rotation.z = Math.sin(t * .8 + ch.userData.sway) * .07;
+        for (const ch of chandeliers) {
+          const amp = ch === bigCh ? .05 : .07;
+          ch.rotation.z = Math.sin(t * .8 + (ch.userData.sway || 0)) * amp;
+        }
+        bigGlow.material.opacity = .22 + .1 * Math.sin(t * 1.3) + m * .18;
         for (const ban of banners) ban.rotation.z = Math.sin(t * .7 + ban.userData.sway) * .06;
         for (const cr of crystals) cr.rotation.y = t * cr.userData.spinY;
         for (const cd of candles) {
@@ -3051,18 +3611,120 @@ import * as THREE from './assets/lib/three.module.min.js';
           cd.userData.fl.material.opacity = .75 + .25 * Math.sin(t * 7 + cd.userData.ph);
         }
         for (const f of pulses) {
-          const sc = 9 * (1 + .12 * Math.sin(t * 2.2 + f.userData.pulse));
+          const sc = 9 * (1 + .12 * Math.sin(t * 2.2 + f.userData.pulse) + m * .15);
           f.scale.set(sc, sc, 1);
         }
         for (const orb of orbs) {
           orb.position.x -= dx * .7;
           orb.position.y += Math.sin(t * .9 + orb.userData.ph) * dt * 2.2;
           if (orb.position.x < orb.userData.min) orb.position.x += orb.userData.span;
-          orb.material.opacity = .5 + .25 * Math.sin(t * 1.4 + orb.userData.ph);
+          orb.material.opacity = .5 + .25 * Math.sin(t * 1.4 + orb.userData.ph) + m * .15;
         }
-        // ボス戦(玉座前)は照明を落として赤みを強く
-        const bossT = s.boss ? 1 : 0;
-        scene.fog.color.setHex(bossT ? 0x4a0a30 : 0x5c1242);
+        for (const pool of lightPools) {
+          pool.material.opacity = .1 + .08 * Math.sin(t * 1.1 + pool.userData.ph) + m * .06;
+        }
+        // 花びら: 上から舞い落ち、横スクロールと連動
+        const pp = petalGeo.attributes.position.array;
+        const fallBoost = 1 + m * .6;
+        for (let i = 0; i < N_PETAL; i++) {
+          pp[i * 3] += petalVel[i * 3] * dt - dx * .5;
+          pp[i * 3 + 1] += petalVel[i * 3 + 1] * dt * fallBoost;
+          pp[i * 3 + 2] += petalVel[i * 3 + 2] * dt;
+          if (pp[i * 3 + 1] < -18 || pp[i * 3] < -240) {
+            pp[i * 3] = rand(-200, 240);
+            pp[i * 3 + 1] = rand(28, 48);
+            pp[i * 3 + 2] = rand(-120, -40);
+          }
+        }
+        petalGeo.attributes.position.needsUpdate = true;
+        petals.material.opacity = .55 + m * .25;
+        // 玉座: ボスへ近づくほど手前・明るく
+        throne.position.z = throne.userData.baseZ + m * 55;
+        throne.position.x = Math.sin(t * .15) * 2;
+        const crestSc = 14 * (1 + .12 * Math.sin(t * 2) + m * .25);
+        crest.scale.set(crestSc, crestSc, 1);
+        throneGlow.material.opacity = .15 + m * .35 + .08 * Math.sin(t * 1.6);
+        wall.material.emissiveIntensity = .75 + m * .35 + .08 * Math.sin(t * (2 + m * 4));
+        warm.intensity = .8 - m * .25;
+        // 幕（tier/crit/dying）で照明シナリオを重ねる
+        const tier = s.queenTier || 0;
+        const crit = Math.max(0, Math.min(1, s.queenCrit || 0));
+        const dying = s.queenDying ? 1 : 0;
+        const cinema = Math.max(0, Math.min(1, (s.cinema || 0) / 5.4));
+        const act = Math.max(m, tier * .28, crit * .7, cinema * .5);
+        mixFog(scene.fog,
+          cinema > .05 ? 0x1a0610 : 0x5c1242,
+          dying ? 0x2a0618 : (crit > .3 ? 0x1a040c : 0x2a0618),
+          act, 330 - tier * 20, 220 - crit * 40);
+        warm.intensity = (.8 - m * .25) * (1 - crit * .35) * (1 - cinema * .4);
+        // 床の呼吸（低音）
+        const music = Math.max(0, Math.min(1, s.music ?? (.5 + .5 * Math.sin(t * 7.4))));
+        const kick = music * music;
+        const breathe = 1 + Math.sin(t * (2.2 + music * 4)) * kick * .012;
+        floor.scale.y = breathe; // plane rotated, y scale = visual depth pulse via... actually rotation -X, scale.z better
+        floor.scale.z = breathe;
+        // PA スタック
+        const bossBoost = 1 + (s.boss ? .5 : 0);
+        for (let si = 0; si < speakerStacks.length; si++) {
+          const sp = speakerStacks[si];
+          const side = si === 0 ? -1 : 1;
+          sp.position.x = side * 42 + Math.sin(t * 48 + si) * kick * .35 * bossBoost;
+          sp.position.y = Math.cos(t * 37 + si * 2) * kick * .25 * bossBoost;
+          sp.rotation.z = Math.sin(t * 30 + si) * kick * .04 * bossBoost;
+          for (const cone of sp.userData.cones) {
+            const sc = 1 + music * .28 * bossBoost + kick * .12;
+            cone.scale.set(sc, sc, 1);
+            cone.material.opacity = .55 + music * .4;
+          }
+          if (sp.userData.led) {
+            sp.userData.led.material.opacity = .35 + music * .65;
+            const ledSc = 1 + music * .4;
+            sp.userData.led.scale.set(ledSc, 1, 1);
+          }
+        }
+        // 観客・遠景城
+        crowdBelt.update(dx * .7);
+        farCastle.update(dx * .5);
+        for (const f of farFins) {
+          const sc = 8 * (1 + .1 * Math.sin(t * 2 + f.userData.pulse) + crit * .2);
+          f.scale.set(sc, sc, 1);
+        }
+        // 玉座は tier でさらに近づき、crit で赤く
+        throne.position.z = throne.userData.baseZ + m * 55 + tier * 12 + crit * 20;
+        throneGlow.material.opacity = .15 + m * .35 + crit * .3 + .08 * Math.sin(t * 1.6);
+        // 崩壊: 撃破中に金屑が柱から落ちる
+        if (dying) {
+          if (collapseT <= 0) {
+            for (let i = 0; i < N_DEB; i++) {
+              debPos[i*3] = rand(-80, 80);
+              debPos[i*3+1] = rand(10, 40);
+              debPos[i*3+2] = rand(-100, -50);
+              debVel[i*3] = rand(-8, 8);
+              debVel[i*3+1] = rand(-2, 6);
+              debVel[i*3+2] = rand(-4, 4);
+            }
+            debPts.material.opacity = .9;
+          }
+          collapseT += dt;
+          for (let i = 0; i < N_DEB; i++) {
+            debVel[i*3+1] -= 28 * dt;
+            debPos[i*3] += debVel[i*3] * dt - dx * .3;
+            debPos[i*3+1] += debVel[i*3+1] * dt;
+            debPos[i*3+2] += debVel[i*3+2] * dt;
+            if (debPos[i*3+1] < -17) {
+              debPos[i*3+1] = rand(20, 42);
+              debVel[i*3+1] = rand(-2, 4);
+            }
+          }
+          debGeo.attributes.position.needsUpdate = true;
+          debPts.material.opacity = Math.max(0, .9 - collapseT * .12);
+        } else {
+          collapseT = 0;
+          debPts.material.opacity = 0;
+        }
+        // シネマ中は全体を少し暗く、中心を残す
+        if (cinema > .05) scene.fog.near = 18 + cinema * 40;
+        else scene.fog.near = 28;
       }
     };
   }
