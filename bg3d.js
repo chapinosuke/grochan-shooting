@@ -22,7 +22,9 @@ import * as THREE from './assets/lib/three.module.min.js';
   const VW = 1280, VH = 720;
   // version は「今ブラウザが実際に読んでいる bg3d.js」を確認するための目印。
   // ローカルは Cache-Control が無く古い版が残りやすいので、修正のたびに更新する。
-  const api = { version: 'royal-3', ready: false, canvas: null, render: () => false, setQuality: () => {} };
+  // indoor: S3のボス戦で座敷の内部に入った度合い(0..1)。game.js はこれを見て
+  // 2Dの工場ストリート(炉列・コンベア・溶鉄)の描画を止める。
+  const api = { version: 'forge-storm-3', ready: false, canvas: null, indoor: 0, render: () => false, setQuality: () => {} };
   window.GRO_BG3D = api;
 
   let renderer;
@@ -1984,19 +1986,85 @@ import * as THREE from './assets/lib/three.module.min.js';
   // SUNSET FACTORY — 夕焼けの製鉄所。煙突、タンク、パイプ、炉の火明かり。
   function buildFactory() {
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x5e1c30, 30, 330);   // 浅いピンクだと全体が同じ明度に潰れる
-    scene.add(new THREE.HemisphereLight(0xff9f6a, 0x38101e, 1.05));
-    const sunLight = new THREE.DirectionalLight(0xffb066, 1.3);
+    // 夕景の逆光は「明るい空 × 暗い影絵」。fog を明るいピンクにすると遠景が
+    // 空と同じ明度に溶けて画面全部が一枚のマゼンタの膜になる(実際そうなっていた)。
+    // 暗い焦げ茶へ落として、光るもの(炉・溶鋼・火)だけが抜けて見えるようにする。
+    scene.fog = new THREE.Fog(0x2a0c1c, 30, 300);
+    scene.add(new THREE.HemisphereLight(0xff8a4a, 0x1a0610, .62));
+    const sunLight = new THREE.DirectionalLight(0xffb066, 1.5);
     sunLight.position.set(-140, 60, -220);
     scene.add(sunLight);
+    // 炉側からの照り返し(下からの赤い光)。逆光の影絵に縁を付ける
+    const forgeLight = new THREE.PointLight(0xff5a1e, 1.5, 260, 1.5);
+    forgeLight.position.set(30, -6, -70);
+    scene.add(forgeLight);
+    const phong = o => new THREE.MeshPhongMaterial(o);
 
-    // 沈む夕日 + 大きな残光
-    const sun = sprite(softTex('#fff0c0', 128, .5), 0xffd27a, 110, 1);
-    sun.position.set(-140, 95, -430);
+    // 沈む夕日: 円盤 + 締まった残光。以前は scale 320 の残光が画面全部を覆って
+    // 単色ベールになっていたので、太陽は「小さく強く」・空の色は2D側に任せる。
+    const sun = sprite(softTex('#fff6d8', 128, .62), 0xffe8a8, 78, 1);
+    sun.position.set(-140, 88, -430);
     scene.add(sun);
-    const sunGlow = sprite(softTex('#ff9f43'), 0xff9f43, 320, .4);
+    const sunGlow = sprite(softTex('#ff9f43'), 0xff8a2e, 190, .22);
     sunGlow.position.copy(sun.position);
     scene.add(sunGlow);
+    // 夕焼け雲のデッキ: 上端が暗く下端(太陽側)が燃える帯。空が一枚のグラデ
+    // だけだと平坦なので、明度差のある雲を数段重ねて空に奥行きを作る。
+    const cloudBandTex = makeTex(256, 64, (g, w, h) => {
+      g.clearRect(0, 0, w, h);
+      // 塊を重ねて雲の輪郭を作り、下半分だけ暖色で照り返す
+      for (let i = 0; i < 26; i++) {
+        const cx = rand(0, w), cy = rand(h * .3, h * .72), r = rand(9, 26);
+        const gr = g.createRadialGradient(cx, cy, 0, cx, cy, r);
+        gr.addColorStop(0, 'rgba(46,10,26,.95)');
+        gr.addColorStop(1, 'rgba(46,10,26,0)');
+        g.fillStyle = gr;
+        g.beginPath(); g.arc(cx, cy, r, 0, 6.3); g.fill();
+      }
+      g.globalCompositeOperation = 'source-atop';
+      const lit = g.createLinearGradient(0, h * .3, 0, h);
+      lit.addColorStop(0, 'rgba(0,0,0,0)');
+      lit.addColorStop(.55, 'rgba(255,110,40,.5)');
+      lit.addColorStop(1, 'rgba(255,190,90,.85)');
+      g.fillStyle = lit; g.fillRect(0, 0, w, h);
+      g.globalCompositeOperation = 'source-over';
+    }, { repX: 2, repY: 1 });
+    const sunBars = [];
+    // 高さの決め方: カメラは +0.283rad 見上げているので、画面上部(y≈150px)に
+    // 出すには z=-430 で world y≈280 が要る。y=100 前後だと画面中央に埋もれる。
+    for (const [y, z, w, h, a, v] of [
+      [300, -430, 760, 64, .85, 1.0], [232, -420, 680, 52, .9, 1.6],
+      [176, -410, 620, 40, .85, 2.3], [128, -400, 560, 30, .75, 3.0]
+    ]) {
+      // map は帯ごとに複製する。共有したまま offset を動かすと4枚が同じ速度で
+      // 動いて視差が消える(かつ加算されて4倍速になる)。
+      const tex = cloudBandTex.clone();
+      tex.needsUpdate = true;
+      tex.offset.x = Math.random();
+      const bar = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+        basic({ map: tex, transparent: true, opacity: a, depthWrite: false, fog: false }));
+      bar.position.set(rand(-120, 120), y, z);
+      bar.userData = { v };
+      scene.add(bar); sunBars.push(bar);
+    }
+    // 遠景の山稜: 夕日の手前に黒いシルエットを一枚入れると空と地表が分離する
+    const ridgeTex = makeTex(512, 128, (g, w, h) => {
+      g.clearRect(0, 0, w, h);
+      g.fillStyle = '#1c0612';
+      g.beginPath();
+      g.moveTo(0, h);
+      let y = h * .55;
+      for (let x = 0; x <= w; x += 16) {
+        y += rand(-13, 13);
+        y = Math.max(h * .18, Math.min(h * .8, y));
+        g.lineTo(x, y);
+      }
+      g.lineTo(w, h); g.closePath(); g.fill();
+    }, { repX: 2, repY: 1 });
+    const ridge = new THREE.Mesh(new THREE.PlaneGeometry(1200, 120),
+      basic({ map: ridgeTex, transparent: true, depthWrite: false, fog: false }));
+    ridge.position.set(0, 22, -400);
+    scene.add(ridge);
 
     // 地面: 鉄板 + オレンジの照り返し
     const floorTex = makeTex(256, 256, (g, w, h) => {
@@ -2008,7 +2076,8 @@ import * as THREE from './assets/lib/three.module.min.js';
       }
       g.globalAlpha = 1;
     }, { repX: 26, repY: 10 });
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1500, 520), lambert({ map: floorTex, color: 0xffb08a }));
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1500, 520),
+      phong({ map: floorTex, color: 0xd07850, specular: 0xff8a3a, shininess: 18 }));
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(0, -17, -260);
     scene.add(ground);
@@ -2016,7 +2085,7 @@ import * as THREE from './assets/lib/three.module.min.js';
     // 遠景: 製油所シルエット(塔・球タンク・骨組み)
     const farBelt = makeScroller(() => {
       const grp = new THREE.Group();
-      const m = lambert({ color: 0x4a1830 });
+      const m = lambert({ color: 0x25081a });
       for (let i = 0; i < 20; i++) {
         const x = i * 36 + rand(-8, 8), z = rand(-260, -210);
         const kind = Math.random();
@@ -2041,7 +2110,7 @@ import * as THREE from './assets/lib/three.module.min.js';
     const coolBelt = makeScroller(() => {
       const grp = new THREE.Group();
       const profile = [[10, 0], [7.6, 9], [6.2, 18], [6.6, 27], [7.8, 36]].map(([r, y]) => new THREE.Vector2(r, y));
-      const mat = lambert({ color: 0x5a2036 });
+      const mat = lambert({ color: 0x2c0a1c });
       for (let i = 0; i < 2; i++) {
         const tower = new THREE.Mesh(new THREE.LatheGeometry(profile, 14), mat);
         tower.position.set(i * 330 + 80, -17, rand(-230, -195));
@@ -2067,7 +2136,7 @@ import * as THREE from './assets/lib/three.module.min.js';
     // フレアスタック: 細い塔の先で炎が揺れる(製油所の名物)
     const flareBelt = makeScroller(() => {
       const grp = new THREE.Group();
-      const mat = lambert({ color: 0x6a2438 });
+      const mat = lambert({ color: 0x350e20 });
       for (let i = 0; i < 3; i++) {
         const x = i * 170 + rand(-16, 16), z = rand(-150, -120), h = rand(30, 42);
         const stack = new THREE.Mesh(new THREE.CylinderGeometry(.8, 1.3, h, 6), mat);
@@ -2091,10 +2160,687 @@ import * as THREE from './assets/lib/three.module.min.js';
     flareBelt.group.traverse(o => { if (o.userData && o.userData.flame !== undefined) flames.push(o); });
     scene.add(flareBelt.group);
 
+    // --- 名物: 高炉プラント(中景の主役) --------------------------------
+    // 夕景の影絵に対して「熱を持った巨大構造」を1つ置くと画面の芯ができる。
+    // 炉体(段付きの円錐台)+ 熱風管(ベンドの束)+ 出銑口の白熱 + 鉄骨の櫓。
+    const bfHot = [];                  // 出銑口まわり(mood と炉の脈動で明滅)
+    const bfSmoke = [];                // 炉頂の黒煙(ゆっくり昇って揺れる)
+    const bfSteel = phong({ color: 0x3a1420, specular: 0xff7a3a, shininess: 24, emissive: 0x1a0208, emissiveIntensity: .6 });
+    const bfPlate = phong({ color: 0x4a1a24, specular: 0xff8a4a, shininess: 16, emissive: 0x230409, emissiveIntensity: .7 });
+    const bfBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      for (let i = 0; i < 2; i++) {
+        const x = i * 290 + 60 + rand(-20, 20), z = -128;
+        const bf = new THREE.Group();
+        // 炉体: 上部シャフト / 胴 / 朝顔 / 炉床の4段。段ごとに径を変えて輪郭を作る
+        for (const [r0, r1, h, y] of [[7.5, 9.5, 20, 8], [9.5, 9.5, 12, -8], [9.5, 6.4, 10, -19], [6.6, 7, 6, -27]]) {
+          const seg = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, h, 12), bfPlate);
+          seg.position.y = y + 17;
+          bf.add(seg);
+        }
+        // 補強リング(段の継ぎ目)
+        for (const y of [18, 9, -3, -14, -24]) {
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(9.2, .55, 6, 16), bfSteel);
+          ring.rotation.x = Math.PI / 2;
+          ring.position.y = y + 17;
+          bf.add(ring);
+        }
+        // 熱風環管(炉を巻く大径のダクト)と羽口へ降りる曲管
+        const bustle = new THREE.Mesh(new THREE.TorusGeometry(11.5, 1.5, 8, 20), bfSteel);
+        bustle.rotation.x = Math.PI / 2;
+        bustle.position.y = 3;
+        bf.add(bustle);
+        for (let k = 0; k < 6; k++) {
+          const a = (k / 6) * Math.PI * 2;
+          const down = new THREE.Mesh(new THREE.CylinderGeometry(.7, .7, 9, 6), bfSteel);
+          down.position.set(Math.cos(a) * 10.6, -2.5, Math.sin(a) * 10.6);
+          bf.add(down);
+        }
+        // 炉頂: 装入ベルとガス上昇管4本
+        const bell = new THREE.Mesh(new THREE.ConeGeometry(6, 6, 12), bfSteel);
+        bell.position.y = 30;
+        bf.add(bell);
+        for (const [ox, oz] of [[-5, -3], [5, -3], [-5, 3], [5, 3]]) {
+          const up = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 26, 6), bfSteel);
+          up.position.set(ox, 40, oz);
+          bf.add(up);
+        }
+        // 出銑口: 白熱した口 + 樋を流れる湯 + 立ち上る熱気
+        const tap = sprite(softTex('#fff2c8', 128, .45), 0xffb03a, 13, .9);
+        tap.position.set(6, -8, 7);
+        tap.userData.ph = rand(0, 6.28);
+        bf.add(tap); bfHot.push(tap);
+        const runner = new THREE.Mesh(new THREE.PlaneGeometry(20, 1.8),
+          basic({ color: 0xffb03a, transparent: true, opacity: .85, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+        runner.rotation.x = -Math.PI / 2.1;
+        runner.position.set(15, -13.5, 9);
+        bf.add(runner);
+        const heat = sprite(softTex('#ff7a2a'), 0xff5a1e, 40, .3);
+        heat.position.set(6, 4, 8);
+        heat.userData.ph = rand(0, 6.28);
+        bf.add(heat); bfHot.push(heat);
+        // 鉄骨の櫓(炉を囲む4本柱+梁)。影絵の骨組みが工業感を決める
+        for (const [ox, oz] of [[-13, -9], [13, -9], [-13, 9], [13, 9]]) {
+          const leg = new THREE.Mesh(new THREE.BoxGeometry(1.1, 62, 1.1), bfSteel);
+          leg.position.set(ox, 14, oz);
+          bf.add(leg);
+        }
+        for (const y of [-2, 16, 34]) {
+          const beam = new THREE.Mesh(new THREE.BoxGeometry(27, .9, .9), bfSteel);
+          beam.position.set(0, y, -9);
+          bf.add(beam);
+        }
+        // 炉頂から立ち上る黒煙: 明るい空を背にした暗い煙は最も安く効く「稼働感」。
+        // 上へ行くほど大きく薄くなり、夕日の色をわずかに拾う。
+        for (let k = 0; k < 5; k++) {
+          const f = k / 5;
+          const sm = sprite(softTex('#2e0c1a', 128, .15), 0x3a1220, 20 + f * 34, .5 - f * .3, THREE.NormalBlending);
+          sm.position.set(rand(-4, 4), 52 + f * 34, 2);
+          sm.userData.smoke = { base: 52 + f * 34, ph: rand(0, 6.28), amp: 3 + f * 4 };
+          bf.add(sm); bfSmoke.push(sm);
+        }
+        bf.position.set(x, 0, z);
+        grp.add(bf);
+      }
+      return grp;
+    }, 580);
+    scene.add(bfBelt.group);
+
+    // --- 名物: 鋳造工場の大架構(近景を横切る鉄骨の桁) --------------------
+    // 手前に骨組みを一枚渡すと、奥の炉が「屋内の遠く」に見えて奥行きが増す。
+    const trussBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      const mat = phong({ color: 0x1e0712, specular: 0xff6a2a, shininess: 20 });
+      for (let i = 0; i < 3; i++) {
+        const x = i * 200 + rand(-16, 16), z = -58;
+        const tr = new THREE.Group();
+        // 上下弦材 + 斜材(トラス)
+        for (const y of [0, 7]) {
+          const chord = new THREE.Mesh(new THREE.BoxGeometry(80, .9, .9), mat);
+          chord.position.set(0, y + 26, 0);
+          tr.add(chord);
+        }
+        for (let k = 0; k < 16; k++) {
+          const dg = new THREE.Mesh(new THREE.BoxGeometry(.6, 9.4, .6), mat);
+          dg.position.set(-40 + k * 5.3, 29.5, 0);
+          dg.rotation.z = (k % 2 ? 1 : -1) * .52;
+          tr.add(dg);
+        }
+        // 支柱2本と、桁から吊るした投光器
+        for (const ox of [-34, 34]) {
+          const post = new THREE.Mesh(new THREE.BoxGeometry(1.6, 44, 1.6), mat);
+          post.position.set(ox, 4, 0);
+          tr.add(post);
+        }
+        for (const ox of [-20, 8]) {
+          const lampBody = new THREE.Mesh(new THREE.CylinderGeometry(1, 1.4, 2.2, 8), mat);
+          lampBody.position.set(ox, 24, 1);
+          tr.add(lampBody);
+          const beamLight = sprite(softTex('#ffd9a0', 128, .2), 0xffb45a, 15, .3);
+          beamLight.position.set(ox, 19, 1.5);
+          beamLight.userData.ph = rand(0, 6.28);
+          tr.add(beamLight); bfHot.push(beamLight);
+        }
+        tr.position.set(x, 0, z);
+        grp.add(tr);
+      }
+      return grp;
+    }, 600);
+    scene.add(trussBelt.group);
+
+    // --- 章進行で現れる「親分の町」(日本家屋) ----------------------------
+    // ボスが FLAME OYABUN(ヤクザの親分)なので、道中が進むほど製鉄所の風景に
+    // 瓦屋根の町家・蔵・火の見櫓・提灯が混ざり、終盤は屋敷町へ入っていく。
+    // 出現は s.chapter/chapterT から作った prog(0→1)でマテリアルを一括フェード。
+    // フェード対象を数枚の共有マテリアルに絞ると、毎フレームの更新が数行で済む。
+    const jpFade = [];                                  // prog で透過を動かすマテリアル
+    const jpLit = [];                                   // 障子・提灯(明滅もする)
+    const mkJp = (mat, lit) => { mat.transparent = true; mat.opacity = 0; jpFade.push(mat); if (lit) jpLit.push(mat); return mat; };
+    // 瓦: 横方向の桟が並ぶ濃紺の屋根。夕日で棟の峰だけ光る
+    const kawaraTex = makeTex(64, 32, g => {
+      g.fillStyle = '#1b2030'; g.fillRect(0, 0, 64, 32);
+      for (let i = 0; i < 8; i++) {
+        g.fillStyle = '#2b3348'; g.fillRect(i * 8, 0, 5, 32);
+        g.fillStyle = '#0e1220'; g.fillRect(i * 8 + 5, 0, 3, 32);
+      }
+      g.fillStyle = 'rgba(255,150,80,.28)'; g.fillRect(0, 0, 64, 4);
+    }, { repX: 6, repY: 1 });
+    // 板壁と漆喰(なまこ壁)
+    const itaTex = makeTex(32, 64, g => {
+      g.fillStyle = '#2a170f'; g.fillRect(0, 0, 32, 64);
+      for (let i = 0; i < 6; i++) {
+        g.fillStyle = i % 2 ? '#33200f' : '#241208';
+        g.fillRect(0, i * 11, 32, 9);
+      }
+    }, { repX: 3, repY: 1 });
+    const namakoTex = makeTex(32, 32, g => {
+      g.fillStyle = '#d8cbb8'; g.fillRect(0, 0, 32, 32);
+      g.strokeStyle = '#3a3020'; g.lineWidth = 2.4;
+      for (let i = -32; i < 32; i += 11) {
+        g.beginPath(); g.moveTo(i, 32); g.lineTo(i + 32, 0); g.stroke();
+        g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 32, 32); g.stroke();
+      }
+    }, { repX: 3, repY: 2 });
+    const shojiTex = makeTex(32, 32, g => {
+      g.fillStyle = '#ffd9a0'; g.fillRect(0, 0, 32, 32);
+      g.fillStyle = '#8a5a30';
+      for (let i = 0; i <= 32; i += 8) { g.fillRect(i - 1, 0, 2, 32); g.fillRect(0, i - 1, 32, 2); }
+    });
+    const jpRoof = mkJp(lambert({ map: kawaraTex, color: 0xd8b0c0, emissive: 0x2a0a14, emissiveIntensity: .5 }));
+    const jpWall = mkJp(lambert({ map: itaTex, color: 0xd89878, emissive: 0x1c0508, emissiveIntensity: .5 }));
+    const jpPlaster = mkJp(lambert({ map: namakoTex, color: 0xffb090, emissive: 0x2a0c10, emissiveIntensity: .35 }));
+    const jpWood = mkJp(phong({ color: 0x4a2412, specular: 0xff8a4a, shininess: 12, emissive: 0x1a0604, emissiveIntensity: .5 }));
+    const jpShoji = mkJp(lambert({ map: shojiTex, color: 0xffe0b0, emissive: 0xffb45a, emissiveIntensity: 1.1, emissiveMap: shojiTex }), true);
+    const jpNoren = mkJp(lambert({ color: 0x8a1020, emissive: 0x3a0308, emissiveIntensity: .6, side: THREE.DoubleSide }));
+    const jpLantern = mkJp(lambert({ color: 0xff5a3a, emissive: 0xff6a2a, emissiveIntensity: 1.2 }), true);
+
+    // 屋根はカメラ正面を向いた「板」で作る。最初は傾けた2枚の面で切妻を組んだが、
+    // カメラがほぼ軒高と同じ高さにあるため面が水平に近く、真横から見ると
+    // ただの細い線になって日本家屋に見えなかった。XY平面に反り屋根の輪郭を
+    // 描いて押し出すと、正面から見て三角のシルエットがはっきり立つ。
+    const gableRoof = (w, d, rise, y) => {
+      const grp = new THREE.Group();
+      const half = w / 2, eave = 1.8;          // eave = 軒先の垂れ
+      const sh = new THREE.Shape();
+      sh.moveTo(-half, 0);
+      // 反り: 軒先から棟へ向けてわずかに凹ませる(直線だと洋風の切妻に見える)
+      sh.quadraticCurveTo(-half * .45, rise * .48, 0, rise);
+      sh.quadraticCurveTo(half * .45, rise * .48, half, 0);
+      sh.lineTo(half + eave * .5, -eave);       // 軒の出
+      sh.quadraticCurveTo(half * .45, rise * .48 - eave * 1.5, 0, rise - eave * 1.35);
+      sh.quadraticCurveTo(-half * .45, rise * .48 - eave * 1.5, -half - eave * .5, -eave);
+      sh.closePath();
+      const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: d, bevelEnabled: false }), jpRoof);
+      roof.position.set(0, y, -d / 2 + d * .62);   // 手前へ大きく出して軒下の影を作る
+      grp.add(roof);
+      // 棟(むね): 頂部を走る太い瓦の峰。夕日で峰だけ明るく光る
+      const ridge = new THREE.Mesh(new THREE.BoxGeometry(w * .18, 1.6, d * 1.02), jpRoof);
+      ridge.position.set(0, y + rise - .4, d * .12);
+      grp.add(ridge);
+      // 鬼瓦(棟の両端の飾り)
+      for (const sgn of [-1, 1]) {
+        const oni = new THREE.Mesh(new THREE.BoxGeometry(1, 2.2, 1.4), jpWood);
+        oni.position.set(sgn * (half - .6), y + rise * .34, d * .6);
+        grp.add(oni);
+      }
+      return grp;
+    };
+    // 寸法の要点: カメラは y=0 にあり水平線は画面 y≈561。地面 y=-17 に建つ物は
+    // 「高さ17を超えて初めて水平線より上に出る」。最初 h=11〜14 で作ったら町が
+    // まるごと2Dの手前帯の裏に沈んで一切見えなかった。屋根が y=+10〜25 に来る
+    // 高さ(28〜42)にして、画面 y≈400〜560 の帯を町並みが占めるようにする。
+    const jpBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      let x = 0;
+      for (let i = 0; i < 7; i++) {
+        const kind = i % 3;
+        if (kind === 2) {
+          // 蔵: なまこ壁の白い箱に濃い瓦屋根。町並みの明度を上げる要
+          const w = rand(15, 19), h = rand(30, 38);
+          const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, 11), jpPlaster);
+          body.position.set(x + w / 2, -17 + h / 2, -92);
+          grp.add(body);
+          const rf = gableRoof(w + 3, 13, 6.4, -17 + h);
+          rf.position.set(x + w / 2, 0, -92);
+          grp.add(rf);
+          // 妻側の観音扉と庇
+          const door = new THREE.Mesh(new THREE.BoxGeometry(4.4, 7, .4), jpWood);
+          door.position.set(x + w / 2, -17 + h * .55, -86.4);
+          grp.add(door);
+          x += w + rand(5, 9);
+        } else {
+          // 町家: 板壁 + 障子の灯り + 深い軒。2層に窓を入れて高さを読ませる
+          const w = rand(17, 24), h = rand(28, 40);
+          const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, 12), jpWall);
+          body.position.set(x + w / 2, -17 + h / 2, -90);
+          grp.add(body);
+          const rf = gableRoof(w + 4, 15, 7.2, -17 + h);
+          rf.position.set(x + w / 2, 0, -90);
+          grp.add(rf);
+          // 障子は上2段。下段は手前の2D帯に隠れるので置かない
+          const n = 3 + (i % 2);
+          for (const [ly, sh] of [[h - 6.5, 4.6], [h - 14, 4.2]]) {
+            for (let k = 0; k < n; k++) {
+              const win = new THREE.Mesh(new THREE.PlaneGeometry(3.6, sh), jpShoji);
+              win.position.set(x + w * (k + .5) / n, -17 + ly, -83.9);
+              grp.add(win);
+            }
+          }
+          // 軒桁と、その下に下がる暖簾(視線高さの少し上に置いて見えるように)
+          const beam = new THREE.Mesh(new THREE.BoxGeometry(w + 4, .7, .7), jpWood);
+          beam.position.set(x + w / 2, -17 + h - 1.6, -83.6);
+          grp.add(beam);
+          const noren = new THREE.Mesh(new THREE.PlaneGeometry(w * .55, 3.4), jpNoren);
+          noren.position.set(x + w / 2, -17 + h - 18, -83.8);
+          grp.add(noren);
+          x += w + rand(4, 8);
+        }
+      }
+      // 火の見櫓: 町の背後に立つ木組みの望楼(半鐘つき)。町並みの最高点になる
+      const yg = new THREE.Group();
+      for (const [ox, oz] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(.9, 56, .9), jpWood);
+        leg.position.set(ox * .8, 11, oz * .8);
+        yg.add(leg);
+      }
+      for (const yy of [-6, 8, 22]) {
+        const br = new THREE.Mesh(new THREE.BoxGeometry(6.4, .5, .5), jpWood);
+        br.position.set(0, yy, -2.4); yg.add(br);
+      }
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(9.5, .7, 9.5), jpWood);
+      deck.position.y = 39; yg.add(deck);
+      const ygRoof = gableRoof(10, 10, 3.4, 40);
+      yg.add(ygRoof);
+      const bell = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.5, 2.6, 8), jpLantern);
+      bell.position.y = 42; yg.add(bell);
+      yg.position.set(x * .42, 0, -104);
+      grp.add(yg);
+      // 提灯の列: 軒先を渡る赤提灯。視線高さの上(y≈+6)に張って必ず見えるようにする
+      const lanternN = 14;
+      const lant = new THREE.InstancedMesh(new THREE.CylinderGeometry(.9, .9, 2.2, 7), jpLantern, lanternN);
+      const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1), _v = new THREE.Vector3();
+      for (let k = 0; k < lanternN; k++) {
+        _v.set(k * (x / lanternN), 6 + Math.sin(k * .9) * .8, -82);
+        _m.compose(_v, _q, _s);
+        lant.setMatrixAt(k, _m);
+      }
+      lant.instanceMatrix.needsUpdate = true;
+      grp.add(lant);
+      const cord = new THREE.Mesh(new THREE.BoxGeometry(x, .22, .22), jpWood);
+      cord.position.set(x / 2, 7.6, -82);
+      grp.add(cord);
+      return grp;
+    }, 300);
+    scene.add(jpBelt.group);
+
+    // --- 名物: 親分の屋敷門(唐破風) — 終盤だけ出てくる大物 ----------------
+    // 章が最終盤(prog>.55)に入ると、町並みの中央にヤクザの本拠が構える。
+    const oyabunGate = new THREE.Group();
+    {
+      // 石垣の基壇(ここは水平線下=2D帯の裏に隠れるので低く簡素で良い)
+      const base = new THREE.Mesh(new THREE.BoxGeometry(56, 6, 16), jpPlaster);
+      base.position.y = -14;
+      oyabunGate.add(base);
+      // 板塀を左右へ伸ばす。塀の天端が視線高さを超えるようにする
+      for (const sgn of [-1, 1]) {
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(20, 26, 2.4), jpWall);
+        wall.position.set(sgn * 17, -1, 0);
+        oyabunGate.add(wall);
+        const cap = gableRoof(22.5, 6, 2.2, 12.4);
+        cap.position.set(sgn * 17, 0, 0);
+        oyabunGate.add(cap);
+      }
+      // 門柱と冠木、両開きの扉
+      for (const sgn of [-1, 1]) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(3, 40, 3), jpWood);
+        post.position.set(sgn * 6.4, 2, 0);
+        oyabunGate.add(post);
+        const leaf = new THREE.Mesh(new THREE.BoxGeometry(5.8, 26, .6), jpWood);
+        leaf.position.set(sgn * 3.1, -2, .3);
+        oyabunGate.add(leaf);
+      }
+      const lintel = new THREE.Mesh(new THREE.BoxGeometry(17, 2.4, 3.2), jpWood);
+      lintel.position.y = 19;
+      oyabunGate.add(lintel);
+      // 唐破風: 中央が持ち上がる曲線の屋根。Shape で輪郭を描いて押し出す
+      const karaShape = new THREE.Shape();
+      karaShape.moveTo(-23, 0);
+      karaShape.quadraticCurveTo(-12, 3, -7.6, 8.4);
+      karaShape.quadraticCurveTo(0, 15, 7.6, 8.4);
+      karaShape.quadraticCurveTo(12, 3, 23, 0);
+      karaShape.lineTo(23, -4);
+      karaShape.quadraticCurveTo(0, 7.4, -23, -4);
+      karaShape.closePath();
+      const kara = new THREE.Mesh(new THREE.ExtrudeGeometry(karaShape, { depth: 10, bevelEnabled: false }), jpRoof);
+      kara.position.set(0, 20.5, -5);
+      oyabunGate.add(kara);
+      // 大提灯2張り(門の顔)。灯りは jpLit で一括明滅
+      for (const sgn of [-1, 1]) {
+        const big = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 2.8, 6.6, 10), jpLantern);
+        big.position.set(sgn * 10, 10, 2.6);
+        oyabunGate.add(big);
+        const capTop = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2.8, 1, 10), jpWood);
+        capTop.position.set(sgn * 10, 13.8, 2.6);
+        oyabunGate.add(capTop);
+      }
+      // 門内に覗く母屋の灯り(閂の奥)
+      const inner = new THREE.Mesh(new THREE.PlaneGeometry(11, 9), jpShoji);
+      inner.position.set(0, 2, -7);
+      oyabunGate.add(inner);
+      // 塀の内側に建つ母屋の大屋根(奥に一段見える)
+      const honya = new THREE.Mesh(new THREE.BoxGeometry(40, 20, 14), jpWall);
+      honya.position.set(0, -2, -20);
+      oyabunGate.add(honya);
+      const honyaRoof = gableRoof(46, 18, 9, 8);
+      honyaRoof.position.set(0, 0, -20);
+      oyabunGate.add(honyaRoof);
+    }
+    // 手前(z=-72)に大きく構えさせ、周期も短くして必ず視界に入るようにする
+    oyabunGate.scale.setScalar(1.35);
+    oyabunGate.position.set(120, 0, -72);
+    oyabunGate.userData = { min: -200, span: 400 };
+    scene.add(oyabunGate);
+
+    // --- ボス戦: 親分の座敷(屋敷の内部) ----------------------------------
+    // 道中で屋敷門をくぐり、ボス戦は「座敷の中」で始まる。室内は床・襖の壁・
+    // 格天井の3枚で画面を完全に覆えるので、外の工場は自然に見えなくなる。
+    // 寸法の根拠(カメラ y=0 / 焦点距離 f≈691px / 見上げ 0.283rad):
+    //   z=-120 の壁は y=-17..64 で画面 y=561..215、天井 y=64 がその上を塞ぎ、
+    //   床 y=-17 が水平線から下を埋める。これで隙間なく室内になる。
+    const interior = new THREE.Group();
+    interior.userData.interior = true;
+    const intFade = [];
+    const mkInt = mat => { mat.transparent = true; mat.opacity = 0; intFade.push(mat); return mat; };
+    // 畳: い草の目 + 黒い縁。半畳ずつ互い違いに敷く
+    const tatamiTex = makeTex(128, 128, (g, w, h) => {
+      for (let i = 0; i < 4; i++) {
+        const vert = i % 2 === 0;
+        const px = (i % 2) * 64, py = (i >> 1) * 64;
+        g.fillStyle = '#6f7a45'; g.fillRect(px, py, 64, 64);
+        g.strokeStyle = 'rgba(40,48,22,.32)'; g.lineWidth = 1;
+        for (let k = 2; k < 64; k += 4) {
+          g.beginPath();
+          if (vert) { g.moveTo(px + k, py); g.lineTo(px + k, py + 64); }
+          else { g.moveTo(px, py + k); g.lineTo(px + 64, py + k); }
+          g.stroke();
+        }
+        g.fillStyle = '#1e1a12';                       // 畳縁(へり)
+        g.fillRect(px, py, 64, 4); g.fillRect(px, py + 60, 64, 4);
+        g.fillRect(px, py, 4, 64); g.fillRect(px + 60, py, 4, 64);
+      }
+    }, { repX: 26, repY: 5 });
+    const tatami = new THREE.Mesh(new THREE.PlaneGeometry(1600, 300),
+      mkInt(lambert({ map: tatamiTex, color: 0xfff0c8, emissive: 0x5a5228, emissiveIntensity: 1.0 })));
+    tatami.rotation.x = -Math.PI / 2;
+    tatami.position.set(0, -17, -60);
+    interior.add(tatami);
+    // 襖: 4枚一組で一続きの絵になる金地の障屏画。松・鶴・流水・竹・牡丹に
+    // 金雲と砂子を重ね、黒漆の縁と引手で1枚ずつ区切る。
+    // テクスチャは 512x340 で4枚分。壁(高さ81)に repX=13 で貼ると1枚あたり
+    // およそ 31x81 world = 実際の襖に近い縦長比になる。
+    const fusumaTex = makeTex(512, 340, (g, w, h) => {
+      const PW = w / 4;                                  // 襖1枚の幅
+      // --- 金地: 上下でわずかに焼けた金 ---
+      const gold = g.createLinearGradient(0, 0, 0, h);
+      gold.addColorStop(0, '#b8860f');
+      gold.addColorStop(.42, '#e8c05a');
+      gold.addColorStop(.78, '#d8a838');
+      gold.addColorStop(1, '#9c6d0c');
+      g.fillStyle = gold; g.fillRect(0, 0, w, h);
+      // 砂子(細かい金粉)
+      for (let i = 0; i < 900; i++) {
+        g.fillStyle = Math.random() < .5 ? 'rgba(255,240,190,.5)' : 'rgba(140,95,10,.35)';
+        g.fillRect(Math.random() * w, Math.random() * h, 1.6, 1.6);
+      }
+      // --- 金雲(すやり霞): 横に伸びる段々の霞。障屏画の骨格になる ---
+      const cloud = (cy, cw, ch, alpha) => {
+        g.save();
+        g.globalAlpha = alpha;
+        const grd = g.createLinearGradient(0, cy - ch, 0, cy + ch);
+        grd.addColorStop(0, '#fff0be');
+        grd.addColorStop(1, '#c99a28');
+        g.fillStyle = grd;
+        g.beginPath();
+        let x = -20;
+        g.moveTo(x, cy);
+        while (x < cw + 20) {
+          const r = 14 + Math.random() * 20;
+          g.arc(x + r, cy - ch * .5, r, Math.PI, 0);
+          x += r * 1.7;
+        }
+        g.lineTo(cw + 20, cy + ch * .5);
+        x = cw + 20;
+        while (x > -20) {
+          const r = 12 + Math.random() * 18;
+          g.arc(x - r, cy + ch * .5, r, 0, Math.PI);
+          x -= r * 1.7;
+        }
+        g.closePath(); g.fill();
+        g.strokeStyle = 'rgba(120,80,8,.35)'; g.lineWidth = 1.6; g.stroke();
+        g.restore();
+      };
+      cloud(58, w, 26, .85);
+      cloud(196, w, 22, .7);
+      cloud(310, w, 24, .8);
+      // --- 岩と流水(下辺) ---
+      g.fillStyle = '#3c4a3a';
+      g.beginPath();
+      g.moveTo(0, h);
+      g.lineTo(0, h - 42); g.lineTo(46, h - 62); g.lineTo(96, h - 34);
+      g.lineTo(150, h - 56); g.lineTo(214, h - 30); g.lineTo(280, h - 50);
+      g.lineTo(350, h - 28); g.lineTo(420, h - 48); g.lineTo(w, h - 32);
+      g.lineTo(w, h); g.closePath(); g.fill();
+      g.strokeStyle = 'rgba(200,225,235,.5)'; g.lineWidth = 2;
+      for (let i = 0; i < 7; i++) {                       // 流水文
+        const yy = h - 20 + i * 3;
+        g.beginPath();
+        for (let x = 0; x <= w; x += 16) {
+          const yv = yy - Math.sin((x / w) * 12 + i) * 5;
+          x === 0 ? g.moveTo(x, yv) : g.lineTo(x, yv);
+        }
+        g.stroke();
+      }
+      // --- 松: 幹・枝・団子状の松葉。左2枚にまたがる主役 ---
+      const needles = (cx, cy, r) => {
+        g.fillStyle = '#1d4529';
+        g.beginPath(); g.arc(cx, cy, r, 0, 6.3); g.fill();
+        g.fillStyle = '#2f6b3c';
+        g.beginPath(); g.arc(cx - r * .28, cy - r * .3, r * .62, 0, 6.3); g.fill();
+        g.strokeStyle = '#123018'; g.lineWidth = 1.4;
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * 6.28;
+          g.beginPath();
+          g.moveTo(cx + Math.cos(a) * r * .6, cy + Math.sin(a) * r * .6);
+          g.lineTo(cx + Math.cos(a) * r * 1.16, cy + Math.sin(a) * r * 1.16);
+          g.stroke();
+        }
+      };
+      g.strokeStyle = '#3a2510'; g.lineCap = 'round';
+      g.lineWidth = 15;
+      g.beginPath(); g.moveTo(40, h - 40); g.quadraticCurveTo(58, 250, 46, 176); g.stroke();
+      g.lineWidth = 9;
+      g.beginPath(); g.moveTo(48, 214); g.quadraticCurveTo(112, 208, 146, 168); g.stroke();
+      g.beginPath(); g.moveTo(46, 186); g.quadraticCurveTo(6, 172, -8, 140); g.stroke();
+      g.lineWidth = 6;
+      g.beginPath(); g.moveTo(46, 176); g.quadraticCurveTo(74, 150, 70, 120); g.stroke();
+      needles(70, 108, 30); needles(150, 158, 26); needles(6, 132, 24);
+      needles(112, 186, 20); needles(40, 156, 17);
+      // --- 竹: 右端の1枚に3本 ---
+      for (const [bx, bh, bw] of [[452, 300, 7], [478, 330, 5], [498, 280, 6]]) {
+        g.fillStyle = '#4a6b28';
+        g.fillRect(bx, h - bh, bw, bh);
+        g.strokeStyle = '#2e4718'; g.lineWidth = 2;
+        for (let yy = h - bh + 16; yy < h; yy += 34) {
+          g.beginPath(); g.moveTo(bx, yy); g.lineTo(bx + bw, yy); g.stroke();
+        }
+        g.fillStyle = '#3f6a24';
+        for (let k = 0; k < 4; k++) {
+          const ly = h - bh + 20 + k * 46;
+          g.beginPath();
+          g.ellipse(bx + bw + 14, ly, 16, 4.4, -.5, 0, 6.3); g.fill();
+          g.beginPath();
+          g.ellipse(bx - 14, ly + 18, 15, 4, .55, 0, 6.3); g.fill();
+        }
+      }
+      // --- 牡丹: 中央下に2輪 ---
+      const peony = (cx, cy, r, col, dark) => {
+        for (let ring = 3; ring >= 1; ring--) {
+          g.fillStyle = ring === 3 ? dark : col;
+          const n = 5 + ring * 2, rr = r * (ring / 3);
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * 6.28 + ring;
+            g.beginPath();
+            g.ellipse(cx + Math.cos(a) * rr * .5, cy + Math.sin(a) * rr * .5, rr * .58, rr * .42, a, 0, 6.3);
+            g.fill();
+          }
+        }
+        g.fillStyle = '#fff0b0';
+        g.beginPath(); g.arc(cx, cy, r * .16, 0, 6.3); g.fill();
+      };
+      peony(238, h - 74, 26, '#e84a72', '#a81f46');
+      peony(292, h - 52, 18, '#f2789c', '#c23a62');
+      g.fillStyle = '#2f6b3c';
+      for (const [lx, ly] of [[210, h - 48], [262, h - 30], [316, h - 76]]) {
+        g.beginPath(); g.ellipse(lx, ly, 20, 7, .4, 0, 6.3); g.fill();
+      }
+      // --- 鶴: 飛翔1羽 + 立ち姿1羽 ---
+      const craneFly = (cx, cy, sc) => {
+        g.save(); g.translate(cx, cy); g.scale(sc, sc);
+        g.fillStyle = '#f8f4e8';
+        g.beginPath(); g.ellipse(0, 0, 30, 11, -.12, 0, 6.3); g.fill();
+        g.beginPath();                                    // 翼
+        g.moveTo(-4, -4); g.quadraticCurveTo(-30, -40, -62, -34);
+        g.quadraticCurveTo(-34, -18, -6, 2); g.closePath(); g.fill();
+        g.beginPath();
+        g.moveTo(2, -2); g.quadraticCurveTo(24, -34, 54, -26);
+        g.quadraticCurveTo(28, -12, 6, 2); g.closePath(); g.fill();
+        g.fillStyle = '#151009';                          // 風切羽
+        g.beginPath(); g.ellipse(-52, -32, 12, 4, -.35, 0, 6.3); g.fill();
+        g.beginPath(); g.ellipse(46, -25, 11, 4, .3, 0, 6.3); g.fill();
+        g.strokeStyle = '#f8f4e8'; g.lineWidth = 4.5; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(26, -3); g.lineTo(52, -16); g.stroke();   // 首
+        g.beginPath(); g.moveTo(-26, 2); g.lineTo(-48, 12); g.stroke();   // 脚
+        g.fillStyle = '#f8f4e8';
+        g.beginPath(); g.arc(54, -17, 5.4, 0, 6.3); g.fill();
+        g.fillStyle = '#c81028';
+        g.beginPath(); g.arc(55, -20, 2.6, 0, 6.3); g.fill();
+        g.strokeStyle = '#151009'; g.lineWidth = 2.4;
+        g.beginPath(); g.moveTo(59, -16); g.lineTo(70, -13); g.stroke();
+        g.restore();
+      };
+      const craneStand = (cx, cy, sc) => {
+        g.save(); g.translate(cx, cy); g.scale(sc, sc);
+        g.fillStyle = '#f8f4e8';
+        g.beginPath(); g.ellipse(0, 0, 26, 13, -.15, 0, 6.3); g.fill();
+        g.fillStyle = '#151009';
+        g.beginPath(); g.ellipse(-22, 2, 13, 6, .3, 0, 6.3); g.fill();     // 尾羽
+        g.strokeStyle = '#f8f4e8'; g.lineWidth = 5; g.lineCap = 'round';
+        g.beginPath(); g.moveTo(16, -6); g.quadraticCurveTo(30, -30, 22, -48); g.stroke();
+        g.strokeStyle = '#151009'; g.lineWidth = 3;
+        g.beginPath(); g.moveTo(-4, 11); g.lineTo(-6, 40); g.moveTo(8, 11); g.lineTo(12, 40); g.stroke();
+        g.fillStyle = '#f8f4e8';
+        g.beginPath(); g.arc(22, -50, 6, 0, 6.3); g.fill();
+        g.fillStyle = '#c81028';
+        g.beginPath(); g.arc(22, -54, 3, 0, 6.3); g.fill();
+        g.strokeStyle = '#151009'; g.lineWidth = 2.6;
+        g.beginPath(); g.moveTo(27, -49); g.lineTo(40, -46); g.stroke();
+        g.restore();
+      };
+      craneFly(330, 128, 1);
+      craneStand(392, h - 66, .9);
+      // --- 家紋(五三桐ふう)を各襖の上部に小さく散らす ---
+      for (let i = 0; i < 4; i++) {
+        const cx = PW * i + PW / 2, cy = 34;
+        g.save(); g.translate(cx, cy);
+        g.fillStyle = 'rgba(60,40,6,.55)';
+        g.beginPath(); g.arc(0, 0, 13, 0, 6.3); g.stroke();
+        g.strokeStyle = 'rgba(60,40,6,.55)'; g.lineWidth = 1.6;
+        g.beginPath(); g.arc(0, 0, 13, 0, 6.3); g.stroke();
+        for (const [ox, sc2] of [[-6.5, .8], [0, 1], [6.5, .8]]) {
+          g.beginPath();
+          g.ellipse(ox, 1, 3 * sc2, 6.5 * sc2, 0, 0, 6.3);
+          g.fill();
+          g.fillRect(ox - .8, -9 * sc2, 1.6, 4.5 * sc2);
+        }
+        g.restore();
+      }
+      // --- 黒漆の縁と引手(1枚ごと) ---
+      g.fillStyle = '#140d06';
+      g.fillRect(0, 0, w, 9); g.fillRect(0, h - 9, w, 9);
+      for (let i = 0; i <= 4; i++) g.fillRect(PW * i - 4, 0, 8, h);
+      g.strokeStyle = 'rgba(200,160,70,.5)'; g.lineWidth = 1.2;
+      for (let i = 0; i <= 4; i++) { g.beginPath(); g.moveTo(PW * i + 4.6, 0); g.lineTo(PW * i + 4.6, h); g.stroke(); }
+      for (let i = 0; i < 4; i++) {                        // 引手(黒漆に金縁)
+        const cx = PW * i + PW - 14, cy = h * .52;
+        g.fillStyle = '#241708';
+        g.beginPath(); g.ellipse(cx, cy, 6.5, 10, 0, 0, 6.3); g.fill();
+        g.strokeStyle = '#c8991f'; g.lineWidth = 1.8;
+        g.beginPath(); g.ellipse(cx, cy, 6.5, 10, 0, 0, 6.3); g.stroke();
+      }
+    }, { repX: 13, repY: 1 });
+    // 壁・欄間・長押・柱・提灯は1つの塊として奥から手前へ寄ってくる
+    const intWallGrp = new THREE.Group();
+    interior.add(intWallGrp);
+    const fusumaWall = new THREE.Mesh(new THREE.PlaneGeometry(1600, 81),
+      mkInt(lambert({ map: fusumaTex, color: 0xffd8a8, emissive: 0xffffff, emissiveIntensity: .5, emissiveMap: fusumaTex })));
+    fusumaWall.position.set(0, 23.5, -120);
+    intWallGrp.add(fusumaWall);
+    // 格天井: 太い格縁が井桁に走る木の天井
+    const gotenTex = makeTex(64, 64, g => {
+      g.fillStyle = '#2a1a0e'; g.fillRect(0, 0, 64, 64);
+      g.fillStyle = '#3d2714'; g.fillRect(6, 6, 52, 52);
+      g.strokeStyle = '#5a3a1c'; g.lineWidth = 5; g.strokeRect(3, 3, 58, 58);
+      g.fillStyle = '#1c1208'; g.fillRect(28, 28, 8, 8);
+    }, { repX: 30, repY: 6 });
+    const goten = new THREE.Mesh(new THREE.PlaneGeometry(1600, 200),
+      mkInt(lambert({ map: gotenTex, color: 0xffc898, emissive: 0x2e1a08, emissiveIntensity: .9 })));
+    goten.rotation.x = Math.PI / 2;
+    goten.position.set(0, 64, -40);
+    interior.add(goten);
+    // 柱・長押・欄間: 室内の骨格。黒っぽい木で襖の金地を締める
+    const intWood = mkInt(phong({ color: 0x2e1a0c, specular: 0xff9a5a, shininess: 16, emissive: 0x140803, emissiveIntensity: .6 }));
+    // 欄間は**透かしにしない**。格子の穴から後ろが素通しになり、屋外を消した
+    // 状態では2Dの夕景の空がそのまま抜けて「襖に背景が透けている」状態になる。
+    // 板に格子を彫った不透明パネルとして描く(組子の影も焼き込む)。
+    const ranmaTex = makeTex(64, 32, g => {
+      g.fillStyle = '#120a04'; g.fillRect(0, 0, 64, 32);       // 奥の陰(不透明)
+      g.fillStyle = '#2a1a0c';
+      for (let x = 0; x < 64; x += 8) g.fillRect(x + 3, 0, 5, 32);
+      for (let y = 0; y < 32; y += 8) g.fillRect(0, y + 3, 64, 5);
+      g.fillStyle = '#4a3018';                                  // 組子の当たり(光側)
+      for (let x = 0; x < 64; x += 8) g.fillRect(x + 3, 0, 2, 32);
+      for (let y = 0; y < 32; y += 8) g.fillRect(0, y + 3, 64, 2);
+    }, { repX: 40, repY: 1 });
+    const ranma = new THREE.Mesh(new THREE.PlaneGeometry(1600, 9),
+      mkInt(lambert({ map: ranmaTex, color: 0xffc090, emissive: 0x2a1608, emissiveIntensity: .7 })));
+    ranma.position.set(0, 58, -118);
+    intWallGrp.add(ranma);
+    const nageshi = new THREE.Mesh(new THREE.BoxGeometry(1600, 2.6, 1.6), intWood);
+    nageshi.position.set(0, 52, -116);
+    intWallGrp.add(nageshi);
+    const intPillars = new THREE.InstancedMesh(new THREE.BoxGeometry(2.4, 81, 2.4), intWood, 14);
+    {
+      const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1), _v = new THREE.Vector3();
+      for (let i = 0; i < 14; i++) {
+        _v.set(-390 + i * 60, 23.5, -116);
+        _m.compose(_v, _q, _s);
+        intPillars.setMatrixAt(i, _m);
+      }
+      intPillars.instanceMatrix.needsUpdate = true;
+    }
+    intWallGrp.add(intPillars);
+    // 吊り提灯: 座敷の灯り。ボスの登場に合わせて息づく
+    const intLampMat = mkInt(lambert({ color: 0xff6a3a, emissive: 0xff7a2a, emissiveIntensity: 1.3 }));
+    const intLamps = new THREE.InstancedMesh(new THREE.CylinderGeometry(2, 2, 5, 10), intLampMat, 9);
+    {
+      const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1), _v = new THREE.Vector3();
+      for (let i = 0; i < 9; i++) {
+        _v.set(-320 + i * 80, 42, -96);
+        _m.compose(_v, _q, _s);
+        intLamps.setMatrixAt(i, _m);
+      }
+      intLamps.instanceMatrix.needsUpdate = true;
+    }
+    intWallGrp.add(intLamps);
+    // 座敷の実光源(提灯の暖色)。畳と襖の金に落ちる
+    const intLight = new THREE.PointLight(0xffa050, 0, 200, 1.4);
+    intLight.position.set(0, 30, -70);
+    interior.add(intLight);
+    // 敷居の暗がり: 門をくぐる一瞬を黒で覆う幕。座敷(z=-120)は町並み(z=-90)
+    // より奥にあるため、透過で重ねても永久に町に隠れて出てこられない。
+    // 「暗くなる→切り替わる→部屋が閉じてくる」の順にして物理的な前後関係を回避する。
+    const intVeil = new THREE.Mesh(new THREE.PlaneGeometry(2400, 1600),
+      new THREE.MeshBasicMaterial({ color: 0x0a0603, transparent: true, opacity: 0, depthTest: false, depthWrite: false, fog: false }));
+    intVeil.position.set(0, 0, -12);
+    intVeil.renderOrder = 999;
+    interior.add(intVeil);
+    interior.visible = false;
+    scene.add(interior);
+
     // 送電鉄塔と電線
     const pylonBelt = makeScroller(() => {
       const grp = new THREE.Group();
-      const mat = lambert({ color: 0x481a2c });
+      const mat = lambert({ color: 0x220716 });
       const wireMat = basic({ color: 0x8a4a5a, transparent: true, opacity: .5, fog: false });
       const GAP = 96, N_PY = 5;
       for (let i = 0; i < N_PY; i++) {
@@ -2371,7 +3117,7 @@ import * as THREE from './assets/lib/three.module.min.js';
     const smokeTex = softTex('#d9a8b8', 128, .1);
     const midBelt = makeScroller(() => {
       const grp = new THREE.Group();
-      const steel = lambert({ color: 0x6a2438 });
+      const steel = lambert({ color: 0x350e20 });
       const stripe = makeTex(32, 64, g => {
         g.fillStyle = '#7a2a3e'; g.fillRect(0, 0, 32, 64);
         g.fillStyle = '#c8503c'; g.fillRect(0, 0, 32, 10);
@@ -2474,6 +3220,7 @@ import * as THREE from './assets/lib/three.module.min.js';
     farBelt.group.traverse(o => { if (o.userData && o.userData.blink !== undefined) blinkers.push(o); });
 
     let t = 0;
+    let insideT = 0;      // 0=屋外 / 1=座敷の中(ボス戦)
     return {
       scene,
       update(dt, s) {
@@ -2481,6 +3228,84 @@ import * as THREE from './assets/lib/three.module.min.js';
         const dx = SCROLL * (s.speed || 1) * dt;
         farBelt.update(dx * .85); midBelt.update(dx); nearBelt.update(dx);
         coolBelt.update(dx * .8); flareBelt.update(dx * .92); pylonBelt.update(dx * .88);
+        bfBelt.update(dx * .9); trussBelt.update(dx * 1.05);
+        // --- 屋敷の中へ: ボス戦は座敷の内部で戦う --------------------------
+        // warning(ボス接近)で扉をくぐる想定で室内へクロスフェードし、外の
+        // 工場・町並みは室内の床/襖/天井に完全に隠れるので visible を落とす。
+        // s.warning は**中ボスの警告でも true** になる(director の warning は
+        // 'warning' と 'midboss-warning' の両方を拾う)。座敷は親分の本戦専用なので
+        // s.boss だけを見る。s.boss は 'warning'|'active'|'transition'|'final' を
+        // 含むので、ボス接近の時点から入場が始まる挙動は変わらない。
+        const wantInside = s.boss ? 1 : 0;
+        insideT += (wantInside - insideT) * Math.min(1, dt * 1.15);
+        if (insideT < .002) insideT = 0;
+        api.indoor = insideT;
+        interior.visible = insideT > .01;
+        if (interior.visible) {
+          // 「入っていく」演出は透過のクロスフェードでは作れない。半分だけ
+          // 透けた座敷と屋外が重なって二重露光になり、どちらも読めなくなる
+          // (実際そうなっていた)。代わりに**部屋そのものを閉じてくる**:
+          //   天井が上から降り、畳が下からせり上がり、襖の壁が奥から寄る。
+          // 3面は不透明なので、寄るほど屋外を物理的に隠していく = くぐった感。
+          // 透過は立ち上がりの3割だけ使い、そこから先は完全な不透明にする。
+          // 3幕構成にする:
+          //  (1) 0〜.5  敷居の暗がりが濃くなる(門をくぐる)
+          //  (2) .5     ここで屋外→座敷を差し替える(真っ黒なので継ぎ目が見えない)
+          //  (3) .45〜1 天井が降り、畳がせり上がり、襖の壁が奥から寄って部屋が閉じる
+          const veil = insideT < .5
+            ? Math.min(1, insideT / .5)
+            : Math.max(0, 1 - (insideT - .5) / .3);
+          intVeil.material.opacity = veil;
+          const u = Math.max(0, Math.min(1, (insideT - .45) / .55));
+          const back = 1 - (1 - Math.pow(1 - u, 3));
+          intWallGrp.position.z = -300 * back;            // 襖の壁が奥から迫る
+          goten.position.y = 64 + 150 * back;             // 天井が上から降りてくる
+          tatami.position.y = -17 - 150 * back;           // 畳が下からせり上がる
+          for (const mat of intFade) mat.opacity = 1;     // 部屋は常に不透明
+          // 提灯と実光源は室内が固まってから灯す(入った瞬間に眩しくしない)
+          const lampBreath = .9 + .18 * Math.sin(t * 2.6);
+          intLampMat.emissiveIntensity = 1.3 * lampBreath * insideT;
+          intLight.intensity = 2.1 * insideT * lampBreath;
+          // 座敷は動かさない。壁だけ止めて床天井が流れると室内が破綻するので
+          // 3面まとめて固定し、「屋敷に着いて対峙している」画にする。
+        }
+        // 屋外の停止は暗転のピーク(insideT=.5)で行う。座敷は町並みより奥に
+        // あるので、これより早く出しても町に隠れて見えない。
+        const outsideOn = insideT < .5;
+        for (const child of scene.children) {
+          if (child.userData && child.userData.interior) continue;
+          child.visible = outsideOn;
+        }
+        // 親分の町: 章が進むほど濃く現れる(0=製鉄所だけ / 1=屋敷町)。
+        // ボス戦は backgroundDirector 側で最終章に固定されるので出たままになる。
+        const prog = Math.min(1, (Math.min(2, (s.chapter || 0) + (s.chapterT || 0)) / 2) * 1.15);
+        jpBelt.update(dx);
+        const lit = .55 + .12 * Math.sin(t * 2.3);
+        for (const mat of jpFade) mat.opacity = prog;
+        for (const mat of jpLit) mat.emissiveIntensity = (mat === jpShoji ? 1.1 : 1.2) * (lit + .45) * prog;
+        jpBelt.group.visible = outsideOn && prog > .02;
+        // 屋敷門は終盤だけ。手前に置くので prog が低いうちは完全に消しておく
+        const gateOn = Math.max(0, Math.min(1, (prog - .55) / .3));
+        oyabunGate.visible = outsideOn && gateOn > .02;
+        if (oyabunGate.visible) {
+          oyabunGate.position.x -= dx * .95;
+          if (oyabunGate.position.x < oyabunGate.userData.min) oyabunGate.position.x += oyabunGate.userData.span;
+        }
+        // 高炉の熱気・出銑口・投光器: 炉の呼吸で明滅し、ボス戦で熱を増す
+        const mF = moodT(s);
+        for (let i = 0; i < bfHot.length; i++) {
+          const o = bfHot[i];
+          const ph = o.userData.ph || 0;
+          o.material.opacity = .34 + .2 * Math.sin(t * (2.4 + (i % 3) * .7) + ph) + mF * .22;
+        }
+        forgeLight.intensity = 1.4 + .35 * Math.sin(t * 2.1) + mF * .8;
+        for (const sm of bfSmoke) {
+          const u = sm.userData.smoke;
+          sm.position.y = u.base + Math.sin(t * .45 + u.ph) * u.amp;
+          sm.position.x += Math.sin(t * .3 + u.ph) * dt * 1.6;
+        }
+        // 雲デッキ: テクスチャ側を流して継ぎ目を出さずに永久スクロールさせる
+        for (const bar of sunBars) bar.material.map.offset.x += bar.userData.v * dt * .004;
         floorTex.offset.x += dx * (26 / 1500);    // 煙突・タンクと同じ世界速度
         moltenTex.offset.x += dt * .09 + dx * (12 / 1500);   // 湯は自分でも流れる
         for (const gl of moltenGlow) {
@@ -2613,27 +3438,99 @@ import * as THREE from './assets/lib/three.module.min.js';
   // CYBER STORM — 電脳嵐。雲海、回路モノリス、雨、稲妻、データ流。
   function buildStorm() {
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x0e3c36, 22, 310);
-    const hemi = new THREE.HemisphereLight(0x3fae7e, 0x03140f, 1.0);
+    scene.fog = new THREE.Fog(0x061f22, 22, 300);
+    // 1.0 だと全部が同じ中間緑に持ち上がり、雲・塔・地表の区別が消える。
+    // 嵐は「暗い基調 + 稲光の瞬間だけ明るい」ので環境光は低く抑える。
+    const hemi = new THREE.HemisphereLight(0x2e8a6e, 0x02100c, .58);
     scene.add(hemi);
     const flashLight = new THREE.DirectionalLight(0xd8ffe8, 0);
     flashLight.position.set(0, 200, -100);
     scene.add(flashLight);
+    const phong = o => new THREE.MeshPhongMaterial(o);
 
-    // 雲海: 大きなソフトスプライトを3層
-    const cloudTex = softTex('#1e5c4e', 128, .18);
-    const cloudLayers = [];
-    for (const [z, y, n, sc, k] of [[-240, 60, 10, 130, .5], [-170, 34, 9, 95, .7], [-120, -14, 8, 70, .9]]) {
-      const grp = new THREE.Group();
-      const items = [];
-      for (let i = 0; i < n; i++) {
-        const c = sprite(cloudTex, 0x2a7a62, sc * rand(.7, 1.3), rand(.5, .8), THREE.NormalBlending);
-        c.position.set(rand(-320, 320), y + rand(-14, 14), z + rand(-20, 20));
-        grp.add(c);
-        items.push({ obj: c, min: -340, span: 680, k, v: rand(-2, 2) });
+    // 雷雲層: 以前は中間緑のソフト球27個が画面中央(y=-14..60)に居座り、
+    // 塔の手前を覆う一枚の緑の膜になっていた。雲は「空の高い位置」に置き、
+    // 暗い塊 + 稲光で内側が光る、という積乱雲の見え方に作り替える。
+    const thunderTex = makeTex(256, 128, (g, w, h) => {
+      g.clearRect(0, 0, w, h);
+      for (let i = 0; i < 34; i++) {
+        const cx = rand(0, w), cy = rand(h * .25, h * .8), r = rand(14, 42);
+        const gr = g.createRadialGradient(cx, cy - r * .3, 0, cx, cy, r);
+        gr.addColorStop(0, 'rgba(20,58,52,.95)');
+        gr.addColorStop(.6, 'rgba(9,32,30,.7)');
+        gr.addColorStop(1, 'rgba(6,22,22,0)');
+        g.fillStyle = gr;
+        g.beginPath(); g.arc(cx, cy, r, 0, 6.3); g.fill();
       }
-      scene.add(grp);
-      cloudLayers.push(makeMovers(items));
+      // 上面のハイライト(雲頂に当たる薄明かり)で塊の丸みを出す
+      g.globalCompositeOperation = 'source-atop';
+      const lit = g.createLinearGradient(0, 0, 0, h * .7);
+      lit.addColorStop(0, 'rgba(120,230,190,.4)');
+      lit.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = lit; g.fillRect(0, 0, w, h);
+      g.globalCompositeOperation = 'source-over';
+    }, { repX: 2, repY: 1 });
+    // カメラは +0.283rad 見上げているので、画面上部に出すには z=-380 で y≈250 要る
+    // 下段(y≈10〜60)は画面の中〜下段=水平線までの帯を埋める層。ここが空くと
+    // 2Dの明るい緑地がそのまま見えて「のっぺりした緑」になる。
+    const cloudDeck = [];
+    for (const [y, z, w, h, a, v] of [
+      [286, -400, 780, 96, .92, .9], [214, -370, 700, 74, .88, 1.5],
+      [158, -340, 620, 56, .8, 2.2], [112, -300, 540, 40, .62, 3.1],
+      [62, -320, 660, 44, .78, 2.0], [30, -290, 600, 34, .7, 2.8],
+      [8, -260, 540, 26, .55, 3.6]
+    ]) {
+      const tex = thunderTex.clone();
+      tex.needsUpdate = true;
+      tex.offset.x = Math.random();
+      const deck = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+        basic({ map: tex, transparent: true, opacity: a, depthWrite: false, fog: false }));
+      deck.position.set(0, y, z);
+      deck.userData = { v, base: a };
+      scene.add(deck); cloudDeck.push(deck);
+    }
+
+    // --- 眼下の雲海 + データ地平 -----------------------------------------
+    // このステージには地表が無く、画面下半分が2Dの明るい緑地のまま空いていた。
+    // 「雷雲の上を飛んでいる」画にするため、眼下に雲の海と走査グリッドを敷く。
+    const seaTex = makeTex(256, 256, (g, w, h) => {
+      const bg = g.createLinearGradient(0, 0, 0, h);
+      bg.addColorStop(0, '#04161a');
+      bg.addColorStop(1, '#0a2c2a');
+      g.fillStyle = bg; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 90; i++) {
+        const cx = rand(0, w), cy = rand(0, h), r = rand(10, 34);
+        const gr = g.createRadialGradient(cx, cy - r * .25, 0, cx, cy, r);
+        gr.addColorStop(0, `rgba(46,120,104,${rand(.2, .5).toFixed(2)})`);
+        gr.addColorStop(1, 'rgba(10,40,38,0)');
+        g.fillStyle = gr;
+        g.beginPath(); g.arc(cx, cy, r, 0, 6.3); g.fill();
+      }
+    }, { repX: 10, repY: 5 });
+    const cloudSea = new THREE.Mesh(new THREE.PlaneGeometry(1600, 620),
+      lambert({ map: seaTex, color: 0x9fd8c4, emissive: 0x061e1c, emissiveIntensity: .8 }));
+    cloudSea.rotation.x = -Math.PI / 2;
+    cloudSea.position.set(0, -40, -300);
+    scene.add(cloudSea);
+    // 走査グリッド: 雲海の上を走る発光ワイヤ。奥行きの手掛かりになる
+    const gridTex = makeTex(128, 128, (g, w, h) => {
+      g.clearRect(0, 0, w, h);
+      g.strokeStyle = 'rgba(80,240,150,.55)'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(0, 1); g.lineTo(w, 1); g.stroke();
+      g.beginPath(); g.moveTo(1, 0); g.lineTo(1, h); g.stroke();
+    }, { repX: 40, repY: 16 });
+    const dataGrid = new THREE.Mesh(new THREE.PlaneGeometry(1600, 600),
+      basic({ map: gridTex, transparent: true, opacity: .3, blending: THREE.AdditiveBlending, depthWrite: false, fog: true }));
+    dataGrid.rotation.x = -Math.PI / 2;
+    dataGrid.position.set(0, -38, -300);
+    scene.add(dataGrid);
+    // 雲海の割れ目から漏れる光(下で雷が光っている感じ)
+    const seaGlows = [];
+    for (let i = 0; i < 6; i++) {
+      const gl = sprite(softTex('#7affc8'), 0x48e87a, rand(26, 54), .12);
+      gl.position.set(rand(-260, 260), -34, rand(-260, -90));
+      gl.userData.ph = rand(0, 6.28);
+      scene.add(gl); seaGlows.push(gl);
     }
 
     // 回路トレースのモノリス群
@@ -2840,6 +3737,62 @@ import * as THREE from './assets/lib/three.module.min.js';
     dataCore.userData = { baseX: 110, span: 780, min: -380 };
     scene.add(dataCore);
 
+    // --- 名物: サーバー大聖堂の尖塔群(中景の主役) ------------------------
+    // 「電脳空域」なのに中景が薄く、雲と近景ラックの間が空いていた。雲海から
+    // 突き出す巨大なデータセンターの塔を立て、垂直の要素で画面に芯を作る。
+    // 高さの根拠: カメラは y=0、水平線は画面 y≈561。塔は y=-30 の雲海から
+    // +55 くらいまで伸ばすと画面 y≈330〜560 を占めて「見上げる」画になる。
+    const citWinTex = windowTex('#04120f', ['#48e87a', '#31e8ff', '#9affc8'], 10, 34, .66);
+    citWinTex.repeat.set(2, 3);
+    const citBody = phong({ map: citWinTex, color: 0x3c8a72, specular: 0x9affd0, shininess: 40, emissive: 0x123f30, emissiveIntensity: 1.25, emissiveMap: citWinTex });
+    const citDark = phong({ color: 0x08201c, specular: 0x48e87a, shininess: 30 });
+    const citNeon = basic({ color: 0x72ff68, transparent: true, opacity: .8, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+    const citBeacons = [];
+    const citadelBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      for (let i = 0; i < 4; i++) {
+        const x = i * 120 + rand(-18, 18), z = -168 + rand(-24, 24);
+        const w = rand(16, 26), h = rand(66, 104);
+        const tower = new THREE.Group();
+        const shaft = new THREE.Mesh(new THREE.BoxGeometry(w, h, w * .8), citBody);
+        shaft.position.y = -30 + h / 2;
+        tower.add(shaft);
+        // 控え壁(バットレス): 大聖堂らしい段付きの側面
+        for (const sgn of [-1, 1]) {
+          const bt = new THREE.Mesh(new THREE.BoxGeometry(w * .3, h * .74, w * .34), citDark);
+          bt.position.set(sgn * (w / 2 + w * .12), -30 + h * .37, w * .3);
+          tower.add(bt);
+        }
+        // 冠部の段と尖塔
+        const crown = new THREE.Mesh(new THREE.BoxGeometry(w * 1.18, 4, w * .95), citDark);
+        crown.position.y = -30 + h + 2;
+        tower.add(crown);
+        const spire = new THREE.Mesh(new THREE.ConeGeometry(w * .3, 22, 6), citDark);
+        spire.position.y = -30 + h + 15;
+        tower.add(spire);
+        // 頂部の航空障害灯(明滅)
+        const beacon = sprite(softTex('#9affc8'), 0x72ff68, 9, .7);
+        beacon.position.y = -30 + h + 27;
+        beacon.userData.ph = rand(0, 6.28);
+        tower.add(beacon); citBeacons.push(beacon);
+        // 塔を巻く発光リング(データ帯)
+        for (let k = 0; k < 3; k++) {
+          const band = new THREE.Mesh(new THREE.BoxGeometry(w * 1.1, .9, w * .9), citNeon);
+          band.position.y = -30 + h * (.3 + k * .22);
+          tower.add(band);
+        }
+        // パラボラアンテナ(側面に張り出す)
+        const dish = new THREE.Mesh(new THREE.SphereGeometry(4.4, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2.4), citDark);
+        dish.rotation.set(Math.PI * .62, 0, .3);
+        dish.position.set(w / 2 + 3, -30 + h * .82, w * .2);
+        tower.add(dish);
+        tower.position.set(x, 0, z);
+        grp.add(tower);
+      }
+      return grp;
+    }, 480);
+    scene.add(citadelBelt.group);
+
     // --- 浮遊サーバ群(近〜中景) ----------------------------------------
     // 傾いたラックが編隊で流れ、LED が走査する。近景の厚みを作る主役。
     const rackTex = makeTex(64, 128, g => {
@@ -3013,7 +3966,23 @@ import * as THREE from './assets/lib/three.module.min.js';
         spineBelt.update(dx * .8);
         rackBelt.update(dx * 1.05);
         holoBelt.update(dx * .9);
-        for (const l of cloudLayers) l.update(dx, dt);
+        // 雲デッキ: テクスチャ側を流す(視差付き)。稲光の瞬間だけ濃く光らせる
+        for (const deck of cloudDeck) deck.material.map.offset.x += deck.userData.v * dt * .003;
+        // サーバー大聖堂: 塔が流れ、頂部の障害灯が明滅。稲光で窓が一斉に光る
+        citadelBelt.update(dx * .78);
+        for (let i = 0; i < citBeacons.length; i++) {
+          const bc = citBeacons[i];
+          bc.material.opacity = .25 + .55 * Math.max(0, Math.sin(t * 1.8 + bc.userData.ph));
+        }
+        citBody.emissiveIntensity = 1.25 + Math.max(0, flashT / .14) * 1.1 + m * .25;
+        // 眼下の雲海とグリッドはスクロールに追従(グリッドの方が速く=近い)
+        seaTex.offset.x += dx * (10 / 1600);
+        gridTex.offset.x += dx * (40 / 1600);
+        for (const gl of seaGlows) {
+          gl.position.x -= dx * .9;
+          if (gl.position.x < -280) gl.position.x += 560;
+          gl.material.opacity = .08 + .1 * Math.max(0, Math.sin(t * 1.4 + gl.userData.ph));
+        }
         for (const b of spineBlinks) b.material.opacity = breath(t, b.userData.blink, .3, .9, 2.2 + m);
         for (const gc of glyphCols) {
           gc.material.map.offset.y += gc.userData.v * dt * (1 + m * .8);
@@ -3124,8 +4093,11 @@ import * as THREE from './assets/lib/three.module.min.js';
         }
         const f = Math.max(0, flashT / .14);
         flashLight.intensity = f * (2.6 + m * 1.4);
-        hemi.intensity = 1.0 + f * .8 + m * .15;
+        hemi.intensity = .58 + f * .85 + m * .15;
         for (const cf of cloudFlashes) cf.material.opacity = f * (.55 + m * .2);
+        // 稲光は雲を内側から光らせる。雲デッキの濃度を一瞬持ち上げるだけで
+        // 「雲の中で光った」ように読める(専用の発光体を増やさずに済む)。
+        for (const deck of cloudDeck) deck.material.opacity = deck.userData.base * (1 + f * .5);
         for (const b of bolts) {
           if (!b.visible) continue;
           b.material.opacity = f;

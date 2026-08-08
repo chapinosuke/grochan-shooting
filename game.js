@@ -4456,10 +4456,14 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // drawGear paints flat discs; the 3D gear trains (bg3d factory scene) have
       // real extruded teeth, hubs and spokes, so the 2D ones only read as
       // stickers next to them.
-      drawFurnaceRow(stage);
-      for (const p of bgProps) if (p.kind === 'hammer') drawHammerPress(p, stage);
-      drawConveyor(stage);
-      drawMoltenRiver(stage);
+      // ボス戦は親分の座敷(3D室内)へ入るので、工場の街レベルは畳の上に
+      // 炉やコンベアが載って見えないよう止める(bg3d が indoor を立てる)。
+      if (!(window.GRO_BG3D && window.GRO_BG3D.indoor > .5)) {
+        drawFurnaceRow(stage);
+        for (const p of bgProps) if (p.kind === 'hammer') drawHammerPress(p, stage);
+        drawConveyor(stage);
+        drawMoltenRiver(stage);
+      }
     } else if (theme === 'storm') {
       drawHoloGrid(stage);
       drawStormGround(stage);
@@ -4672,6 +4676,9 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function drawChapterWash(stage, d) {
     const set = SCENE_CHAPTERS[stage.theme];
     if (!set || !sceneLayersOn) return;
+    // 屋内(S3座敷)では夕景のチャプター色を乗せない
+    const indoorW = (window.GRO_BG3D && window.GRO_BG3D.indoor) || 0;
+    if (indoorW > .9) return;
     const cur = set[Math.min(set.length - 1, d.chapter)];
     const prev = set[Math.max(0, Math.min(set.length - 1, d.chapter - 1))];
     const mix = d.chapterIn;
@@ -4679,7 +4686,7 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     for (const [c, w] of [[prev, 1 - mix], [cur, mix]]) {
       if (w <= .01) continue;
       const g = ctx.createLinearGradient(0, 0, 0, VH * .82);
-      g.addColorStop(0, hexA(c.wash, c.washA * w * (.75 + d.energy * .45)));
+      g.addColorStop(0, hexA(c.wash, c.washA * w * (.75 + d.energy * .45) * (1 - indoorW)));
       g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g; ctx.fillRect(-30, -30, VW + 60, VH * .82);
     }
@@ -6227,6 +6234,10 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   // and a warm glow leaks up from the neon ground for depth.
   function drawAtmosphere(stage) {
     const dir = backgroundDirector();
+    // S3ボス戦は屋内(親分の座敷)。屋外用の光条・靄・地表グローをそのまま
+    // 重ねると座敷の上に夕景の空気が乗って、襖も畳も濁って見えなくなる。
+    const indoor = (window.GRO_BG3D && window.GRO_BG3D.indoor) || 0;
+    if (indoor > .98) return;
     // Light and air go on top of the scenery but under gameplay: a shaft that
     // stops at the building it passes is a decal, not a shaft.
     drawLightShafts(stage, dir);
@@ -6244,13 +6255,21 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       grad.addColorStop(1, hexA(stage.sky[1], .14));
       return grad;
     });
+    // The 3D layer already carries real fog, so this 2D haze doubles it. On the
+    // bright-mid stages (factory's crimson sky[1], storm's teal) the doubled
+    // band read as a flat colored veil over the whole midground — the single
+    // biggest reason those scenes looked washed out. Keep a trace of it for the
+    // hand-drawn near art to sit in, and let the 3D fog own the depth cue.
+    ctx.globalAlpha = (bg3dActive ? .34 : 1) * (1 - indoor);
     ctx.fillStyle = haze; ctx.fillRect(0, 250, VW, 440);
+    ctx.globalAlpha = 1;
     const glow = cachedGrad('atmoGlow' + stageIndex, () => {
       const grad = ctx.createLinearGradient(0, VH, 0, VH - 150);
       grad.addColorStop(0, hexA(stage.accent2, .16));
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       return grad;
     });
+    ctx.globalAlpha = 1 - indoor;
     ctx.fillStyle = glow; ctx.fillRect(0, VH - 150, VW, 150);
     ctx.restore();
   }
@@ -13303,6 +13322,16 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
     window.__grantBomb = () => { bombStock = Math.min(3, bombStock + 1); updateBombButton(); };
     window.__grantCharm = () => { charmStock = Math.min(3, charmStock + 1); };
     window.__setPower = n => { player.power = clamp(n, 1, 3); };
+    // 走行中にフル装備へ切り替える。装備の中身は ?max=1 と同じものを使い回す
+    // (applyTestMaxLoadout が唯一の定義)。こちらは衣装も渡し、以後も維持したい
+    // ときは lock=true で testMaxLoadout を立てる(= 毎フレーム再適用+無敵)。
+    window.__full = (costumeWant = 'armor', lock = true) => {
+      if (lock) testMaxLoadout = true;
+      applyTestMaxLoadout();
+      bikiniOwned = true; armorOwned = true;
+      costume = costumeWant === 'none' ? 'none' : costumeWant;
+      return window.GRO_DEBUG;
+    };
     window.__hurt = (n = 20) => hurt(n);
     window.__maxHp = () => maxHealth;
     window.__openShop = () => { openShop(); };
