@@ -3438,10 +3438,10 @@ import * as THREE from './assets/lib/three.module.min.js';
   // CYBER STORM — 電脳嵐。雲海、回路モノリス、雨、稲妻、データ流。
   function buildStorm() {
     const scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0x061f22, 22, 300);
+    scene.fog = new THREE.Fog(0x07171e, 22, 290);   // 青灰の雨霧(緑に寄せない)
     // 1.0 だと全部が同じ中間緑に持ち上がり、雲・塔・地表の区別が消える。
     // 嵐は「暗い基調 + 稲光の瞬間だけ明るい」ので環境光は低く抑える。
-    const hemi = new THREE.HemisphereLight(0x2e8a6e, 0x02100c, .58);
+    const hemi = new THREE.HemisphereLight(0x4a8ea0, 0x02090e, .52);   // 寒色の環境光
     scene.add(hemi);
     const flashLight = new THREE.DirectionalLight(0xd8ffe8, 0);
     flashLight.position.set(0, 200, -100);
@@ -3737,6 +3737,239 @@ import * as THREE from './assets/lib/three.module.min.js';
     dataCore.userData = { baseX: 110, span: 780, min: -380 };
     scene.add(dataCore);
 
+    // --- 名物: 電脳都市の高密度ブロック(攻殻機動隊ふうの雑然としたスタック) ---
+    // 「サイバー感」は塔の数ではなく**情報量の密度**で出る。不揃いな箱を
+    // 積み上げ、細かい窓・屋上の設備(水槽/室外機/アンテナ)・縦書きの看板・
+    // 建物間に渡した配線を足して、雨の降る猥雑な高層街をつくる。
+    // 配色は寒色の鉄と青緑を基調に、看板だけ暖色(ナトリウム灯)で刺す。
+    const cityWinTex = windowTex('#050d11', ['#ffb45a', '#ffd9a0', '#31e8ff', '#7affc8', '#2b4a5c'], 16, 44, .66);
+    cityWinTex.repeat.set(2, 2);
+    const cityBody = phong({
+      map: cityWinTex, color: 0x2e4a56, specular: 0x8ad8e8, shininess: 26,
+      emissive: 0x12303c, emissiveIntensity: 1.75, emissiveMap: cityWinTex
+    });
+    const citySteel = phong({ color: 0x1b2c34, specular: 0x6fb8c8, shininess: 34 });
+    const cityCable = basic({ color: 0x0e1a1e, fog: true });
+    // 縦書き看板: 漢字を縦に並べた発光板。攻殻の街の記号として一番効く
+    const SIGN_WORDS = ['公安九課', '義体調整', '電子戦', '記憶屋', '情報屋',
+      '人形遣', '監視局', '義眼堂', '電脳外科', '特殊課', '擬体整備', '光学迷彩',
+      '脳梁接続', '思考戦車', '電子薬局', '闇市場', '義肢工房', '第七課',
+      '通信傍受', '生体認証', '電脳麻薬', '記憶屋堂'];
+    const SIGN_COLS = [['#ff9a3a', '#2a1000'], ['#31e8ff', '#001a22'], ['#ff3a6a', '#22000c'],
+      ['#7affc8', '#00220f'], ['#ffe15a', '#221a00']];
+    const signTexes = [];
+    for (let i = 0; i < 14; i++) {
+      const word = SIGN_WORDS[i % SIGN_WORDS.length];
+      const [fg, bg] = SIGN_COLS[i % SIGN_COLS.length];
+      signTexes.push(makeTex(64, 192, g => {
+        g.fillStyle = bg; g.fillRect(0, 0, 64, 192);
+        g.strokeStyle = fg; g.lineWidth = 3; g.strokeRect(3, 3, 58, 186);
+        g.font = 'bold 40px "Hiragino Sans", "Noto Sans JP", sans-serif';
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillStyle = fg;
+        for (let k = 0; k < word.length; k++) {
+          g.fillText(word[k], 32, 32 + k * 44);
+        }
+        // 走査線でネオン管のちらつきを表現
+        g.globalAlpha = .25; g.fillStyle = '#000';
+        for (let y = 0; y < 192; y += 4) g.fillRect(0, y, 64, 1.6);
+        g.globalAlpha = 1;
+      }));
+    }
+    const cityBeacons = [];
+    const cityBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      for (let i = 0; i < 16; i++) {
+        const bx = i * 30 + rand(-8, 8), bz = -100 + rand(-34, 34);
+        const blk = new THREE.Group();
+        // 不揃いな箱を2〜4段積む(段ごとに幅と奥行きをずらして輪郭を崩す)
+        let y = -30, wPrev = rand(15, 24);
+        const segs = 2 + ((i * 7) % 3);
+        for (let sgi = 0; sgi < segs; sgi++) {
+          const wSeg = wPrev * rand(.68, .95);
+          const hSeg = rand(20, 40);
+          const box = new THREE.Mesh(new THREE.BoxGeometry(wSeg, hSeg, wSeg * .78), cityBody);
+          box.position.set(rand(-2.5, 2.5), y + hSeg / 2, rand(-2, 2));
+          blk.add(box);
+          // 各段の庇(ベランダの重なり=密度)
+          const ledge = new THREE.Mesh(new THREE.BoxGeometry(wSeg * 1.14, .9, wSeg * .92), citySteel);
+          ledge.position.set(box.position.x, y + hSeg, box.position.z);
+          blk.add(ledge);
+          y += hSeg; wPrev = wSeg;
+        }
+        const topY = y;
+        // 屋上の雑多な設備: 貯水槽・室外機・アンテナ林
+        for (let k = 0; k < 3; k++) {
+          const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 3.4, 8), citySteel);
+          tank.position.set(rand(-5, 5), topY + 1.7, rand(-4, 4));
+          blk.add(tank);
+        }
+        for (let k = 0; k < 4; k++) {
+          const ac = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.4, 1.4), citySteel);
+          ac.position.set(rand(-7, 7), topY + .7, rand(-4, 5));
+          blk.add(ac);
+        }
+        const mastH = rand(10, 22);
+        const mast = new THREE.Mesh(new THREE.CylinderGeometry(.22, .34, mastH, 5), citySteel);
+        mast.position.set(rand(-4, 4), topY + mastH / 2, rand(-3, 3));
+        blk.add(mast);
+        const beacon = sprite(softTex('#ff5a6a'), 0xff3a5a, 5, .7);
+        beacon.position.set(mast.position.x, topY + mastH, mast.position.z);
+        beacon.userData.ph = rand(0, 6.28);
+        blk.add(beacon); cityBeacons.push(beacon);
+        // 縦書き看板を側面に張り出す(高さ違いで2枚)
+        for (let k = 0; k < 2; k++) {
+          const tex = signTexes[(i * 2 + k) % signTexes.length];
+          const sgn = k ? 1 : -1;
+          const sign = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 14),
+            lambert({ map: tex, color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.5, emissiveMap: tex, side: THREE.DoubleSide }));
+          sign.position.set(sgn * (wPrev * .55 + 2.6), -30 + rand(16, topY + 26), rand(4, 9));
+          sign.rotation.y = sgn * .35;
+          blk.add(sign);
+          const arm = new THREE.Mesh(new THREE.BoxGeometry(3.4, .3, .3), citySteel);
+          arm.position.set(sgn * (wPrev * .4 + 1.4), sign.position.y + 6.6, sign.position.z);
+          blk.add(arm);
+        }
+        blk.position.set(bx, 0, bz);
+        grp.add(blk);
+      }
+      // 建物の間に渡る配線の束: 弛んだ線を数本。雑然さの決め手
+      for (let k = 0; k < 15; k++) {
+        const x0 = k * 32 + rand(-10, 10), yy = rand(-6, 32);
+        const cable = new THREE.Mesh(new THREE.TorusGeometry(30, .22, 4, 12, Math.PI), cityCable);
+        cable.rotation.z = Math.PI;
+        cable.scale.set(1, .16, 1);
+        cable.position.set(x0, yy, -86 + rand(-8, 8));
+        grp.add(cable);
+      }
+      return grp;
+    }, 468);
+    scene.add(cityBelt.group);
+
+    // --- 中景の塔列: 近景ブロックと大聖堂の間を埋める第2層 ------------------
+    // 街は「1列だけ」だと書き割りに見える。奥行きの違う層を重ねると、
+    // 隙間から更に奥の灯りが覗いて一気に都市の厚みが出る。
+    const midWinTex = windowTex('#040a0e', ['#ffa83a', '#31e8ff', '#6fd8e8', '#1d3644'], 12, 40, .56);
+    midWinTex.repeat.set(2, 2);
+    const midCityMat = phong({
+      map: midWinTex, color: 0x223a46, specular: 0x6fb8d0, shininess: 22,
+      emissive: 0x0e2632, emissiveIntensity: 1.45, emissiveMap: midWinTex
+    });
+    const midCityBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      for (let i = 0; i < 19; i++) {
+        const w = rand(9, 19), h = rand(44, 104);
+        const t2 = new THREE.Mesh(new THREE.BoxGeometry(w, h, w * .7), midCityMat);
+        t2.position.set(i * 25 + rand(-8, 8), -30 + h / 2, -138 + rand(-26, 26));
+        grp.add(t2);
+        // 頂部の細い塔屋とアンテナ(輪郭に凹凸を作る)
+        if (i % 2 === 0) {
+          const pent = new THREE.Mesh(new THREE.BoxGeometry(w * .45, rand(6, 14), w * .4), citySteel);
+          pent.position.set(t2.position.x, -30 + h + 5, t2.position.z);
+          grp.add(pent);
+        } else {
+          const ant = new THREE.Mesh(new THREE.CylinderGeometry(.2, .3, rand(10, 20), 4), citySteel);
+          ant.position.set(t2.position.x, -30 + h + 8, t2.position.z);
+          grp.add(ant);
+        }
+      }
+      return grp;
+    }, 480);
+    scene.add(midCityBelt.group);
+
+    // --- 遠景スカイライン: 霧に沈む灯りだけの街(輪郭は塗りつぶし) ----------
+    // 個々の建物を作らず、窓明かりを焼いた1枚の帯で「まだ奥がある」を示す。
+    const skylineTex = makeTex(512, 256, (g, w, h) => {
+      g.clearRect(0, 0, w, h);
+      let x = 0;
+      while (x < w) {
+        const bw = 14 + Math.random() * 34;
+        const bh = 60 + Math.random() * 170;
+        g.fillStyle = '#0a1c26';
+        g.fillRect(x, h - bh, bw, bh);
+        g.fillStyle = '#12303e';
+        g.fillRect(x, h - bh, bw, 3);
+        for (let wy = h - bh + 8; wy < h - 6; wy += 9) {
+          for (let wx = x + 3; wx < x + bw - 4; wx += 7) {
+            if (Math.random() > .42) continue;
+            g.fillStyle = Math.random() < .3 ? 'rgba(255,170,90,.85)' : 'rgba(60,210,240,.8)';
+            g.fillRect(wx, wy, 3, 4);
+          }
+        }
+        if (Math.random() < .3) {                       // 屋上の赤灯
+          g.fillStyle = 'rgba(255,70,90,.9)';
+          g.fillRect(x + bw / 2 - 1, h - bh - 5, 2.5, 2.5);
+        }
+        x += bw + 2 + Math.random() * 6;
+      }
+    }, { repX: 3, repY: 1 });
+    const skyline = new THREE.Mesh(new THREE.PlaneGeometry(1500, 190),
+      basic({ map: skylineTex, transparent: true, depthWrite: false, fog: true }));
+    skyline.position.set(0, 34, -250);
+    scene.add(skyline);
+    // もう一段奥、さらに暗く小さく(空気遠近)
+    const skylineFar = new THREE.Mesh(new THREE.PlaneGeometry(1800, 150),
+      basic({ map: skylineTex, transparent: true, opacity: .5, color: 0x7fa8bc, depthWrite: false, fog: true }));
+    skylineFar.position.set(0, 52, -330);
+    scene.add(skylineFar);
+
+    // --- 名物: 巨大ホログラム広告塔(縦長の投影面がビルの間に立つ) ----------
+    // 攻殻の街を決定づける「建物より大きい広告」。半透明の加算で、
+    // 走査線と横方向のグリッチ帯が走る。
+    const BIG_HOLO_WORDS = ['義体調整', '電脳外科', '記憶保証', '光学迷彩', '電子戦',
+      '公安九課', '人形遣い', '情報統制', '脳量子波', '擬体整備'];
+    const makeBigHoloTex = word => makeTex(160, 512, g => {
+      g.clearRect(0, 0, 160, 512);
+      g.fillStyle = 'rgba(10,50,60,.22)'; g.fillRect(0, 0, 160, 512);
+      g.strokeStyle = '#31e8ff'; g.lineWidth = 3; g.strokeRect(4, 4, 152, 504);
+      // 縦書きの大文字
+      g.font = 'bold 74px "Hiragino Sans", "Noto Sans JP", sans-serif';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      for (let k = 0; k < word.length; k++) {
+        g.fillStyle = k % 2 ? '#7affc8' : '#31e8ff';
+        g.fillText(word[k], 80, 92 + k * 88);
+      }
+      // 下部に流れる英数字ログ
+      g.font = '15px monospace'; g.textAlign = 'left';
+      g.fillStyle = 'rgba(122,255,200,.75)';
+      for (let k = 0; k < 8; k++) {
+        let ln = '';
+        for (let c = 0; c < 12; c++) ln += pick('0123456789ABCDEF');
+        g.fillText(ln, 12, 452 + k * 7);
+      }
+      // 走査線
+      g.globalAlpha = .3; g.fillStyle = '#000';
+      for (let y = 0; y < 512; y += 5) g.fillRect(0, y, 160, 2);
+      g.globalAlpha = 1;
+    });
+    const bigHoloTexes = BIG_HOLO_WORDS.map(makeBigHoloTex);
+    const bigHolos = [];
+    const bigHoloBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      // 広告塔は毎回ちがう文言にする(同じ語が並ぶと看板ではなく壁紙に見える)
+      for (let i = 0; i < 3; i++) {
+        const tex = pick(bigHoloTexes).clone();
+        tex.needsUpdate = true;
+        const holo = new THREE.Mesh(new THREE.PlaneGeometry(20, 64),
+          new THREE.MeshBasicMaterial({
+            map: tex, transparent: true, opacity: .5, blending: THREE.AdditiveBlending,
+            depthWrite: false, fog: false, side: THREE.DoubleSide
+          }));
+        holo.position.set(i * 140 + rand(-18, 18), 12, -78 + rand(-16, 16));
+        holo.userData.ph = rand(0, 6.28);
+        grp.add(holo); bigHolos.push(holo);
+        // 投影の土台(細い柱)と足元の光
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(.6, .9, 34, 6), citySteel);
+        post.position.set(holo.position.x, -25, holo.position.z);
+        grp.add(post);
+        const foot = sprite(softTex('#7affc8'), 0x31e8ff, 26, .18);
+        foot.position.set(holo.position.x, -18, holo.position.z);
+        grp.add(foot);
+      }
+      return grp;
+    }, 420);
+    scene.add(bigHoloBelt.group);
+
     // --- 名物: サーバー大聖堂の尖塔群(中景の主役) ------------------------
     // 「電脳空域」なのに中景が薄く、雲と近景ラックの間が空いていた。雲海から
     // 突き出す巨大なデータセンターの塔を立て、垂直の要素で画面に芯を作る。
@@ -3744,8 +3977,8 @@ import * as THREE from './assets/lib/three.module.min.js';
     // +55 くらいまで伸ばすと画面 y≈330〜560 を占めて「見上げる」画になる。
     const citWinTex = windowTex('#04120f', ['#48e87a', '#31e8ff', '#9affc8'], 10, 34, .66);
     citWinTex.repeat.set(2, 3);
-    const citBody = phong({ map: citWinTex, color: 0x3c8a72, specular: 0x9affd0, shininess: 40, emissive: 0x123f30, emissiveIntensity: 1.25, emissiveMap: citWinTex });
-    const citDark = phong({ color: 0x08201c, specular: 0x48e87a, shininess: 30 });
+    const citBody = phong({ map: citWinTex, color: 0x2f6c78, specular: 0x9ae8ff, shininess: 40, emissive: 0x0e3340, emissiveIntensity: 1.25, emissiveMap: citWinTex });
+    const citDark = phong({ color: 0x0a1c24, specular: 0x48c8e8, shininess: 30 });
     const citNeon = basic({ color: 0x72ff68, transparent: true, opacity: .8, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
     const citBeacons = [];
     const citadelBelt = makeScroller(() => {
@@ -3968,6 +4201,24 @@ import * as THREE from './assets/lib/three.module.min.js';
         holoBelt.update(dx * .9);
         // 雲デッキ: テクスチャ側を流す(視差付き)。稲光の瞬間だけ濃く光らせる
         for (const deck of cloudDeck) deck.material.map.offset.x += deck.userData.v * dt * .003;
+        // 電脳都市: 手前ほど速く流して層を分離させる(近1.02 / 中.72 / 遠はテクスチャ送り)
+        cityBelt.update(dx * 1.02);
+        midCityBelt.update(dx * .72);
+        skylineTex.offset.x += dx * (3 / 1500) * .38;
+        bigHoloBelt.update(dx * .95);
+        for (let i = 0; i < cityBeacons.length; i++) {
+          const bc = cityBeacons[i];
+          bc.material.opacity = .2 + .6 * Math.max(0, Math.sin(t * 2.2 + bc.userData.ph));
+        }
+        // ホログラムは呼吸しつつ、時折グリッチで横に伸び縮みする
+        for (const h of bigHolos) {
+          const ph = h.userData.ph;
+          const glitch = Math.max(0, Math.sin(t * 1.7 + ph) - .93) * 14;
+          h.material.opacity = .42 + .12 * Math.sin(t * 2.4 + ph) + glitch * .3;
+          h.scale.x = 1 + glitch * .5;
+          h.material.map.offset.y = -(t * .06 + ph) % 1;
+        }
+        cityBody.emissiveIntensity = 1.75 + Math.max(0, flashT / .14) * .9;
         // サーバー大聖堂: 塔が流れ、頂部の障害灯が明滅。稲光で窓が一斉に光る
         citadelBelt.update(dx * .78);
         for (let i = 0; i < citBeacons.length; i++) {
@@ -4104,7 +4355,7 @@ import * as THREE from './assets/lib/three.module.min.js';
           if (f <= 0) b.visible = false;
         }
         // ボス時: fog を毒緑→黒緑、渦を前へ少し
-        mixFog(scene.fog, 0x0e3c36, 0x041a14, m, 310, 250);
+        mixFog(scene.fog, 0x07171e, 0x030d14, m, 290, 240);
         vortex.position.z = -290 + m * 30;
         vortex.position.y = 52 - m * 8;
       }

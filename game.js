@@ -114,6 +114,22 @@
     bossQuake: { src: 'assets/sfx/boss-quake.mp3', volume: .34, pool: 1, max: 3.5 },
     bossSuperHit: { src: 'assets/sfx/boss-superhit.mp3', volume: .4, pool: 2, max: 1.1 },
     bossCollapse: { src: 'assets/sfx/boss-collapse.mp3', volume: .46, pool: 1, max: 3.5 },
+    // Heavy boss bed (効果音ラボ「戦闘」「機械」「演出」). The old boss layer was
+    // three short hits; on a big screen the fights read thin. These are the
+    // *low* end — a long ground tremor under the entrance, a gravity/quake sub
+    // for specials, a cannon for heavy shots, and a rubble+blast pair for the
+    // kill — so the punchy samples above have something to sit on.
+    bossTremor: { src: 'assets/sfx/boss-tremor.mp3', volume: .5, pool: 1, max: 5.5 },
+    bossGravity: { src: 'assets/sfx/boss-gravity.mp3', volume: .46, pool: 2, max: 3.8 },
+    bossCannon: { src: 'assets/sfx/boss-cannon.mp3', volume: .44, pool: 2, max: 2.8 },
+    bossBlast: { src: 'assets/sfx/boss-blast.mp3', volume: .5, pool: 2, max: 5.1 },
+    bossRubble: { src: 'assets/sfx/boss-rubble.mp3', volume: .5, pool: 1, max: 6.5 },
+    bossDeform: { src: 'assets/sfx/boss-deform.mp3', volume: .44, pool: 1, max: 2.6 },
+    bossImpact: { src: 'assets/sfx/boss-impact.mp3', volume: .46, pool: 3, max: 1.8 },
+    // Stage 4 (CYBER STORM): a real recorded strike replaces the two-oscillator
+    // synth `thunder`, and an electric crackle for the volt hits.
+    thunderStrike: { src: 'assets/sfx/thunder-strike.mp3', volume: .34, pool: 3, max: 1.4 },
+    zap: { src: 'assets/sfx/zap.mp3', volume: .26, pool: 3, max: 1.1 },
     // 効果音ラボ「連続打ち上げ花火」 — the six-second royal finale bed.
     fireworks: { src: 'assets/sfx/fireworks-finale.mp3', volume: .42, pool: 1, max: 6.5 },
     // FLAME OYABUN's melee layer (効果音ラボ「戦闘」). Real recorded impacts —
@@ -403,7 +419,7 @@
     },
     {
       name: 'CYBER STORM', boss: 'SERVER GOLEM', midBoss: 'VOLT PHANTOM', theme: 'storm', subtitle: '雷鳴とどろく電脳空域',
-      sky: ['#071d24', '#13554b', '#48b849'], far: '#164636', city: '#071f25', accent: '#72ff68', accent2: '#31e8ff',
+      sky: ['#040c14', '#0c2b39', '#1a6470'], far: '#123a46', city: '#05141c', accent: '#72ff68', accent2: '#31e8ff',
       spawnTable: [['cloudray', 5], ['voltbug', 4], ['packetwyrm', 3], ['glitch', 3], ['seeker', 2]],
       melody: [293.66, 349.23, 440, 349.23, 293.66, 369.99, 440, 587.33, 293.66, 349.23, 466.16, 440, 349.23, 293.66, 246.94, 293.66],
       bass: [73.42, 73.42, 87.31, 87.31, 73.42, 73.42, 92.5, 110]
@@ -1194,6 +1210,16 @@
     return `stage${stageIndex}`;
   }
 
+  // Boss hits land harder when the layers are staggered a few tens of ms rather
+  // than fired on the same frame: stacked attacks sum into one click, spread
+  // ones read as impact -> body -> tail. `[type, delayMs]` pairs.
+  function sfxStack(pairs) {
+    for (const [type, delay] of pairs) {
+      if (!delay) sfx(type);
+      else setTimeout(() => { if (soundOn) sfx(type); }, delay);
+    }
+  }
+
   function playSampledSfx(type) {
     const def = sampledSfx[type], pool = sfxPools[type];
     if (!soundOn || !def || !pool) return false;
@@ -1978,7 +2004,7 @@
       boss.entranceT = 0;
       queenCinema = 0;
       shake = Math.max(shake, 24); flash = Math.max(flash, .7);
-    } else { sfx('boss'); sfx('bossRoar'); sfx('bossQuake'); }
+    } else { sfxStack([['boss', 0], ['bossRoar', 60], ['bossQuake', 150], ['bossTremor', 0], ['bossImpact', 30]]); }
     bossVoice(stageIndex, 'appear');
   }
 
@@ -2054,7 +2080,7 @@
       }
       shockwaves.push({ x: cx, y: cy, r: 20, speed: 400, life: .7, max: .7, color: stages[stageIndex].accent2 });
       shockwaves.push({ x: cx, y: cy, r: 8, speed: 260, life: .5, max: .5, color: '#fff' });
-      sfx('boss'); shake = Math.max(shake, stageIndex === 4 ? 13 : 9);
+      sfxStack([['boss', 0], ['bossCannon', 30]]); shake = Math.max(shake, stageIndex === 4 ? 13 : 9);
       if (stageIndex === 4) {
         flash = Math.max(flash, .25); hitStop = Math.max(hitStop, .06);
         fx3d('impact', cx, cy, { color: 0xff3e9d, size: 1.2 });
@@ -2381,7 +2407,8 @@
     burstDebris(e.x + e.w / 2, e.y + e.h / 2, ['#fff', stages[idx].accent], 14, 300);
     e.tierBanner = 1.9;
     sfx('boss');
-    if (idx === 4) royalSfx('phase'); else sfx('bossSuperHit');
+    if (idx === 4) royalSfx('phase');
+    else sfxStack([['bossSuperHit', 0], ['bossDeform', 40], ['bossGravity', 110]]);
     bossVoice(idx, e.tier >= 2 ? 'attack' : 'serious');
     e.sp = .9; e.fire = .5;
     if (idx === 4 && e.tier === 1) summonConsorts(e);
@@ -2878,7 +2905,8 @@
     hazards.push({ kind: 'field', x, y: 650, w: 390, h: 72 / D.gapW, ang: Math.PI, warn: .08, live: .35, fade: .32, lock: 0, t: 0, damage: 28, color: '#b832ff' });
     burstDebris(x, 650, ['#6d5a75', '#c94cff', '#ffffff'], 26, 420);
     shockwaves.push({ x, y: 650, r: 18, speed: 560, life: .8, max: .8, color: '#d75cff' });
-    shake = Math.max(shake, 18); flash = Math.max(flash, .25); sfx('bossQuake');
+    shake = Math.max(shake, 18); flash = Math.max(flash, .25);
+    sfxStack([['bossQuake', 0], ['bossImpact', 25], ['bossGravity', 90]]);
     // The tail comes down on her own rock first — the seat detonates a sheet of
     // water before the strike lands out where the player is standing.
     sirenSurge(e, 1.35); sirenSpray(e, 26, 1.45);
@@ -2951,8 +2979,8 @@
     // the low end. Each move is a swing layered into its own landing sound, so
     // a jab, a heavy straight, a knee and a shoulder charge stay distinct.
     if (kind === 'jab') { sfx('punchSwing'); sfx('punchHeavy'); }
-    else if (kind === 'straight') { sfx('punchSwing'); sfx('punchBig'); sfx('bossSuperHit'); }
-    else if (kind === 'knee') { sfx('kickHeavy'); sfx('bossQuake'); }
+    else if (kind === 'straight') { sfxStack([['punchSwing', 0], ['punchBig', 40], ['bossSuperHit', 55], ['bossImpact', 70]]); }
+    else if (kind === 'knee') { sfxStack([['kickHeavy', 0], ['bossQuake', 45], ['bossGravity', 120]]); }
     else if (kind === 'charge') { sfx('stepIn'); sfx('bossRoar'); }
     else if (kind === 'slam') { sfx('wallBreak'); sfx('bossQuake'); sfx('bigBoom'); }
     else if (kind === 'taunt') { sfx('armCrack'); sfx('bossRoar'); }
@@ -3957,7 +3985,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
       // This also creates a deliberate breath before the ending cutscene.
       stageTransition = stageIndex === stages.length - 1 ? 10.5 : 4.6;
       clearEnemyFire(); bullets = []; musicStep = 0; musicClock = 0;
-      sfx('bossCollapse'); sfx('thunder'); bossVoice(stageIndex, 'death');
+      sfxStack([['bossCollapse', 0], ['bossBlast', 120], ['bossRubble', 320], ['bossTremor', 80]]);
+      bossVoice(stageIndex, 'death');
       if (stageIndex === stages.length - 1) setTimeout(() => sfx('fireworks'), 650);
       // The oyabun loses a fight rather than exploding: the count lands as he
       // goes down on one knee, ~1.7s into his authored fall.
@@ -12990,6 +13019,8 @@ if (bossState === 'waiting' && !midBossDone && stageTime >= midAt) {
   function sfx(type) {
     if (!soundOn) return;
     try {
+      // 雷は実録サンプルを主にし、合成音は下の低域として薄く重ねる
+      if (type === 'thunder') playSampledSfx('thunderStrike');
       const hasSample = playSampledSfx(type);
       const map = {
         shoot: [650, 980, .035, .035], boom: [130, 48, .1, .12], hurt: [180, 70, .18, .15], power: [480, 1200, .24, .12], boss: [90, 260, .7, .16],

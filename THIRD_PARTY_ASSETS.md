@@ -65,6 +65,25 @@
 | --- | --- | --- |
 | `assets/bgm/Neon Arena.mp3` | ユーザー提供 | 本プロジェクト内で使用する素材としてユーザーから提供 |
 
+## ボス戦の重厚レイヤー / ステージ4の雷・電撃SFX
+
+2026-08-08 に効果音ラボ（https://soundeffect-lab.info/）から取得。
+**フリー・商用利用可・クレジット表記不要**（利用規約 /agreement/ 確認済み）。
+mp3への直リンクは規約で禁止されているためリポジトリに同梱し、
+`ffmpeg -codec:a libmp3lame -b:a 96k -ar 44100` で96kbpsに統一している。
+
+| ゲーム内ファイル | 効果音ラボの音源名 | カテゴリ |
+| --- | --- | --- |
+| `assets/sfx/boss-tremor.mp3` | 地響き | 戦闘 |
+| `assets/sfx/boss-gravity.mp3` | 重力魔法2 | 戦闘 |
+| `assets/sfx/boss-cannon.mp3` | 大砲2 | 戦闘 |
+| `assets/sfx/boss-blast.mp3` | 大爆発2 | 戦闘 |
+| `assets/sfx/boss-rubble.mp3` | 建物が大きく崩れる1 | 戦闘 |
+| `assets/sfx/boss-deform.mp3` | ロボットが変形 | 機械・乗り物 |
+| `assets/sfx/boss-impact.mp3` | 文字表示の衝撃音1 | 演出・アニメ |
+| `assets/sfx/thunder-strike.mp3` | 雷魔法1 | 戦闘 |
+| `assets/sfx/zap.mp3` | 電気バチバチ | 生活 |
+
 ## エンディングBGM
 
 | ゲーム内ファイル | 出典 | ライセンス・利用許諾 |
