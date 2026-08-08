@@ -1750,3 +1750,16 @@ palace だけは画家キューに `volPush(COLOSSUS_Z, …)` で最奥として
   ガーランド、緞帳、欄干、灯籠、床スミア)、JSエラー0件。S1〜S4 は palace ビルダー外なので
   非接触。実機 F1 はユーザー確認待ち(PointLight 1灯+描画物追加のため要チェック)。
 - コミットはユーザー指示待ち。
+
+### 追記: bossBattle テーマ撤去 — ボス専用曲は最終ボスのみに復帰 (2026-08-08)
+- ユーザー指摘「S5道中の曲がボス戦と同じ」の調査で判明: 当初(e7d2593)は全5ステージ別曲で
+  1〜4面ボスは**ステージ曲続行**だったが、06109ff が `bossBattle`(Neon Bullet Heaven)を
+  新設して S5 道中曲と重複させていた。**ユーザー確認済みの正しい設計**:
+  1〜4面ボス=ステージBGM続行 / 中ボス=The Crimson Labyrinth / 最終ボスのみ Red Planet Showdown。
+- 対応: `bgmTracks.bossBattle`+`bgmVolumes.bossBattle` を削除、`spawnBoss()` は最終ステージのみ
+  `finalBoss` を restart 再生(それ以外は `desiredBgmKey()` でステージ曲を継続)、
+  `desiredBgmKey()` のボス分岐も最終ステージのみ `finalBoss` を返し他はステージ曲へフォールスルー。
+  同コミットの S4/S5 ステージ曲入れ替え(S4=Demoness/S5=Bullet Heaven)は**現状維持**(ユーザー未指示)。
+- 検証: headless で ?boss=2 → warning/active とも `__bgm().key === 'stage1'`、
+  ?boss=5 → warning は `stage4`・active で `finalBoss`。`node --check` OK、JSエラー0件。
+- `index.html ?v=21`。

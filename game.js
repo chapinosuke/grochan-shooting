@@ -76,7 +76,6 @@
     stage3: new Audio('assets/bgm/Neon Demoness.mp3'),
     stage4: new Audio('assets/bgm/Neon Bullet Heaven.mp3'),
     midBoss: new Audio('assets/bgm/The Crimson Labyrinth.mp3'),
-    bossBattle: new Audio('assets/bgm/Neon Bullet Heaven.mp3'),
     finalBoss: new Audio('assets/bgm/Red Planet Showdown.mp3'),
     gameOver: new Audio('assets/bgm/Game Over, Again.mp3'),
     ending: new Audio('assets/bgm/静かに睨め.mp3')
@@ -91,7 +90,7 @@
   // headroom, so nothing clips. `Game Over, Again` is the other quiet master
   // (mean -17.9dB): .42 lands it at -25.4dB too — audibly present without
   // making defeat louder than the fight that caused it.
-  const bgmVolumes = { title: .3, opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32, gameOver: .42, ending: .45 };
+  const bgmVolumes = { title: .3, opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, finalBoss: .32, gameOver: .42, ending: .45 };
   // The ending theme plays through once and stops (the staff roll holds on
   // FIN afterward instead of looping the credits), unlike every other track.
   Object.entries(bgmTracks).forEach(([key, track]) => { track.loop = key !== 'ending'; track.preload = 'auto'; track.volume = bgmVolumes[key]; });
@@ -1186,7 +1185,10 @@
     if (state === 'opening' || state === 'menu') return 'title';
     if (state === 'over') return gameShell.classList.contains('is-game-over') ? 'gameOver' : 'ending';
     if (bossState === 'midboss-active' || bossState === 'midboss-warning') return 'midBoss';
-    if (bossState === 'active' || bossState === 'transition' || bossState === 'final') return stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle';
+    // 1〜4面のボス戦はステージBGM続行(専用曲は最終ボスのみ) — 下のstage行へ落ちる
+    if (bossState === 'active' || bossState === 'transition' || bossState === 'final') {
+      if (stageIndex === stages.length - 1) return 'finalBoss';
+    }
     return `stage${stageIndex}`;
   }
 
@@ -1966,7 +1968,10 @@
     musicStep = 0; musicClock = 0;
     clearEnemyFire();
     shake = 18; flash = .55;
-    playBgm(stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle', true);
+    // 専用ボス曲は最終ステージだけ。1〜4面のボスはステージBGMを流し続ける
+    // (中ボスから戻った直後などで止まっていても desiredBgmKey で確実に再開)。
+    if (stageIndex === stages.length - 1) playBgm('finalBoss', true);
+    else playBgm(desiredBgmKey());
     sfx('warning');
     if (isFinalBoss) {
       royalSfx('entrance');
