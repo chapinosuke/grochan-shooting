@@ -22,7 +22,7 @@ import * as THREE from './assets/lib/three.module.min.js';
   const VW = 1280, VH = 720;
   // version は「今ブラウザが実際に読んでいる bg3d.js」を確認するための目印。
   // ローカルは Cache-Control が無く古い版が残りやすいので、修正のたびに更新する。
-  const api = { version: 'finale-1', ready: false, canvas: null, render: () => false, setQuality: () => {} };
+  const api = { version: 'royal-2', ready: false, canvas: null, render: () => false, setQuality: () => {} };
   window.GRO_BG3D = api;
 
   let renderer;
@@ -245,6 +245,47 @@ import * as THREE from './assets/lib/three.module.min.js';
       g.beginPath(); g.ellipse(w * .3, h / 2, w * .3, h * .34, 0, 0, 6.3); g.fill();
       g.beginPath(); g.ellipse(w * .55, h / 2, w * .42, h * .2, 0, 0, 6.3); g.fill();
     });
+    // --- S5(HEART PALACE)専用の装飾テクスチャ。加算レイヤーの契約どおり
+    // 「透明地に明るい形」で描き、色は put() のインスタンスカラーで着ける。
+    const heartGlowTex = makeTex(64, 64, g => {
+      g.translate(32, 36);
+      g.shadowColor = 'rgba(255,255,255,.9)'; g.shadowBlur = 12;
+      g.fillStyle = 'rgba(255,255,255,.95)';
+      g.beginPath();
+      g.moveTo(0, 14);
+      g.bezierCurveTo(-24, -10, -12, -28, 0, -10);
+      g.bezierCurveTo(12, -28, 24, -10, 0, 14);
+      g.fill();
+    });
+    const star4Tex = makeTex(64, 64, g => {
+      g.translate(32, 32);
+      const arm = (len, wid) => {
+        g.beginPath();
+        g.moveTo(0, -len); g.lineTo(wid, 0); g.lineTo(0, len); g.lineTo(-wid, 0);
+        g.closePath(); g.fill();
+      };
+      g.shadowColor = 'rgba(255,255,255,.8)'; g.shadowBlur = 8;
+      g.fillStyle = 'rgba(255,255,255,.95)';
+      arm(28, 4.5);
+      g.rotate(Math.PI / 2); arm(28, 4.5);
+      g.rotate(Math.PI / 4); g.fillStyle = 'rgba(255,255,255,.5)'; arm(16, 3);
+      g.rotate(Math.PI / 2); arm(16, 3);
+      g.rotate(-Math.PI * 5 / 4);
+      g.beginPath(); g.arc(0, 0, 5, 0, 6.3); g.fill();
+    });
+    const cardTex = makeTex(48, 64, g => {
+      g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 4;
+      g.beginPath(); g.roundRect(4, 4, 40, 56, 6); g.stroke();
+      g.fillStyle = 'rgba(255,255,255,.25)';
+      g.beginPath(); g.roundRect(4, 4, 40, 56, 6); g.fill();
+      g.translate(24, 34);
+      g.fillStyle = 'rgba(255,255,255,.95)';
+      g.beginPath();
+      g.moveTo(0, 9);
+      g.bezierCurveTo(-15, -6, -8, -18, 0, -6);
+      g.bezierCurveTo(8, -18, 15, -6, 0, 9);
+      g.fill();
+    });
 
     // layer: 'under' = 敵スプライトの下に合成 / 'over' = 自機の上に合成。
     // 同じレンダラで2回描いて2回 drawImage する(合成順を art の前後関係に合わせる)。
@@ -279,6 +320,9 @@ import * as THREE from './assets/lib/three.module.min.js';
       ring: inst(new THREE.TorusGeometry(1, .07, 6, 26), { ...add }, 60, 3),
       flame: inst(plane, { map: flameTex, ...add }, 120, 4),   // スラスター
       rotor: inst(plane, { map: rotorTex, ...add }, 60, 4),
+      heartP: inst(plane, { map: heartGlowTex, ...add }, 90, 3),  // S5: 舞うハート
+      sparkle: inst(plane, { map: star4Tex, ...add }, 90, 4),     // S5: 四芒のきらめき
+      cardP: inst(plane, { map: cardTex, ...add }, 48, 3),        // S5: 回るトランプ
       trail: inst(plane, { map: streakTex, ...add }, 240, 5),  // 自機弾トレイル
       halo: inst(plane, { map: haloTex, ...add }, 240, 6),
       ebShard: inst(new THREE.OctahedronGeometry(1, 0), { ...add }, 420, 7),
@@ -412,8 +456,10 @@ import * as THREE from './assets/lib/three.module.min.js';
     const st = Math.max(0, Math.min(4, s.stage | 0));
     let nGlow = 0, nAura = 0, nWing = 0, nPod = 0, nCanopy = 0, nRing = 0,
       nFlame = 0, nRotor = 0, nTrail = 0, nHalo = 0, nEB = 0,
-      nBall = 0, nFxRing = 0, nFxShard = 0, nSpark = 0;
+      nBall = 0, nFxRing = 0, nFxShard = 0, nSpark = 0,
+      nHeart = 0, nSparkle = 0, nCard = 0;
     const hull = A.HULL_COL[st];
+    const palace = st === 4;                   // 最終ステージは王宮の装飾を足す
 
     // --- 敵の3D装飾 ----------------------------------------------------
     // 敵は左上アンカー(当たり判定が e.x..e.x+w)なので中心を計算して使う。
@@ -444,6 +490,22 @@ import * as THREE from './assets/lib/three.module.min.js';
           const rOrb = R * (.42 + (o % 2) * .12);
           A.put(P.halo, nHalo++, cx + Math.cos(a) * rOrb, cy + Math.sin(a) * rOrb * .45,
             mid ? 28 : 34, mid ? 28 : 34, 1, 0, 0, 0, o % 2 ? accent : A.GLOW_COL[st]);
+        }
+        if (palace) {
+          // 女王: 逆回転で巡るハートの環(鼓動で膨らむ) + 頭上の王冠のきらめき
+          const nH = mid ? 4 : 6;
+          for (let o = 0; o < nH && nHeart < 88; o++) {
+            const a = -t * 1.5 + o * (Math.PI * 2 / nH);
+            const beat = 1 + .25 * Math.max(0, Math.sin(t * 4.6 + o));
+            A.put(P.heartP, nHeart++, cx + Math.cos(a) * R * .58, cy + Math.sin(a) * R * .3,
+              (mid ? 20 : 30) * beat, (mid ? 20 : 30) * beat, 1,
+              0, 0, Math.sin(a) * .35, o % 2 ? 0xffd06a : 0xff5aa8, .9);
+          }
+          for (let o = 0; o < 3 && nSparkle < 88; o++) {
+            const tw = Math.max(0, Math.sin(t * 3.4 + o * 2.4));
+            A.put(P.sparkle, nSparkle++, cx + (o - 1) * w * .26, e.y - 8 - (o % 2) * 14,
+              14 + 22 * tw, 14 + 22 * tw, 1, 0, 0, t * (o % 2 ? 1.4 : -1.1), 0xffe9b8, tw);
+          }
         }
       } else {
         if (A.WING.has(e.type)) {
@@ -478,6 +540,61 @@ import * as THREE from './assets/lib/three.module.min.js';
         if (A.RING.has(e.type)) {
           const r = Math.max(w, h) * .72;
           A.put(P.ring, nRing++, cx, cy, r, r, r, 1.25, 0, t * 1.7 + e.x * .01, 0x31e8ff);
+        }
+        if (palace) {
+          // 王宮の雑魚は1体ずつ「持ち物」が光る。位相は baseY 由来で個体ごとに固定
+          const ph = (e.baseY || cy) * .11 + w;
+          if (e.type === 'cupid') {
+            // 頭上の金の光輪 + 周回するハート3つ + 羽ばたきのきらめき
+            A.put(P.ring, nRing++, cx, cy - h * .62, w * .17, w * .17, w * .17,
+              1.4, 0, t * 1.2 + ph, 0xffd06a);
+            for (let k = 0; k < 3 && nHeart < 88; k++) {
+              const a = t * 2.3 + ph + k * 2.094;
+              A.put(P.heartP, nHeart++, cx + Math.cos(a) * w * .66, cy + Math.sin(a) * h * .4,
+                15, 15, 1, 0, 0, Math.sin(a + t) * .4, 0xff9ecf, .45 + .45 * Math.sin(a * 2));
+            }
+            const tw = Math.max(0, Math.sin(t * 5.2 + ph));
+            A.put(P.sparkle, nSparkle++, cx + dir * w * .34, cy - h * .3,
+              10 + 14 * tw, 10 + 14 * tw, 1, 0, 0, t * 2, 0xffe9b8, tw * .9);
+          } else if (e.type === 'knight') {
+            // ランス先端の閃光(進行方向へ) + 金の光条 + 盾側の守護環
+            const lanceX = cx - dir * w * .72, lanceY = cy + h * .08;
+            const tw = .5 + .5 * Math.sin(t * 6.5 + ph);
+            A.put(P.sparkle, nSparkle++, lanceX, lanceY, 16 + 20 * tw, 16 + 20 * tw, 1,
+              0, 0, t * 3 + ph, 0xfff2c8, .6 + .4 * tw);
+            A.put(P.trail, nTrail++, cx - dir * w * .3, lanceY, w * .95, 7, 1,
+              0, 0, dir < 0 ? 0 : Math.PI, 0xffd06a, .55 + .3 * tw);
+            A.put(P.aura, nAura++, cx + dir * w * .18, cy, w * .78, w * .78, 1,
+              0, 0, t * 1.3 + ph, 0xffd06a, .4);
+          } else if (e.type === 'rosebud') {
+            // 螺旋で舞う花びら4枚 + 蕾の根元の生命光
+            for (let k = 0; k < 4 && nHeart < 88; k++) {
+              const a = t * 1.7 + ph + k * 1.571;
+              const r = w * (.5 + .22 * Math.sin(t * .9 + k * 1.3 + ph));
+              A.put(P.heartP, nHeart++, cx + Math.cos(a) * r, cy + Math.sin(a) * r * .72,
+                11, 11, 1, 0, 0, a + t, k % 2 ? 0xff7ab8 : 0xffd06a, .75);
+            }
+            A.put(P.halo, nHalo++, cx, cy + h * .42, w * .55, w * .35, 1, 0, 0, 0, 0x66d878, .5);
+          } else if (e.type === 'cardguard') {
+            // 肩まわりを回るトランプ3枚(表裏が返りながら)
+            for (let k = 0; k < 3 && nCard < 46; k++) {
+              const a = t * 1.9 + ph + k * 2.094;
+              A.put(P.cardP, nCard++, cx + Math.cos(a) * w * .72, cy - h * .18 + Math.sin(a) * h * .2,
+                17, 24, 1, .12 * Math.sin(a), a * 2, .18 * Math.sin(t + k), 0xffe9b8,
+                .55 + .4 * Math.sin(a));
+            }
+          } else if (e.type === 'teacup') {
+            // 立ちのぼる湯気(揺れながら薄れる) + 縁の照りのきらめき
+            for (let k = 0; k < 3; k++) {
+              const p = (t * .42 + k * .33 + ph * .05) % 1;
+              A.put(P.halo, nHalo++, cx + Math.sin((p * 5 + k * 2) * 1.9 + ph) * 9,
+                cy - h * .55 - p * 40, 9 + p * 26, 9 + p * 26, 1, 0, 0, 0,
+                0xfff0f6, (1 - p) * .38);
+            }
+            const tw = Math.max(0, Math.sin(t * 4.4 + ph));
+            A.put(P.sparkle, nSparkle++, cx - dir * w * .3, cy - h * .18,
+              9 + 13 * tw, 9 + 13 * tw, 1, 0, 0, t * 1.8, 0xffe9b8, tw * .85);
+          }
         }
       }
     }
@@ -589,6 +706,7 @@ import * as THREE from './assets/lib/three.module.min.js';
 
     A.flush(P.glow, nGlow); A.flush(P.aura, nAura); A.flush(P.wing, nWing);
     A.flush(P.pod, nPod); A.flush(P.canopy, nCanopy); A.flush(P.ring, nRing);
+    A.flush(P.heartP, nHeart); A.flush(P.sparkle, nSparkle); A.flush(P.cardP, nCard);
     A.flush(P.flame, nFlame); A.flush(P.rotor, nRotor);
     A.flush(P.trail, nTrail); A.flush(P.halo, nHalo);
     A.flush(P.ebShard, nEB); A.flush(P.ebHalo, nEB);
@@ -3204,6 +3322,96 @@ import * as THREE from './assets/lib/three.module.min.js';
     }, 530);
     scene.add(glassBelt.group);
 
+    // ベルベットの緞帳: 深紅の襞+金の締め帯。天井レールを支点に揺れる
+    const drapeTex = makeTex(96, 160, g => {
+      for (let i = 0; i < 8; i++) {
+        const x = i * 12;
+        const gr = g.createLinearGradient(x, 0, x + 12, 0);
+        gr.addColorStop(0, '#560d22');
+        gr.addColorStop(.45, '#a01838');
+        gr.addColorStop(1, '#42081a');
+        g.fillStyle = gr; g.fillRect(x, 0, 12, 160);
+      }
+      g.fillStyle = '#e0b060'; g.fillRect(0, 0, 96, 6);        // 上部の金レール
+      g.fillStyle = '#c89a4a'; g.fillRect(0, 88, 96, 9);       // 金の締め帯
+      g.fillStyle = '#2e0512';                                  // すそのスカラップ
+      for (let i = 0; i < 8; i++) {
+        g.beginPath(); g.arc(i * 12 + 6, 160, 7, Math.PI, 0); g.fill();
+      }
+      g.fillStyle = '#e0b060';                                  // 房飾り
+      for (let i = 0; i < 8; i++) g.fillRect(i * 12 + 4.5, 150, 3, 8);
+    });
+    const drapeBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      for (let i = 0; i < 4; i++) {
+        const dr = new THREE.Mesh(new THREE.PlaneGeometry(13, 27),
+          lambert({ map: drapeTex, side: THREE.DoubleSide, emissive: 0x30040e, emissiveIntensity: .5 }));
+        dr.geometry = dr.geometry.clone();
+        dr.geometry.translate(0, -13.5, 0);      // 天井レール側を支点に揺らす
+        dr.position.set(i * 132 + 48 + rand(-6, 6), 41, -131);
+        dr.userData.sway = rand(0, 6.28);
+        grp.add(dr);
+      }
+      return grp;
+    }, 530);
+    const drapes = [];
+    drapeBelt.group.traverse(o => { if (o.userData && o.userData.sway !== undefined) drapes.push(o); });
+    scene.add(drapeBelt.group);
+
+    // 2階回廊の金の欄干(透過テクスチャの帯1枚 = 1ドローコール/タイル)
+    const balusTex = makeTex(256, 64, g => {
+      g.clearRect(0, 0, 256, 64);
+      g.fillStyle = '#e0b060'; g.fillRect(0, 2, 256, 7);
+      g.fillStyle = '#b8863a'; g.fillRect(0, 54, 256, 6);
+      for (let x = 8; x < 256; x += 16) {
+        g.fillStyle = '#c89a4a';
+        g.fillRect(x - 2, 9, 4, 45);                            // 芯
+        g.beginPath(); g.ellipse(x, 22, 5, 8, 0, 0, 6.3); g.fill();   // 壺形の膨らみ
+        g.fillRect(x - 4, 48, 8, 5);                            // 台座
+      }
+    }, { repX: 9, repY: 1 });
+    // 明るくしすぎると「画面中央の柵」に見えて主張しすぎる — 暗金でフォグに沈める
+    const balusBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      const rail = new THREE.Mesh(new THREE.PlaneGeometry(470, 7),
+        lambert({ map: balusTex, transparent: true, alphaTest: .15, opacity: .8, side: THREE.DoubleSide, color: 0x9a7a40, emissive: 0x2a1c06, emissiveIntensity: .3 }));
+      rail.position.set(235, 19, -138);
+      grp.add(rail);
+      return grp;
+    }, 470);
+    scene.add(balusBelt.group);
+
+    // 漂う金のハート灯籠(紙灯籠がゆっくり流れて上下する)
+    const lanternTex = makeTex(48, 64, g => {
+      g.clearRect(0, 0, 48, 64);
+      const gr = g.createLinearGradient(0, 8, 0, 54);
+      gr.addColorStop(0, '#ffe9a8');
+      gr.addColorStop(.5, '#ffc86a');
+      gr.addColorStop(1, '#ff9a4a');
+      g.fillStyle = gr;
+      g.beginPath(); g.roundRect(9, 8, 30, 46, 9); g.fill();
+      g.fillStyle = 'rgba(200,110,40,.85)';                     // ハートの透かし
+      g.translate(24, 32);
+      g.beginPath();
+      g.moveTo(0, 9); g.bezierCurveTo(-13, -5, -7, -15, 0, -5);
+      g.bezierCurveTo(7, -15, 13, -5, 0, 9);
+      g.fill();
+      g.translate(-24, -32);
+      g.fillStyle = '#c89a4a';                                  // 金の口金
+      g.fillRect(15, 4, 18, 5); g.fillRect(15, 53, 18, 5);
+    });
+    const lanterns = [];
+    for (let i = 0; i < 9; i++) {
+      const ln = new THREE.Group();
+      const body = sprite(lanternTex, 0xffffff, rand(4.2, 6), .95, THREE.NormalBlending);
+      ln.add(body);
+      const gl = sprite(softTex('#ffd98a'), 0xffc86a, 9, .3);
+      ln.add(gl);
+      ln.position.set(rand(-210, 210), rand(-4, 30), rand(-115, -58));
+      ln.userData = { ph: rand(0, 6.28), min: -230, span: 460, gl };
+      scene.add(ln); lanterns.push(ln);
+    }
+
     // 漂う蝋燭の火(ハリポタの大広間ふうに宙に浮く)
     const candles = [];
     for (let i = 0; i < 10; i++) {
@@ -3218,12 +3426,29 @@ import * as THREE from './assets/lib/three.module.min.js';
     }
 
     // 列柱: 白薔薇色の円柱 + 金の柱頭 + アーチ連結(回廊感)
+    let garlandMat = null;      // 柱頭間の光の鎖(クローンとマテリアル共有、一括明滅)
     const colBelt = makeScroller(() => {
       const grp = new THREE.Group();
       const marble = lambert({ color: 0xffdae8 });
       const gold = lambert({ color: 0xffd06a, emissive: 0x664410, emissiveIntensity: .5 });
       const archMat = lambert({ color: 0xffc8dc, emissive: 0x662040, emissiveIntensity: .25 });
       const N = 8, GAP = 46;
+      // 宴の光の鎖: 柱頭の間を弛んで渡る光点列(Points 1個 = 1ドローコール)。
+      // 最後の区間は次タイル先頭へ繋がる(span = N*GAP なので継ぎ目が合う)
+      const gPts = [];
+      for (let i = 0; i < N; i++) {
+        for (let k = 1; k < 6; k++) {
+          const f = k / 6;
+          gPts.push(i * GAP + GAP * f, 33 - 3.4 * Math.sin(Math.PI * f), -76.5);
+        }
+      }
+      const gGeo = new THREE.BufferGeometry();
+      gGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(gPts), 3));
+      garlandMat = new THREE.PointsMaterial({
+        color: 0xffe9b8, size: 3, transparent: true, opacity: .75,
+        blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false, fog: false
+      });
+      grp.add(new THREE.Points(gGeo, garlandMat));
       for (let i = 0; i < N; i++) {
         const x = i * GAP;
         const col = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 52, 10), marble);
@@ -3301,30 +3526,130 @@ import * as THREE from './assets/lib/three.module.min.js';
     chBelt.group.traverse(o => { if (o.userData && o.userData.sway !== undefined) chandeliers.push(o); });
     scene.add(chBelt.group);
 
-    // --- 名物: 巨大中央シャンデリア ------------------------------------
+    // --- 名物: 巨大中央シャンデリア(三層リング+実体蝋燭+クリスタル満載) ---
     const bigCh = new THREE.Group();
     const goldBig = lambert({ color: 0xffce6a, emissive: 0xaa7720, emissiveIntensity: .7 });
-    for (const [r, y, t] of [[11, 0, .7], [7.5, 4, .55], [4.5, 7.5, .45]]) {
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, t, 6, 28), goldBig);
+    const goldDark = lambert({ color: 0xd8a850, emissive: 0x6a4a10, emissiveIntensity: .5 });
+    // クリスタル: 鏡面ハイライトの効く Phong。半透明で「ガラスの粒」に読ませる
+    const crysMat = new THREE.MeshPhongMaterial({
+      color: 0xffffff, emissive: 0xe8d8b8, emissiveIntensity: .55,
+      specular: 0xffffff, shininess: 90, transparent: true, opacity: .95
+    });
+    // 芯棒と金の宝珠
+    const chStem = new THREE.Mesh(new THREE.CylinderGeometry(.5, .5, 20, 6), goldBig);
+    chStem.position.y = 2; bigCh.add(chStem);
+    for (const [oy, or] of [[11, 1.5], [7.5, 1.1], [-4.5, 1.3]]) {
+      const orb = new THREE.Mesh(new THREE.SphereGeometry(or, 10, 8), goldBig);
+      orb.position.y = oy; bigCh.add(orb);
+    }
+    // 三層の金リング(下ほど大きく)
+    for (const [r, y, tube] of [[13, 0, .8], [9, 4.2, .6], [5.5, 8, .5]]) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(r, tube, 8, 36), goldBig);
       ring.rotation.x = Math.PI / 2;
       ring.position.y = y;
       bigCh.add(ring);
     }
-    for (let j = 0; j < 16; j++) {
-      const a = j / 16 * Math.PI * 2;
-      const candle = sprite(softTex('#ffe9b8'), 0xffe9b8, 4.2, .95);
-      candle.position.set(Math.cos(a) * 11, 1.4, Math.sin(a) * 11);
-      bigCh.add(candle);
-      if (j % 2 === 0) {
-        const c2 = sprite(softTex('#ffd9ec'), 0xff9ecf, 3.2, .85);
-        c2.position.set(Math.cos(a) * 7.5, 5.2, Math.sin(a) * 7.5);
-        bigCh.add(c2);
+    // 蝋燭: 外周16 + 中周8。金の受け皿と白蝋は InstancedMesh(各1ドローコール)
+    const chFlames = [];
+    {
+      const cupInst = new THREE.InstancedMesh(new THREE.CylinderGeometry(.6, .38, .55, 8), goldDark, 24);
+      const waxMat = lambert({ color: 0xfff4e0, emissive: 0x776650, emissiveIntensity: .35 });
+      const candleInst = new THREE.InstancedMesh(new THREE.CylinderGeometry(.22, .27, 1.6, 6), waxMat, 24);
+      const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(1, 1, 1), _m = new THREE.Matrix4();
+      let ci = 0;
+      const addCandle = (x, y, z) => {
+        _v.set(x, y + .3, z); _m.compose(_v, _q, _s); cupInst.setMatrixAt(ci, _m);
+        _v.set(x, y + 1.3, z); _m.compose(_v, _q, _s); candleInst.setMatrixAt(ci, _m);
+        ci++;
+        const fl = sprite(softTex('#ffe9b8', 64, .3), 0xffe9b8, 2.7, .95);
+        fl.position.set(x, y + 2.5, z);
+        fl.userData.ph = Math.random() * 6.28;
+        bigCh.add(fl); chFlames.push(fl);
+      };
+      for (let j = 0; j < 16; j++) {
+        const a = j / 16 * Math.PI * 2;
+        addCandle(Math.cos(a) * 13, .4, Math.sin(a) * 13);
       }
+      for (let j = 0; j < 8; j++) {
+        const a = (j + .5) / 8 * Math.PI * 2;
+        addCandle(Math.cos(a) * 9, 4.6, Math.sin(a) * 9);
+      }
+      cupInst.instanceMatrix.needsUpdate = true;
+      candleInst.instanceMatrix.needsUpdate = true;
+      bigCh.add(cupInst, candleInst);
     }
+    // クリスタルの垂れ飾り: 上段→下段へ弛むドレープ12条 + 下段から垂れる16条 +
+    // 中心の縦鎖。全粒を1つの InstancedMesh に焼く(静的なので行列は一度だけ)
+    {
+      const nCr = 12 * 6 + 16 * 3 + 4;
+      const crysInst = new THREE.InstancedMesh(new THREE.OctahedronGeometry(.42, 0), crysMat, nCr);
+      const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3(), _m = new THREE.Matrix4();
+      let ci = 0;
+      // 乱回転させると紙吹雪に見える — 吊り飾りは垂直姿勢(y回転のみ)で揃える
+      const put = (x, y, z, sc) => {
+        _e.set(0, Math.random() * 3.14, 0);
+        _q.setFromEuler(_e);
+        _v.set(x, y, z); _s.set(sc * .8, sc * 1.5, sc * .8);
+        _m.compose(_v, _q, _s);
+        crysInst.setMatrixAt(ci++, _m);
+      };
+      for (let j = 0; j < 12; j++) {
+        const a = j / 12 * Math.PI * 2;
+        for (let k = 0; k < 6; k++) {
+          const f = (k + .5) / 6;
+          const r = 5.5 + (13 - 5.5) * f;
+          const y = 8 - 7.5 * f - 2.1 * Math.sin(Math.PI * f);
+          put(Math.cos(a) * r, y, Math.sin(a) * r, .9 - f * .25);
+        }
+      }
+      for (let j = 0; j < 16; j++) {
+        const a = (j + .5) / 16 * Math.PI * 2;
+        for (let k = 0; k < 3; k++) {
+          put(Math.cos(a) * (13 - k * .3), -1 - k * 1.5, Math.sin(a) * (13 - k * .3), .85 - k * .18);
+        }
+      }
+      for (let k = 0; k < 4; k++) put(0, -6 - k * 1.1, 0, .8);
+      crysInst.instanceMatrix.needsUpdate = true;
+      bigCh.add(crysInst);
+    }
+    // 最下端の大粒ティアドロップ(ゆっくり回って光を撒く)
+    const bigCrys = new THREE.Mesh(new THREE.OctahedronGeometry(1.5, 0), crysMat);
+    bigCrys.scale.set(1, 1.7, 1);
+    bigCrys.position.y = -11.6;
+    bigCh.add(bigCrys);
+    const bigCrysGlow = sprite(softTex('#fff2d8'), 0xffe9b8, 7, .5);
+    bigCrysGlow.position.y = -11.6;
+    bigCh.add(bigCrysGlow);
+    // クリスタルの瞬き(グリント)。個別マテリアルなので1個ずつ明滅できる
+    const glintTex = makeTex(48, 48, g => {
+      g.translate(24, 24);
+      g.fillStyle = 'rgba(255,255,255,.95)';
+      g.shadowColor = 'rgba(255,255,255,.9)'; g.shadowBlur = 6;
+      for (const [len, wid] of [[20, 2.6], [11, 1.8]]) {
+        g.beginPath();
+        g.moveTo(0, -len); g.lineTo(wid, 0); g.lineTo(0, len); g.lineTo(-wid, 0);
+        g.closePath(); g.fill();
+        g.rotate(Math.PI / 2);
+      }
+    });
+    const chTwinkles = [];
+    for (let j = 0; j < 12; j++) {
+      const a = Math.random() * Math.PI * 2, f = Math.random();
+      const r = 5.5 + 8 * f;
+      const tw = sprite(glintTex, 0xfff6e0, 2.4, 0);
+      tw.position.set(Math.cos(a) * r, 8 - 8.5 * f - Math.random() * 3, Math.sin(a) * r);
+      tw.userData.ph = Math.random() * 6.28;
+      bigCh.add(tw); chTwinkles.push(tw);
+    }
+    // 実光源: シャンデリアが本当に周囲(柱・像・床)を照らす。音楽と mood で脈動
+    const chLight = new THREE.PointLight(0xffd9a0, 1.2, 150, 1.3);
+    chLight.position.y = 1;
+    bigCh.add(chLight);
+    // 吊り鎖
     const bigChain = new THREE.Mesh(new THREE.CylinderGeometry(.28, .28, 28, 5), goldBig);
-    bigChain.position.y = 20;
+    bigChain.position.y = 26;
     bigCh.add(bigChain);
-    const bigGlow = sprite(softTex('#ffe9b8'), 0xffd06a, 36, .28);
+    const bigGlow = sprite(softTex('#ffe9b8'), 0xffd06a, 40, .28);
     bigGlow.position.y = 2;
     bigCh.add(bigGlow);
     // 画面右上〜中央寄りに据えて「大広間の主役照明」として読ませる
@@ -3333,6 +3658,13 @@ import * as THREE from './assets/lib/three.module.min.js';
     bigCh.userData.sway = 0.4;
     scene.add(bigCh);
     chandeliers.push(bigCh);
+    // 床の照り返し(シャンデリア直下の金のスミア)
+    const chSmear = new THREE.Mesh(new THREE.PlaneGeometry(54, 18),
+      basic({ color: 0xffd06a, transparent: true, opacity: .1, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+    chSmear.rotation.x = -Math.PI / 2;
+    chSmear.position.set(20, -16.8, -48);
+    chSmear.renderOrder = 2;
+    scene.add(chSmear);
 
     // --- 名物: 玉座(遠景・ボス時に近づき・明るく) ----------------------
     const crestTex = makeTex(64, 64, g => {
@@ -3553,6 +3885,180 @@ import * as THREE from './assets/lib/three.module.min.js';
     const farFins = [];
     farCastle.group.traverse(o => { if (o.userData && o.userData.pulse !== undefined) farFins.push(o); });
 
+    // --- 名物: 大薔薇窓(玉座の真上・大聖堂の主役窓。ボス戦で心拍) ----------
+    // 遠景ランドマークとしてスクロールさせず画面に留める(S3の夕日と同じ扱い)。
+    const roseWinTex = makeTex(256, 256, g => {
+      const cx = 128, cy = 128;
+      const cols = ['#ff5a8c', '#ffd06a', '#7ab8ff', '#ff9ecf', '#b08aff', '#ff3e6a'];
+      // 色ガラスの花弁(外周12枚 + 内周8枚)
+      for (const [n, r0, r1] of [[12, 62, 112], [8, 24, 56]]) {
+        for (let i = 0; i < n; i++) {
+          const a0 = i / n * Math.PI * 2, a1 = (i + .86) / n * Math.PI * 2;
+          g.fillStyle = cols[i % cols.length];
+          g.globalAlpha = .55 + (i % 3) * .15;
+          g.beginPath();
+          g.arc(cx, cy, r1, a0, a1);
+          g.arc(cx, cy, r0, a1, a0, true);
+          g.closePath(); g.fill();
+        }
+      }
+      g.globalAlpha = 1;
+      // 金のトレサリー(放射スポーク + 二重リング)
+      g.strokeStyle = '#e8b860'; g.lineWidth = 5;
+      g.beginPath(); g.arc(cx, cy, 118, 0, 6.3); g.stroke();
+      g.lineWidth = 3;
+      g.beginPath(); g.arc(cx, cy, 60, 0, 6.3); g.stroke();
+      for (let i = 0; i < 12; i++) {
+        const a = i / 12 * Math.PI * 2;
+        g.beginPath();
+        g.moveTo(cx + Math.cos(a) * 22, cy + Math.sin(a) * 22);
+        g.lineTo(cx + Math.cos(a) * 118, cy + Math.sin(a) * 118);
+        g.stroke();
+      }
+      // 中心のハート
+      g.translate(cx, cy + 4);
+      g.shadowColor = '#ff3e9d'; g.shadowBlur = 16;
+      g.fillStyle = '#ff3e9d';
+      g.beginPath();
+      g.moveTo(0, 15);
+      g.bezierCurveTo(-26, -11, -13, -30, 0, -11);
+      g.bezierCurveTo(13, -30, 26, -11, 0, 15);
+      g.fill();
+    });
+    // 注意: 格天井(y=46, z=-20..-280)が視線を遮るため、これ以上高くは置けない
+    // (y>45 だと天井板に隠れて消える)。玉座の真後ろに嵌まる構図が正解。
+    const roseWin = new THREE.Mesh(new THREE.CircleGeometry(34, 36),
+      lambert({ map: roseWinTex, color: 0xffc0dc, emissive: 0xffffff, emissiveIntensity: .85, emissiveMap: roseWinTex, fog: false }));
+    roseWin.position.set(0, 42, -192);
+    scene.add(roseWin);
+    const roseWinGlow = sprite(softTex('#ff9ecf'), 0xff5aa8, 120, .26);
+    roseWinGlow.position.set(0, 42, -191);
+    scene.add(roseWinGlow);
+
+    // --- 名物: 黄金の守護天使像(台座+翼+光輪。ボス戦で目が赤く灯る) -------
+    const statueGold = lambert({ color: 0xffd06a, emissive: 0x8a5c14, emissiveIntensity: .55 });
+    const statueDark = lambert({ color: 0xc89a4a, emissive: 0x553308, emissiveIntensity: .4 });
+    const eyeMat = new THREE.SpriteMaterial({
+      map: softTex('#ff4a5a'), color: 0xff2038, transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false
+    });
+    const statueBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      for (let i = 0; i < 3; i++) {
+        const x = i * 150 + rand(-8, 8), z = -98;
+        const st = new THREE.Group();
+        // 台座(二段の大理石)
+        const ped1 = new THREE.Mesh(new THREE.BoxGeometry(9, 3, 9), lambert({ color: 0xffdae8 }));
+        ped1.position.y = -15.5; st.add(ped1);
+        const ped2 = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.8, 4, 8), statueDark);
+        ped2.position.y = -12; st.add(ped2);
+        // 躯体(ローブ姿の円錐) + 頭
+        const body = new THREE.Mesh(new THREE.ConeGeometry(3.4, 15, 8), statueGold);
+        body.position.y = -2.5; st.add(body);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(1.8, 8, 7), statueGold);
+        head.position.y = 6.4; st.add(head);
+        // 光輪
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(2.6, .28, 6, 18), statueGold);
+        halo.position.y = 8.6; st.add(halo);
+        // 翼(左右へ広がる薄板2枚)
+        for (const sgn of [-1, 1]) {
+          const wing = new THREE.Mesh(new THREE.PlaneGeometry(7.5, 10), statueDark);
+          wing.position.set(sgn * 4.6, 1.5, -1.2);
+          wing.rotation.set(.1, sgn * .5, sgn * .5);
+          st.add(wing);
+        }
+        // 剣を床に突き立てる(交互にハートの盾)
+        if (i % 2 === 0) {
+          const blade = new THREE.Mesh(new THREE.BoxGeometry(.7, 13, .3), statueDark);
+          blade.position.set(3.6, -8, 2); st.add(blade);
+          const guard = new THREE.Mesh(new THREE.BoxGeometry(3, .7, .5), statueGold);
+          guard.position.set(3.6, -2.2, 2); st.add(guard);
+        } else {
+          const shield = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, .6, 10), statueGold);
+          shield.rotation.x = Math.PI / 2;
+          shield.position.set(-3.8, -6, 2); st.add(shield);
+        }
+        // 目の赤光(ボス戦で灯る。material 共有なので一括制御)
+        const eye = new THREE.Sprite(eyeMat);
+        eye.scale.set(3.4, 1.6, 1);
+        eye.position.set(0, 6.5, 1.6);
+        st.add(eye);
+        st.position.set(x, 0, z);
+        grp.add(st);
+      }
+      return grp;
+    }, 450);
+    scene.add(statueBelt.group);
+
+    // --- 名物: 黄金のハート凱旋門(時折くぐり抜ける近景のゲート) -----------
+    const archGold = lambert({ color: 0xffd06a, emissive: 0xaa7720, emissiveIntensity: .6 });
+    // z=-70/半径24: 画面幅の約4割のゲートが約40秒おきに流れてくる。
+    // これより手前(z>-60)に置くと弧が画面上部を横切り続けて邪魔になる。
+    const archBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      for (let i = 0; i < 3; i++) {
+        const x = i * 160 + rand(-10, 10), z = -70;
+        const gate = new THREE.Group();
+        for (const sgn of [-1, 1]) {
+          const pillar = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.8, 30, 8), archGold);
+          pillar.position.set(sgn * 24, -2, 0);
+          gate.add(pillar);
+          const cap = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.6, 4.4), archGold);
+          cap.position.set(sgn * 24, 13.8, 0);
+          gate.add(cap);
+          const lamp = sprite(softTex('#ffe9b8'), 0xffd06a, 6, .5);
+          lamp.position.set(sgn * 24, 16, 0);
+          gate.add(lamp);
+        }
+        const arch = new THREE.Mesh(new THREE.TorusGeometry(24, 1.1, 6, 24, Math.PI), archGold);
+        arch.position.set(0, 13, 0);
+        gate.add(arch);
+        const fin = sprite(heartTex, 0xffffff, 9, .95);
+        fin.position.set(0, 43, 0);
+        fin.userData.pulse = rand(0, 6.28);
+        gate.add(fin);
+        gate.position.set(x, 0, z);
+        grp.add(gate);
+      }
+      return grp;
+    }, 480);
+    scene.add(archBelt.group);
+    const pulsesArch = [];
+    archBelt.group.traverse(o => { if (o.userData && o.userData.pulse !== undefined) pulsesArch.push(o); });
+
+    // --- 窓からの光条(god rays)。ボス戦は深紅に染まる ----------------------
+    const rays = [];
+    const rayCalm = new THREE.Color(0xffd9a0), rayTense = new THREE.Color(0xff4a5a);
+    for (const [x, tilt, wd] of [[-95, .42, 13], [-30, .34, 10], [45, .38, 15], [115, .3, 11]]) {
+      const ray = new THREE.Mesh(new THREE.PlaneGeometry(wd, 95),
+        basic({ color: 0xffd9a0, transparent: true, opacity: .08, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+      ray.position.set(x, 4, -122);
+      ray.rotation.z = tilt;
+      ray.userData.ph = rand(0, 6.28);
+      scene.add(ray); rays.push(ray);
+    }
+
+    // --- 金の煌めき塵(大広間の空気中に漂う微光) --------------------------
+    const N_GLI = 64;
+    const gliPos = new Float32Array(N_GLI * 3);
+    const gliCol = new Float32Array(N_GLI * 3);
+    const gCol = new THREE.Color();
+    for (let i = 0; i < N_GLI; i++) {
+      gliPos[i * 3] = rand(-220, 220);
+      gliPos[i * 3 + 1] = rand(-14, 40);
+      gliPos[i * 3 + 2] = rand(-130, -45);
+      gCol.set(pick([0xffe9b8, 0xffd06a, 0xff9ecf])).multiplyScalar(rand(.4, 1));
+      gliCol[i * 3] = gCol.r; gliCol[i * 3 + 1] = gCol.g; gliCol[i * 3 + 2] = gCol.b;
+    }
+    const gliGeo = new THREE.BufferGeometry();
+    gliGeo.setAttribute('position', new THREE.BufferAttribute(gliPos, 3));
+    gliGeo.setAttribute('color', new THREE.BufferAttribute(gliCol, 3));
+    const glitter = new THREE.Points(gliGeo, new THREE.PointsMaterial({
+      size: 2.2, vertexColors: true, transparent: true, opacity: .7,
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false, fog: false
+    }));
+    scene.add(glitter);
+
     // 撃破時に柱から落ちる金屑
     const N_DEB = 40;
     const debPos = new Float32Array(N_DEB * 3);
@@ -3593,6 +4099,31 @@ import * as THREE from './assets/lib/three.module.min.js';
         chBelt.update(dx); towersBelt.update(dx * .85);
         banBelt.update(dx * .9); roseBelt.update(dx); crysBelt.update(dx);
         glassBelt.update(dx * .9); poolBelt.update(dx * .9);
+        drapeBelt.update(dx * .9); balusBelt.update(dx * .88);
+        // 緞帳の揺れ / 光の鎖の明滅
+        for (const dr of drapes) dr.rotation.z = Math.sin(t * .6 + dr.userData.sway) * .05;
+        if (garlandMat) garlandMat.opacity = .55 + .28 * Math.sin(t * 2.6);
+        // シャンデリアのクリスタル: ティアドロップ回転 + グリントの瞬き + 炎の揺らぎ
+        bigCrys.rotation.y = t * .7;
+        bigCrysGlow.material.opacity = .35 + .2 * Math.sin(t * 2.2);
+        for (let i = 0; i < chTwinkles.length; i++) {
+          const tw = chTwinkles[i];
+          const o = Math.max(0, Math.sin(t * (2.4 + (i % 4) * .5) + tw.userData.ph));
+          tw.material.opacity = o * o * .95;
+          const sc = 1.6 + o * 2.6;
+          tw.scale.set(sc, sc, 1);
+          tw.material.rotation = t * .8 + tw.userData.ph;
+        }
+        for (const fl of chFlames) {
+          fl.material.opacity = .72 + .26 * Math.sin(t * 8.5 + fl.userData.ph);
+        }
+        // 灯籠: 流れ+上下の漂い+火のちらつき
+        for (const ln of lanterns) {
+          ln.position.x -= dx * .75;
+          ln.position.y += Math.sin(t * .55 + ln.userData.ph) * dt * 1.8;
+          if (ln.position.x < ln.userData.min) ln.position.x += ln.userData.span;
+          ln.userData.gl.material.opacity = .22 + .14 * Math.sin(t * 6 + ln.userData.ph);
+        }
         heartWallTex.offset.x += dx * (12 / 1300);
         checkerTex.offset.x += dx * (46 / 1500);
         cofferTex.offset.x += dx * (44 / 1500);
@@ -3657,14 +4188,48 @@ import * as THREE from './assets/lib/three.module.min.js';
           dying ? 0x2a0618 : (crit > .3 ? 0x1a040c : 0x2a0618),
           act, 330 - tier * 20, 220 - crit * 40);
         warm.intensity = (.8 - m * .25) * (1 - crit * .35) * (1 - cinema * .4);
+        // --- 新セットピース ------------------------------------------------
+        statueBelt.update(dx * .95);
+        archBelt.update(dx);
+        // 大薔薇窓: 平時はゆらぎ、ボス戦は心拍(2連打のドクン)で膨らむ
+        const beat = m > .3 ? Math.pow(Math.max(0, Math.sin(t * 4.4)), 6) : 0;
+        const rwScale = 1 + .03 * Math.sin(t * 1.2) + beat * .07;
+        roseWin.scale.set(rwScale, rwScale, 1);
+        roseWin.material.emissiveIntensity = .85 + m * .3 + beat * .55;
+        roseWinGlow.material.opacity = .18 + m * .22 + beat * .3 + .05 * Math.sin(t * 1.4);
+        // 守護像: ボス戦で目が赤く灯り、瀕死で明滅。金も熱を帯びる
+        eyeMat.opacity = Math.min(1, m * .85 + crit * .4) * (dying ? breath(t, 0, .25, 1, 9) : 1);
+        statueGold.emissiveIntensity = .55 + crit * .35;
+        // 凱旋門のハート頂飾
+        for (const f of pulsesArch) {
+          const sc = 9 * (1 + .12 * Math.sin(t * 2.4 + f.userData.pulse) + m * .2);
+          f.scale.set(sc, sc, 1);
+        }
+        // 光条: 呼吸しつつ、crit で深紅へ
+        for (const ray of rays) {
+          ray.material.opacity = (.06 + .05 * Math.sin(t * .9 + ray.userData.ph)) * (1 + m * .9);
+          ray.material.color.copy(rayCalm).lerp(rayTense, Math.max(crit, m * .35));
+        }
+        // 煌めき塵: 漂いながら流れ、mood で少し濃く
+        const gp = gliGeo.attributes.position.array;
+        for (let i = 0; i < N_GLI; i++) {
+          gp[i * 3] -= (dx * .6 + dt * 1.1);
+          gp[i * 3 + 1] += Math.sin(t * .8 + i * 1.7) * dt * .9;
+          if (gp[i * 3] < -230) gp[i * 3] += 460;
+        }
+        gliGeo.attributes.position.needsUpdate = true;
+        glitter.material.opacity = .45 + .2 * Math.sin(t * 2.1) + m * .2;
         // 床の呼吸（低音）
         const music = Math.max(0, Math.min(1, s.music ?? (.5 + .5 * Math.sin(t * 7.4))));
         const kick = music * music;
         const breathe = 1 + Math.sin(t * (2.2 + music * 4)) * kick * .012;
         floor.scale.y = breathe; // plane rotated, y scale = visual depth pulse via... actually rotation -X, scale.z better
         floor.scale.z = breathe;
-        // PA スタック
+        // シャンデリアの実光源: 低音で脈動、ボス戦で強まる。床の照り返しも連動
         const bossBoost = 1 + (s.boss ? .5 : 0);
+        chLight.intensity = 1.15 + music * 1.4 * bossBoost + m * .35 + .08 * Math.sin(t * 9.2);
+        chSmear.material.opacity = .09 + music * .12 + m * .05;
+        // PA スタック
         for (let si = 0; si < speakerStacks.length; si++) {
           const sp = speakerStacks[si];
           const side = si === 0 ? -1 : 1;
