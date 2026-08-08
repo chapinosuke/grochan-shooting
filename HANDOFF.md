@@ -1763,3 +1763,29 @@ palace だけは画家キューに `volPush(COLOSSUS_Z, …)` で最奥として
 - 検証: headless で ?boss=2 → warning/active とも `__bgm().key === 'stage1'`、
   ?boss=5 → warning は `stage4`・active で `finalBoss`。`node --check` OK、JSエラー0件。
 - `index.html ?v=21`。
+
+### 追記: S5宮殿背景のリアル・豪華・リッチ化 (2026-08-08, bg3d royal-3)
+ユーザー指示「Three.jsでステージ5の背景をリアルで豪華でリッチに」。buildPalace を質感中心に増強:
+- **磨き金 Phong 化**: 共有 `goldPolish`(specular/shininess)を新設し、大シャンデリア・小シャンデリア・
+  凱旋門・守護像・玉座・柱頭の金を Lambert→Phong に置換。フィル光
+  (DirectionalLight 0xff8cc0 手前上)を追加し鏡面ハイライトを立てた。warm 0.8→1.0。
+- **列柱のフルーティング**: 縦溝の明暗を焼いた `flutedTex` を近/奥列柱に適用、
+  柱環(柱頭下+柱脚上の金トーラス)を InstancedMesh 1個/タイルで追加。
+- **薔薇の花綱(スワッグ)**: 柱頭間を弛む葉綱(半トーラス×N)+色付き薔薇
+  (InstancedMesh+setColorAt、4色)。光の鎖の下 y≈30.8 に配置。
+- **鏡と肖像のギャラリー回廊**(mirrorBelt, z=-134): 金縁アーチ鏡(映り込みの光条+蝋燭ぼかしを
+  焼き込み、emissiveIntensity をゆらして「きらめき」)と王妃の肖像画(金額縁+ハート顔+冠)を
+  交互に配置。鏡の脇に金燭台+ちらつく火(sconceFlames)。
+- **テクスチャ刷新**: 床=石目脈+金目地の磨き大理石(Phong specular で chLight が照り返る。
+  repX 46→23 でタイル倍寸、スクロール係数も 23/1500 に修正)/格天井=二重金縁+金ロゼット
+  (8弁)+隅鋲/壁=金付柱+腰壁帯/絨毯=菱形メダリオン+二重金縁。
+- **fog 基準色 0x5c1242→0x54103c**(コントラスト向上。update 内 mixFog の calm 側も同期)。
+- **重要な学び: 床レベル(y<0)の3D小物は2D手すりレイヤーに完全に隠れる**。
+  カメラ pitch +0.283 の投影で「y > -z*tan(0.3°)」より下は画面の2D帯(screen y≳565)の裏。
+  ロープ柵スタンション・祝宴の卓・薔薇窓の床プール・柱の床スミアを実装したが全て不可視と
+  スクショで確認し撤去。既存の rose hedge / carpet / lightPools / chSmear も実は不可視
+  (触らず温存)。豪華さは可視帯 y=0..46 に投資するのが正解。
+- 検証: headless ?stage=5(40s+FF1)で列柱の彫り/柱環/花綱/ギャラリー/格天井/肖像を目視確認、
+  JSエラー0件。?boss=5 は FINAL ACT シネマまで確認(headless では入場が進まず本戦絵は未撮影)。
+  実機 F1 の FPS 確認はユーザー待ち(Phong 化+ベルト2本追加のため)。
+- `bg3d version royal-3` / `index.html ?v=22`。コミットはユーザー指示待ち。
