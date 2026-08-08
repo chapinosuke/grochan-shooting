@@ -126,6 +126,13 @@
     bossRubble: { src: 'assets/sfx/boss-rubble.mp3', volume: .5, pool: 1, max: 6.5 },
     bossDeform: { src: 'assets/sfx/boss-deform.mp3', volume: .44, pool: 1, max: 2.6 },
     bossImpact: { src: 'assets/sfx/boss-impact.mp3', volume: .46, pool: 3, max: 1.8 },
+    // UI layer (効果音ラボ「ボタン・システム音」). The whole interface was silent
+    // until now — every button, shop purchase and pause acted with no feedback.
+    // `ui-decide` is a 4.7s flourish, so `max` clips it to its attack.
+    uiDecide: { src: 'assets/sfx/ui-decide.mp3', volume: .3, pool: 2, max: 1.1 },
+    uiCursor: { src: 'assets/sfx/ui-cursor.mp3', volume: .22, pool: 3, max: .5 },
+    uiCancel: { src: 'assets/sfx/ui-cancel.mp3', volume: .26, pool: 2, max: .9 },
+    uiData: { src: 'assets/sfx/ui-data.mp3', volume: .26, pool: 2, max: 1.4 },
     // Stage 4 (CYBER STORM): a real recorded strike replaces the two-oscillator
     // synth `thunder`, and an electric crackle for the volt hits.
     thunderStrike: { src: 'assets/sfx/thunder-strike.mp3', volume: .34, pool: 3, max: 1.4 },
@@ -1213,6 +1220,29 @@
   // Boss hits land harder when the layers are staggered a few tens of ms rather
   // than fired on the same frame: stacked attacks sum into one click, spread
   // ones read as impact -> body -> tail. `[type, delayMs]` pairs.
+
+  // Interface feedback in one place. Attaching a sound to each button by hand
+  // guarantees the next new button is silent, so this listens on the document
+  // in the capture phase and picks the sound from the element's role.
+  // 'ui-decide' for anything that advances, 'ui-cancel' for anything that backs
+  // out, 'ui-data' for the HUD action buttons, 'ui-cursor' for the rest.
+  const UI_CANCEL_IDS = new Set(['pauseButton', 'pauseTitleButton', 'titleButton']);
+  const UI_DATA_IDS = new Set(['specialButton', 'bombButton', 'soundButton']);
+  const UI_DECIDE_IDS = new Set(['startButton', 'launchButton', 'nextStageButton',
+    'retryButton', 'resumeButton', 'endingButton']);
+  document.addEventListener('click', ev => {
+    if (!soundOn) return;
+    const el = ev.target instanceof Element ? ev.target.closest('button, .shop-item, [data-ui-sound]') : null;
+    if (!el) return;
+    const id = el.id || '';
+    const want = el.dataset && el.dataset.uiSound;
+    if (want) sfx(want);
+    else if (UI_DECIDE_IDS.has(id)) sfx('uiDecide');
+    else if (UI_CANCEL_IDS.has(id)) sfx('uiCancel');
+    else if (UI_DATA_IDS.has(id)) sfx('uiData');
+    else sfx('uiCursor');
+  }, true);
+
   function sfxStack(pairs) {
     for (const [type, delay] of pairs) {
       if (!delay) sfx(type);

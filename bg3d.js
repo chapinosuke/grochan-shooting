@@ -1207,6 +1207,49 @@ import * as THREE from './assets/lib/three.module.min.js';
     const moon = sprite(softTex('#eafcff', 128, .4), 0xeafcff, 52, .95);
     moon.position.set(-180, 225, -430);
     scene.add(moon);
+    // --- 夜の雲層: 空が星だけだと画面の上6割が空虚になる ---------------------
+    // 他ステージを作り込んだ結果ここだけ薄く見えていた。月(左上)に照らされた
+    // 縁を持つ暗い雲を数段重ね、空にも奥行きを作る。
+    // 高さの根拠: カメラ y=0・f≈691px・見上げ0.283rad。画面上部(y≈150px)に出すには
+    // z=-400 で world y≈280 が必要(y=100 前後だと画面中央に埋もれる)。
+    // ブロブの中心±半径がテクスチャの外に出ると、縁で切れて「四角い雲」になる
+    // (最初 cy+r が h を超えて実際そうなった)。必ず内側に収まる範囲で描く。
+    const seaCloudTex = makeTex(384, 128, (g, w, h) => {
+      g.clearRect(0, 0, w, h);
+      for (let i = 0; i < 34; i++) {
+        const r = rand(11, 26);
+        const cx = rand(r, w - r), cy = rand(r + 6, h - r - 10);
+        const gr = g.createRadialGradient(cx - r * .3, cy - r * .35, 0, cx, cy, r);
+        gr.addColorStop(0, 'rgba(28,64,96,.92)');
+        gr.addColorStop(.6, 'rgba(12,38,64,.66)');
+        gr.addColorStop(1, 'rgba(8,26,48,0)');
+        g.fillStyle = gr;
+        g.beginPath(); g.arc(cx, cy, r, 0, 6.3); g.fill();
+      }
+      // 月光の縁(左上から当たる)。これが無いとただの黒い染みになる
+      g.globalCompositeOperation = 'source-atop';
+      const lit = g.createLinearGradient(0, 0, w * .35, h * .8);
+      lit.addColorStop(0, 'rgba(190,240,255,.55)');
+      lit.addColorStop(.45, 'rgba(120,190,230,.18)');
+      lit.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = lit; g.fillRect(0, 0, w, h);
+      g.globalCompositeOperation = 'source-over';
+    }, { repX: 2, repY: 1 });
+    const seaClouds = [];
+    for (const [y, z, w, h, a, v] of [
+      [300, -430, 800, 74, .8, .8], [236, -410, 720, 58, .85, 1.3],
+      [180, -390, 640, 44, .8, 1.9], [132, -360, 560, 34, .62, 2.6]
+    ]) {
+      const tex = seaCloudTex.clone();
+      tex.needsUpdate = true;
+      tex.offset.x = Math.random();
+      const band = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+        basic({ map: tex, transparent: true, opacity: a, depthWrite: false, fog: false }));
+      band.position.set(0, y, z);
+      band.userData.v = v;
+      scene.add(band); seaClouds.push(band);
+    }
+
     const moonGlow = sprite(softTex('#a0f0ff'), 0xa0f0ff, 140, .3);
     moonGlow.position.copy(moon.position);
     scene.add(moonGlow);
@@ -1419,6 +1462,94 @@ import * as THREE from './assets/lib/three.module.min.js';
       return grp;
     }, 420);
     scene.add(hwBelt.group);
+
+    // --- 名物: 海上プラットフォーム(垂直の主役) ---------------------------
+    // このステージは風車・橋・港・島がすべて水平線上に低く並ぶため、輪郭が
+    // 一本調子だった。海面から突き上げる高い構造物を1つ通すと画面が締まる。
+    // 脚は水面(y=-17)より下から立ち上げ、居住ブロックが空に食い込む高さにする。
+    const rigSteel = new THREE.MeshPhongMaterial({
+      color: 0x2a4c60, specular: 0x8fd8f0, shininess: 30, emissive: 0x08202e, emissiveIntensity: .6
+    });
+    const rigWinTex = windowTex('#06161f', ['#ffd9a0', '#ffb45a', '#8fe8ff'], 12, 20, .5);
+    const rigBlock = new THREE.MeshPhongMaterial({
+      map: rigWinTex, color: 0x35606f, specular: 0x9fe8ff, shininess: 24,
+      emissive: 0x123040, emissiveIntensity: 1.2, emissiveMap: rigWinTex
+    });
+    const rigLights = [];
+    const rigBelt = makeScroller(() => {
+      const grp = new THREE.Group();
+      for (let i = 0; i < 2; i++) {
+        const x = i * 300 + rand(-30, 30), z = -140 + rand(-30, 30);
+        const rig = new THREE.Group();
+        // 4本の脚(水面下から甲板まで)と斜めの筋交い
+        for (const [ox, oz] of [[-13, -9], [13, -9], [-13, 9], [13, 9]]) {
+          const leg = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 2.2, 52, 6), rigSteel);
+          leg.position.set(ox, -6, oz);
+          rig.add(leg);
+        }
+        for (const yy of [-22, -8, 8]) {
+          for (const oz of [-9, 9]) {
+            const br = new THREE.Mesh(new THREE.BoxGeometry(27, .8, .8), rigSteel);
+            br.position.set(0, yy, oz);
+            rig.add(br);
+            const dg = new THREE.Mesh(new THREE.BoxGeometry(30, .7, .7), rigSteel);
+            dg.position.set(0, yy + 7, oz);
+            dg.rotation.z = .48;
+            rig.add(dg);
+          }
+        }
+        // 甲板と居住ブロック(窓が灯る)
+        const deck = new THREE.Mesh(new THREE.BoxGeometry(34, 3.4, 24), rigSteel);
+        deck.position.y = 21;
+        rig.add(deck);
+        const house = new THREE.Mesh(new THREE.BoxGeometry(19, 15, 15), rigBlock);
+        house.position.set(-5, 30, 1);
+        rig.add(house);
+        const house2 = new THREE.Mesh(new THREE.BoxGeometry(11, 9, 11), rigBlock);
+        house2.position.set(9, 27, -2);
+        rig.add(house2);
+        // 掘削やぐら(格子塔)と頂部の航空障害灯
+        const towerH = 34;
+        for (const [ox, oz] of [[-4.5, -4.5], [4.5, -4.5], [-4.5, 4.5], [4.5, 4.5]]) {
+          const post = new THREE.Mesh(new THREE.BoxGeometry(.8, towerH, .8), rigSteel);
+          post.position.set(ox * .8 + 9, 23 + towerH / 2, oz * .8);
+          rig.add(post);
+        }
+        for (let k = 0; k < 5; k++) {
+          const ring = new THREE.Mesh(new THREE.BoxGeometry(8, .5, 8), rigSteel);
+          ring.position.set(9, 26 + k * 7, 0);
+          rig.add(ring);
+        }
+        const top = sprite(softTex('#ff6a7a'), 0xff4a5a, 7, .8);
+        top.position.set(9, 23 + towerH + 3, 0);
+        top.userData.ph = rand(0, 6.28);
+        rig.add(top); rigLights.push(top);
+        // フレアの炎(海上プラントの目印)
+        const flareArm = new THREE.Mesh(new THREE.CylinderGeometry(.5, .5, 20, 5), rigSteel);
+        flareArm.position.set(-22, 26, 0);
+        flareArm.rotation.z = .6;
+        rig.add(flareArm);
+        const flare = sprite(softTex('#ffd08a', 128, .35), 0xff9a3a, 8, .85);
+        flare.position.set(-28, 33, 0);
+        flare.userData.ph = rand(0, 6.28);
+        rig.add(flare); rigLights.push(flare);
+        // 甲板の作業灯(海面に光を落とす)
+        for (const ox of [-14, 0, 14]) {
+          const lamp = sprite(softTex('#cfeaff'), 0xaee0ff, 9, .5);
+          lamp.position.set(ox, 24, 11);
+          lamp.userData.ph = rand(0, 6.28);
+          rig.add(lamp); rigLights.push(lamp);
+        }
+        // 脚元の白波(構造物が水に立っていることを示す)
+        const foam = sprite(softTex('#ffffff'), 0xcfeaff, 30, .22);
+        foam.position.set(0, -17.4, 6);
+        rig.add(foam);
+        rig.position.set(x, 0, z);
+        grp.add(rig);
+      }
+      return grp;
+    }, 620);
+    scene.add(rigBelt.group);
 
     // 島影: なだらかな丘 + 遠景の海山
     const isleBelt = makeScroller(() => {
@@ -1825,6 +1956,14 @@ import * as THREE from './assets/lib/three.module.min.js';
         const dx = SCROLL * (s.speed || 1) * dt;
         hwBelt.update(dx); isleBelt.update(dx * .85);
         coastBelt.update(dx * .6); turbBelt.update(dx * .85); portBelt.update(dx * .9);
+        // 夜の雲層: テクスチャ送りで視差付きにゆっくり流す
+        for (const band of seaClouds) band.material.map.offset.x += band.userData.v * dt * .0035;
+        // 海上プラットフォーム: 障害灯の明滅・フレアの揺らぎ・作業灯の呼吸
+        rigBelt.update(dx * .88);
+        for (let i = 0; i < rigLights.length; i++) {
+          const L = rigLights[i];
+          L.material.opacity = .35 + .45 * Math.abs(Math.sin(t * (1.6 + (i % 3) * .8) + L.userData.ph));
+        }
         lh.position.x -= dx * .85;
         if (lh.position.x < lh.userData.min) lh.position.x += lh.userData.span;
         lhBeams.rotation.y = t * .9;

@@ -83,6 +83,10 @@ mp3への直リンクは規約で禁止されているためリポジトリに�
 | `assets/sfx/boss-impact.mp3` | 文字表示の衝撃音1 | 演出・アニメ |
 | `assets/sfx/thunder-strike.mp3` | 雷魔法1 | 戦闘 |
 | `assets/sfx/zap.mp3` | 電気バチバチ | 生活 |
+| `assets/sfx/ui-decide.mp3` | 決定ボタンを押す17 | ボタン・システム音 |
+| `assets/sfx/ui-cursor.mp3` | カーソル移動1 | ボタン・システム音 |
+| `assets/sfx/ui-cancel.mp3` | キャンセル7 | ボタン・システム音 |
+| `assets/sfx/ui-data.mp3` | データ表示4 | ボタン・システム音 |
 
 ## エンディングBGM
 
