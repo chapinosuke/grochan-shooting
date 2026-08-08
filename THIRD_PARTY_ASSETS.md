@@ -87,6 +87,13 @@ mp3への直リンクは規約で禁止されているためリポジトリに�
 | `assets/sfx/ui-cursor.mp3` | カーソル移動1 | ボタン・システム音 |
 | `assets/sfx/ui-cancel.mp3` | キャンセル7 | ボタン・システム音 |
 | `assets/sfx/ui-data.mp3` | データ表示4 | ボタン・システム音 |
+| `assets/sfx/boss-servo.mp3` | 巨大ロボットが腕を動かす1 | 機械・乗り物 |
+| `assets/sfx/boss-boost.mp3` | ブースタージャンプ1 | 機械・乗り物 |
+| `assets/sfx/boss-step.mp3` | ロボットの足音3 | 機械・乗り物 |
+| `assets/sfx/boss-warp.mp3` | ワープ | 戦闘 |
+| `assets/sfx/boss-motor.mp3` | 巨大モーター起動 | 機械・乗り物 |
+| `assets/sfx/siren-surge.mp3` | 激しい水流（水中） | 生活 |
+| `assets/sfx/siren-splash.mp3` | 水面に石投げ2 | 生活 |
 
 ## エンディングBGM
 

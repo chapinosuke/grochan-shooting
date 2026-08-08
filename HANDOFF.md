@@ -2005,3 +2005,23 @@ S3/S4/S5を作り込んだ結果**S2だけが取り残されていた**(空の�
 - 環境音ループが全ステージ未使用(効果音ラボに thunderstorm1 / industrialzone1 / big-city1 あり)。
 - `teleport` / `bubble` / `fireball` / `graze` は今も2オシレータの合成音。
 - ボス戦の「到着感」がS3(座敷)とS5(玉座)にしか無い。S1/S2/S4は道中の景色のまま。
+
+### 追記: ボスの「動き」に専用の効果音を付けた (2026-08-08, ?v=47)
+ユーザー指摘「ボスの動きの効果音が弱い」。原因は2つあった。
+- **`sfx('boss')` が11箇所すべてで同じ音**(charge.mp3 + 合成音)を鳴らしていた。
+  突進も予備動作も形態変化も音が同一で、動きの差が耳で区別できなかった。
+- **予備動作(`bossTelegraph`)がステージ5以外は無音**だった
+  (中の `royalSfx('charge')` は `stageIndex === 4` の分岐内にしか無い)。
+  溜めが視覚だけの情報になっていた。
+- **対策**: 動きに専用の声を与える。
+  boss-servo(腕を動かす)=予備動作の全て / boss-boost(ブースタージャンプ)=突進の点火 /
+  boss-step(ロボットの足音)=突進の着地・中ボス登場 / boss-warp(ワープ)=形態変化の位置替え /
+  boss-motor(巨大モーター)=中ボス登場の下敷き。
+  `bossTelegraph` 冒頭で stageIndex!==4 のとき必ず bossServo を鳴らし、
+  dash/charge はさらに bossBoost を90ms後に重ねる。
+- **ABYSS SIREN(S2)は例外**: 彼女は telegraph を使わず独自パターンで動くうえ、
+  人魚にサーボ音は合わない。`sirenWaveCrash` に水しぶき、`sirenSurge`(体を投げ出す
+  大きな動き)に水流+しぶきを重ねた。**連打で水音が団子にならないよう
+  `e.surgeSfxT` のクールダウン(.55秒)を入れ、amount>=.7 の大きい動きだけ鳴らす**。
+- 検証: ?boss=1/2/4 で boss-servo・boss-boost / siren-surge・siren-splash の再生を
+  Audio.play フックで確認。全音源 HTTP 200、JSエラー0件。

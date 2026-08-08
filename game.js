@@ -126,6 +126,22 @@
     bossRubble: { src: 'assets/sfx/boss-rubble.mp3', volume: .5, pool: 1, max: 6.5 },
     bossDeform: { src: 'assets/sfx/boss-deform.mp3', volume: .44, pool: 1, max: 2.6 },
     bossImpact: { src: 'assets/sfx/boss-impact.mp3', volume: .46, pool: 3, max: 1.8 },
+    // Boss *motion* layer. Every boss action used to fire the same `boss` cue
+    // (charge.mp3 + a synth sweep) — 11 call sites, one sound — so a dash, a
+    // wind-up and a phase change were audibly identical, and the wind-up itself
+    // was silent outside the final stage. These give movement its own voice:
+    // a servo whir on the tell, a booster on the lunge, a footfall on the
+    // landing, a warp on the reposition, and a motor bed while a boss holds.
+    bossServo: { src: 'assets/sfx/boss-servo.mp3', volume: .34, pool: 3, max: 1.35 },
+    bossBoost: { src: 'assets/sfx/boss-boost.mp3', volume: .38, pool: 3, max: 1.1 },
+    bossStep: { src: 'assets/sfx/boss-step.mp3', volume: .4, pool: 3, max: 1.2 },
+    bossWarp: { src: 'assets/sfx/boss-warp.mp3', volume: .32, pool: 2, max: 1.4 },
+    bossMotor: { src: 'assets/sfx/boss-motor.mp3', volume: .26, pool: 1, max: 4.5 },
+    // ABYSS SIREN moves by throwing her body and answering with the sea; she
+    // does not use the telegraph system the other bosses share, so a servo
+    // would be wrong for her. Water carries her motion instead.
+    sirenSurge: { src: 'assets/sfx/siren-surge.mp3', volume: .34, pool: 2, max: 2.2 },
+    sirenSplash: { src: 'assets/sfx/siren-splash.mp3', volume: .36, pool: 3, max: 1.15 },
     // UI layer (効果音ラボ「ボタン・システム音」). The whole interface was silent
     // until now — every button, shop purchase and pause acted with no feedback.
     // `ui-decide` is a 4.7s flourish, so `max` clips it to its attack.
@@ -2052,7 +2068,8 @@
     enemies.push({ type: 'midboss', x: VW + 240, y: midY, baseY: midY, w, h, hp, maxHp: hp, vx: 0, t: 0, wave: false, points: 6200 + stageIndex * 1200, fire: .55, sp: 2.1, variant: 'standard' });
     bossState = 'midboss-active';
     clearEnemyFire(); shake = 14; flash = .45;
-    playBgm('midBoss', true); sfx('boss'); sfx('warning');
+    playBgm('midBoss', true);
+    sfxStack([['boss', 0], ['warning', 0], ['bossMotor', 120], ['bossStep', 200]]);
   }
 
   function updateMidBoss(e, dt) {
@@ -2436,7 +2453,7 @@
     burst(e.x + e.w / 2, e.y + e.h / 2, stages[idx].accent2, 40, 420);
     burstDebris(e.x + e.w / 2, e.y + e.h / 2, ['#fff', stages[idx].accent], 14, 300);
     e.tierBanner = 1.9;
-    sfx('boss');
+    sfxStack([['boss', 0], ['bossWarp', 60], ['bossServo', 150]]);
     if (idx === 4) royalSfx('phase');
     else sfxStack([['bossSuperHit', 0], ['bossDeform', 40], ['bossGravity', 110]]);
     bossVoice(idx, e.tier >= 2 ? 'attack' : 'serious');
@@ -2495,6 +2512,13 @@
   function bossTelegraph(e, type, sec, opts = {}) {
     e.telType = type; e.telMax = sec; e.tel = sec;
     e.telX = opts.x; e.telY = opts.y;
+    // 予兆はステージ5以外**無音**だった(下の royalSfx('charge') は stageIndex===4 のみ)。
+    // 動き出す前に必ずサーボが鳴るようにして、溜めを耳でも読めるようにする。
+    // 突進だけはブースターの点火音を重ねて「踏み込む」感じを出す。
+    if (stageIndex !== 4) {
+      if (type === 'dash' || type === 'charge') sfxStack([['bossServo', 0], ['bossBoost', 90]]);
+      else sfx('bossServo');
+    }
     if (stageIndex === 1) e.attackIdx = type === 'claw' ? 0 : type === 'tailslam' ? 2 : 1;
     // FLAME OYABUN's cells are each a specific strike, so the pose is picked to
     // match what the move does: the low sweep throws the ground pillars, the
@@ -2752,7 +2776,10 @@
     // A battle cry on some attacks — throttled so it punctuates rather than spams.
     if (Math.random() < .6) bossVoice(stageIndex, 'attack', { throttle: 5.5 });
     const type = e.telType; e.telType = null;
-    if (type === 'dash') { e.mode = 'dash'; e.y = e.telY; sfx('boss'); }
+    if (type === 'dash') {
+      e.mode = 'dash'; e.y = e.telY;
+      sfxStack([['bossBoost', 0], ['bossStep', 55], ['boss', 30]]);
+    }
     // The oyabun's charge runs along the floor, so unlike 'dash' it keeps his y.
     else if (type === 'charge') { e.mode = 'dash'; oyabunSfx('charge'); shake = Math.max(shake, 14); }
     else if (type === 'wave') { stageIndex === 4 ? bossHeartWall(e) : bossBubbleWall(e); }
@@ -2815,7 +2842,14 @@
 
   // Every attack rears her up and throws her forward. Read by drawBoss, decayed
   // by sirenPerch — the boss's whole recoil budget in one number.
-  function sirenSurge(e, amount) { e.surge = Math.max(e.surge || 0, amount); }
+  function sirenSurge(e, amount) {
+    e.surge = Math.max(e.surge || 0, amount);
+    // 大きく投げ出したときだけ水流を鳴らす。毎回鳴らすと水音が途切れず団子になる
+    if (amount >= .7 && (e.surgeSfxT || 0) <= 0) {
+      e.surgeSfxT = .55;
+      sfxStack([['sirenSurge', 0], ['sirenSplash', 140]]);
+    }
+  }
 
   // Foam thrown off the rock: plain particles, so it costs nothing and the
   // shared additive pass draws it in front of her.
@@ -2841,6 +2875,7 @@
   // clock, faster once she is angry, so the rock is never a still object even
   // in the gaps between her attacks.
   function sirenWaveCrash(e) {
+    sfx('sirenSplash');
     const b = sirenBase(e);
     const x = b.x0 + Math.random() * (b.x1 - b.x0) * .45;
     sirenSpray(e, 14, 1.15, x);
@@ -2857,6 +2892,7 @@
   // Ambient life, once per frame while she is on her rock.
   function sirenPerch(e, dt) {
     e.surge = Math.max(0, (e.surge || 0) - dt * 2.6);
+    if (e.surgeSfxT > 0) e.surgeSfxT -= dt;      // 水音の連打を抑えるクールダウン
     const b = sirenBase(e);
     // Mist off wet stone. Kept down at the waterline and weighted to the
     // seaward face: scattered up the rock it reads as dust on the sprite
