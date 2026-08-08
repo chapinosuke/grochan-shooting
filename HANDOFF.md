@@ -1789,3 +1789,20 @@ palace だけは画家キューに `volPush(COLOSSUS_Z, …)` で最奥として
   JSエラー0件。?boss=5 は FINAL ACT シネマまで確認(headless では入場が進まず本戦絵は未撮影)。
   実機 F1 の FPS 確認はユーザー待ち(Phong 化+ベルト2本追加のため)。
 - `bg3d version royal-3` / `index.html ?v=22`。コミットはユーザー指示待ち。
+
+### 追記: BGM再編 — S5道中に新曲Neon Arena、ボス/中ボス曲の対応を確定 (2026-08-08)
+- **今朝の「1〜4面ボス=ステージ曲続行(51fc1c3)」はユーザー意図の誤読だった — 取り消し**。
+  ユーザー確認済みの正しい対応: **中ボス(ボス戦前の中型敵)=Neon Bullet Heaven /
+  1〜4面ボス戦=The Crimson Labyrinth / 最終ボスのみ Red Planet Showdown**。
+  今朝の「S5道中とボス曲かぶり」の真因は S5道中曲(Neon Bullet Heaven)側で、
+  S5道中を新曲に差し替えて解消した。
+- **S5道中の新曲**: ユーザーがプロジェクト直下に置いた `Neon Arena.wav`(3:35)を
+  規定コマンドで96k mp3化 → `assets/bgm/Neon Arena.mp3`(stage4キー)。
+  mean -15.9dB で既存ステージ曲と同等 → volume .27 のまま。wav原本はコミットしない。
+- **ファイル名衝突の解消**: `Neon Arena.mp3`→`Aqua Highway Breeze.mp3`(S2)、
+  `Neon Arena (1).mp3`→`Burning Sunset Factory.mp3`(S3)に git mv(OST表示名と一致)。
+- 配線: `bgmTracks.midBoss`=Neon Bullet Heaven / `bossBattle`(復活)=The Crimson Labyrinth、
+  `desiredBgmKey()`・`spawnBoss()` をボス専用曲方式に復帰。soundtrack.html の場面表記も更新、
+  THIRD_PARTY_ASSETS.md に Neon Arena の出典を追記。
+- 検証: headless で ?mid=2→midBoss / ?boss=2(active)→bossBattle / ?stage=5→stage4(Neon Arena)、
+  `node --check` OK。`index.html ?v=23`。

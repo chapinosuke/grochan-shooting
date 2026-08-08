@@ -71,11 +71,12 @@
     title: new Audio('assets/bgm/Neon Pink Dreams.mp3'),
     opening: neonArcadeRush,
     stage0: neonArcadeRush,
-    stage1: new Audio('assets/bgm/Neon Arena.mp3'),
-    stage2: new Audio('assets/bgm/Neon Arena (1).mp3'),
+    stage1: new Audio('assets/bgm/Aqua Highway Breeze.mp3'),
+    stage2: new Audio('assets/bgm/Burning Sunset Factory.mp3'),
     stage3: new Audio('assets/bgm/Neon Demoness.mp3'),
-    stage4: new Audio('assets/bgm/Neon Bullet Heaven.mp3'),
-    midBoss: new Audio('assets/bgm/The Crimson Labyrinth.mp3'),
+    stage4: new Audio('assets/bgm/Neon Arena.mp3'),
+    midBoss: new Audio('assets/bgm/Neon Bullet Heaven.mp3'),
+    bossBattle: new Audio('assets/bgm/The Crimson Labyrinth.mp3'),
     finalBoss: new Audio('assets/bgm/Red Planet Showdown.mp3'),
     gameOver: new Audio('assets/bgm/Game Over, Again.mp3'),
     ending: new Audio('assets/bgm/静かに睨め.mp3')
@@ -90,7 +91,7 @@
   // headroom, so nothing clips. `Game Over, Again` is the other quiet master
   // (mean -17.9dB): .42 lands it at -25.4dB too — audibly present without
   // making defeat louder than the fight that caused it.
-  const bgmVolumes = { title: .3, opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, finalBoss: .32, gameOver: .42, ending: .45 };
+  const bgmVolumes = { title: .3, opening: .22, stage0: .27, stage1: .27, stage2: .27, stage3: .27, stage4: .27, midBoss: .3, bossBattle: .3, finalBoss: .32, gameOver: .42, ending: .45 };
   // The ending theme plays through once and stops (the staff roll holds on
   // FIN afterward instead of looping the credits), unlike every other track.
   Object.entries(bgmTracks).forEach(([key, track]) => { track.loop = key !== 'ending'; track.preload = 'auto'; track.volume = bgmVolumes[key]; });
@@ -1185,9 +1186,10 @@
     if (state === 'opening' || state === 'menu') return 'title';
     if (state === 'over') return gameShell.classList.contains('is-game-over') ? 'gameOver' : 'ending';
     if (bossState === 'midboss-active' || bossState === 'midboss-warning') return 'midBoss';
-    // 1〜4面のボス戦はステージBGM続行(専用曲は最終ボスのみ) — 下のstage行へ落ちる
+    // ボス戦は専用曲: 1〜4面=bossBattle(The Crimson Labyrinth)/最終面=finalBoss。
+    // 中ボス(ボス戦の前の中型敵)=midBoss(Neon Bullet Heaven)— 2026-08-08 ユーザー指定
     if (bossState === 'active' || bossState === 'transition' || bossState === 'final') {
-      if (stageIndex === stages.length - 1) return 'finalBoss';
+      return stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle';
     }
     return `stage${stageIndex}`;
   }
@@ -1968,10 +1970,7 @@
     musicStep = 0; musicClock = 0;
     clearEnemyFire();
     shake = 18; flash = .55;
-    // 専用ボス曲は最終ステージだけ。1〜4面のボスはステージBGMを流し続ける
-    // (中ボスから戻った直後などで止まっていても desiredBgmKey で確実に再開)。
-    if (stageIndex === stages.length - 1) playBgm('finalBoss', true);
-    else playBgm(desiredBgmKey());
+    playBgm(stageIndex === stages.length - 1 ? 'finalBoss' : 'bossBattle', true);
     sfx('warning');
     if (isFinalBoss) {
       royalSfx('entrance');
